@@ -27,8 +27,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: 'https://registry.npmjs.org'
-          cache: 'pnpm'
+          registry-url: "https://registry.npmjs.org"
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install
@@ -66,12 +66,6 @@ jobs:
         run: pnpm exec changeset publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Update NPM dist-tags & deprecate accidental 1.0.0
-        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
-        run: |
-          npm dist-tag add @critical-path/svelte@0.2.1 latest || true
-          npm deprecate @critical-path/svelte@1.0.0 "Accidental release; use 0.2.x instead" || true
 
       - name: Commit version bumps & changelogs, push git tags
         if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
