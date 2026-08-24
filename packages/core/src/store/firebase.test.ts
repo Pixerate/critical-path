@@ -1,11 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FirebaseStore } from './firebase.js';
+import { FirebaseStore, InMemoryFirestoreMock } from './firebase.js';
 
 describe('FirebaseStore', () => {
   let store: FirebaseStore;
 
   beforeEach(() => {
-    store = new FirebaseStore();
+    store = new FirebaseStore({ db: new InMemoryFirestoreMock() });
+  });
+
+  it('should throw an error if db is missing in config', () => {
+    expect(() => new FirebaseStore({} as any)).toThrow(
+      'FirebaseStore requires a valid Firestore db instance'
+    );
   });
 
   it('should create and retrieve projects in FirebaseStore', async () => {

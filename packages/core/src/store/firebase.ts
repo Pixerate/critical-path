@@ -94,16 +94,21 @@ export class InMemoryFirestoreMock implements FirestoreDBInterface {
 
 export interface FirebaseStoreConfig {
   /**
-   * Firestore instance or mockable DB interface.
+   * Firestore instance or mockable DB interface. Required.
    */
-  db?: FirestoreDBInterface;
+  db: FirestoreDBInterface;
 }
 
 export class FirebaseStore implements StorageAdapter {
   private db: FirestoreDBInterface;
 
-  constructor(config: FirebaseStoreConfig = {}) {
-    this.db = config.db || new InMemoryFirestoreMock();
+  constructor(config: FirebaseStoreConfig) {
+    if (!config?.db) {
+      throw new Error(
+        'FirebaseStore requires a valid Firestore db instance (e.g. FirebaseStoreConfig.db). Automatic fallback to InMemoryFirestoreMock has been removed.'
+      );
+    }
+    this.db = config.db;
   }
 
   // --- Projects ---
