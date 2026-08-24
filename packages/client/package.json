@@ -4,10 +4,6 @@
   "description": "Type-safe JavaScript/TypeScript client SDK for consuming Critical Path API endpoints",
   "author": "Jack James",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Pixerate/Critical-Path.git"
-  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

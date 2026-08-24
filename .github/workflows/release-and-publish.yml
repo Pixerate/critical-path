@@ -1,21 +1,21 @@
-name: Publish Packages to NPM
+name: Release & Publish Packages
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
   publish:
-    name: Build & Publish Package
+    name: Build & Publish Changed Packages to NPM
     runs-on: ubuntu-latest
     if: github.repository_owner == 'Pixerate' || github.event_name == 'workflow_dispatch'
     permissions:
-      contents: read
+      contents: write
       id-token: write
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -23,44 +23,53 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
 
-      - name: Upgrade npm to latest
-        run: npm install -g npm@latest
-
-      - name: Install Dependencies
+      - name: Install dependencies
         run: pnpm install
 
-      - name: Build Packages
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Check for pending changesets
+        id: changeset_check
+        run: |
+          CHANGESETS=$(find .changeset -name "*.md" ! -name "README.md" | wc -l)
+          echo "count=$CHANGESETS" >> $GITHUB_OUTPUT
+          if [ "$CHANGESETS" -gt "0" ]; then
+            echo "Pending changesets found: $CHANGESETS"
+          else
+            echo "No pending changesets found. Skipping NPM publish."
+          fi
+
+      - name: Version packages & update CHANGELOG.md files
+        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
+        run: pnpm exec changeset version
+
+      - name: Build all packages
+        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
         run: pnpm run build
 
-      - name: Run Test Suite
+      - name: Run test suite
+        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
         run: pnpm run test
 
-      - name: Publish @critical-path/svelte to NPM via OIDC Trusted Publishing
-        run: |
-          cd packages/svelte
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          PACKAGE_NAME=$(node -p "require('./package.json').name")
-          echo "Checking if $PACKAGE_NAME@$PACKAGE_VERSION is already published on npm..."
-          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version > /dev/null 2>&1; then
-            echo "Version $PACKAGE_VERSION is already published to npm. Skipping publish."
-          else
-            echo "Publishing $PACKAGE_NAME@$PACKAGE_VERSION to npm via OIDC Trusted Publishing..."
-            npm publish --access public --provenance
+      - name: Publish changed packages to NPM using Trusted Publishing (OIDC Provenance)
+        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
+        run: pnpm exec changeset publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-            TAG_NAME="$PACKAGE_NAME@$PACKAGE_VERSION"
-            echo "Tagging commit with $TAG_NAME in GitHub..."
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            if git rev-parse "$TAG_NAME" >/dev/null 2>&1 || git ls-remote --tags origin "refs/tags/$TAG_NAME" | grep -q "$TAG_NAME"; then
-              echo "Tag $TAG_NAME already exists. Skipping tag creation."
-            else
-              git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
-              git push origin "$TAG_NAME" || true
-            fi
-          fi
+      - name: Commit version bumps & changelogs, push git tags
+        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
+        run: |
+          git add .
+          git commit -m "chore(release): version packages and update changelogs [skip ci]" || echo "No changes to commit"
+          git push origin HEAD --tags || echo "Failed to push tags"
