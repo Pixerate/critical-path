@@ -104,8 +104,16 @@ export interface Task {
   actualStartDate?: string;
   actualEndDate?: string;
   dueDate?: string;
+  // Duration & Effort (in hours and/or minutes)
   estimatedHours?: number;
   loggedHours?: number;
+  actualHours?: number;
+  billableHours?: number;
+  estimatedDurationMinutes?: number;
+  actualDurationMinutes?: number;
+  billableDurationMinutes?: number;
+  // Progress (0 to 100 percentage)
+  progress?: number;
   tags?: string[];
   customFields?: Record<string, unknown>;
   parentId?: string; // Subtask support
@@ -139,6 +147,7 @@ export interface TimeEntry {
   taskId: string;
   userId: string;
   hours: number;
+  isBillable?: boolean;
   description?: string;
   loggedAt: string;
 }

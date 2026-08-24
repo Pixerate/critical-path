@@ -98,6 +98,12 @@ erDiagram
         datetime dueDate
         number estimatedHours
         number loggedHours
+        number actualHours
+        number billableHours
+        number estimatedDurationMinutes
+        number actualDurationMinutes
+        number billableDurationMinutes
+        number progress "0 to 100 percentage"
         string_array tags
         object customFields
         string parentId FK
@@ -126,6 +132,7 @@ erDiagram
         string taskId FK
         string userId FK
         number hours
+        boolean isBillable
         string description
         datetime loggedAt
     }
@@ -150,6 +157,11 @@ Generalizes time-boxed or milestone-based planning units (e.g., Sprints, Cycles,
 ### 5. Task
 The central unit of work. Tasks support:
 - **Date Tracking**: `plannedStartDate`, `actualStartDate`, `actualEndDate`, `dueDate`.
+- **Duration & Effort Tracking**:
+  - `estimatedHours` / `estimatedDurationMinutes`
+  - `actualHours` / `actualDurationMinutes`
+  - `billableHours` / `billableDurationMinutes`
+- **Progress Tracking**: `progress` (percentage from `0` to `100`).
 - **People & Roles**: `assigneeId`, `reporterId`, `reviewerId`.
 - **Associations**: `projectId`, `teamId`, `containerId`, `iterationId`.
 - **Subtasks**: `parentId` pointing to parent task.

@@ -98,13 +98,27 @@ describe('CriticalPathEngine Core Tests', () => {
       containerId: container.id,
       iterationId: iteration.id,
       plannedStartDate: '2026-09-01T00:00:00.000Z',
-      dueDate: '2026-09-15T00:00:00.000Z'
+      dueDate: '2026-09-15T00:00:00.000Z',
+      estimatedHours: 10,
+      actualHours: 8,
+      billableHours: 8,
+      estimatedDurationMinutes: 600,
+      actualDurationMinutes: 480,
+      billableDurationMinutes: 480,
+      progress: 80
     });
 
     expect(task.reviewerId).toBe('user_2');
     expect(task.teamId).toBe(team.id);
     expect(task.containerId).toBe(container.id);
     expect(task.iterationId).toBe(iteration.id);
+    expect(task.estimatedHours).toBe(10);
+    expect(task.actualHours).toBe(8);
+    expect(task.billableHours).toBe(8);
+    expect(task.estimatedDurationMinutes).toBe(600);
+    expect(task.actualDurationMinutes).toBe(480);
+    expect(task.billableDurationMinutes).toBe(480);
+    expect(task.progress).toBe(80);
   });
 
   it('evaluates status definitions and task lifecycle state', async () => {

@@ -113,6 +113,12 @@ export class CriticalPathEngine {
       dueDate: processedInput.dueDate ?? taskInput.dueDate,
       estimatedHours: processedInput.estimatedHours ?? taskInput.estimatedHours,
       loggedHours: processedInput.loggedHours ?? taskInput.loggedHours ?? 0,
+      actualHours: processedInput.actualHours ?? taskInput.actualHours,
+      billableHours: processedInput.billableHours ?? taskInput.billableHours,
+      estimatedDurationMinutes: processedInput.estimatedDurationMinutes ?? taskInput.estimatedDurationMinutes,
+      actualDurationMinutes: processedInput.actualDurationMinutes ?? taskInput.actualDurationMinutes,
+      billableDurationMinutes: processedInput.billableDurationMinutes ?? taskInput.billableDurationMinutes,
+      progress: processedInput.progress ?? taskInput.progress ?? 0,
       tags: processedInput.tags ?? taskInput.tags ?? [],
       customFields: processedInput.customFields ?? taskInput.customFields ?? {},
       parentId: processedInput.parentId ?? taskInput.parentId

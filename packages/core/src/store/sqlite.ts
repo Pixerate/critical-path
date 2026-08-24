@@ -95,6 +95,12 @@ export class SQLiteStore implements StorageAdapter {
         dueDate TEXT,
         estimatedHours REAL,
         loggedHours REAL,
+        actualHours REAL,
+        billableHours REAL,
+        estimatedDurationMinutes REAL,
+        actualDurationMinutes REAL,
+        billableDurationMinutes REAL,
+        progress REAL,
         tags TEXT,
         customFields TEXT,
         parentId TEXT,
@@ -138,6 +144,7 @@ export class SQLiteStore implements StorageAdapter {
         taskId TEXT NOT NULL,
         userId TEXT NOT NULL,
         hours REAL NOT NULL,
+        isBillable INTEGER,
         description TEXT,
         loggedAt TEXT NOT NULL
       );
@@ -387,8 +394,10 @@ export class SQLiteStore implements StorageAdapter {
       INSERT INTO tasks (
         id, projectId, title, description, status, priority, assigneeId, reporterId,
         reviewerId, iterationId, teamId, containerId, plannedStartDate, actualStartDate, actualEndDate,
-        dueDate, estimatedHours, loggedHours, tags, customFields, parentId, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        dueDate, estimatedHours, loggedHours, actualHours, billableHours,
+        estimatedDurationMinutes, actualDurationMinutes, billableDurationMinutes, progress,
+        tags, customFields, parentId, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newTask.id,
@@ -409,6 +418,12 @@ export class SQLiteStore implements StorageAdapter {
       newTask.dueDate || null,
       newTask.estimatedHours ?? null,
       newTask.loggedHours ?? null,
+      newTask.actualHours ?? null,
+      newTask.billableHours ?? null,
+      newTask.estimatedDurationMinutes ?? null,
+      newTask.actualDurationMinutes ?? null,
+      newTask.billableDurationMinutes ?? null,
+      newTask.progress ?? null,
       JSON.stringify(newTask.tags || []),
       JSON.stringify(newTask.customFields || {}),
       newTask.parentId || null,
@@ -433,7 +448,9 @@ export class SQLiteStore implements StorageAdapter {
         projectId = ?, title = ?, description = ?, status = ?, priority = ?,
         assigneeId = ?, reporterId = ?, reviewerId = ?, iterationId = ?, teamId = ?, containerId = ?,
         plannedStartDate = ?, actualStartDate = ?, actualEndDate = ?, dueDate = ?,
-        estimatedHours = ?, loggedHours = ?, tags = ?, customFields = ?, parentId = ?, updatedAt = ?
+        estimatedHours = ?, loggedHours = ?, actualHours = ?, billableHours = ?,
+        estimatedDurationMinutes = ?, actualDurationMinutes = ?, billableDurationMinutes = ?, progress = ?,
+        tags = ?, customFields = ?, parentId = ?, updatedAt = ?
       WHERE id = ?
     `);
     stmt.run(
@@ -454,6 +471,12 @@ export class SQLiteStore implements StorageAdapter {
       updated.dueDate || null,
       updated.estimatedHours ?? null,
       updated.loggedHours ?? null,
+      updated.actualHours ?? null,
+      updated.billableHours ?? null,
+      updated.estimatedDurationMinutes ?? null,
+      updated.actualDurationMinutes ?? null,
+      updated.billableDurationMinutes ?? null,
+      updated.progress ?? null,
       JSON.stringify(updated.tags || []),
       JSON.stringify(updated.customFields || {}),
       updated.parentId || null,
@@ -603,7 +626,8 @@ export class SQLiteStore implements StorageAdapter {
   // --- Time Tracking ---
   async getTimeEntries(taskId: string): Promise<TimeEntry[]> {
     const stmt = this.db.prepare('SELECT * FROM time_entries WHERE taskId = ?');
-    return stmt.all(taskId) as any[];
+    const rows = stmt.all(taskId) as any[];
+    return rows.map((r) => ({ ...r, isBillable: r.isBillable !== null ? Boolean(r.isBillable) : undefined }));
   }
 
   async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'>): Promise<TimeEntry> {
@@ -612,10 +636,18 @@ export class SQLiteStore implements StorageAdapter {
     const newEntry: TimeEntry = { ...entry, id, loggedAt: now };
 
     const stmt = this.db.prepare(`
-      INSERT INTO time_entries (id, taskId, userId, hours, description, loggedAt)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO time_entries (id, taskId, userId, hours, isBillable, description, loggedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(newEntry.id, newEntry.taskId, newEntry.userId, newEntry.hours, newEntry.description || null, newEntry.loggedAt);
+    stmt.run(
+      newEntry.id,
+      newEntry.taskId,
+      newEntry.userId,
+      newEntry.hours,
+      newEntry.isBillable !== undefined ? (newEntry.isBillable ? 1 : 0) : null,
+      newEntry.description || null,
+      newEntry.loggedAt
+    );
     return newEntry;
   }
 
