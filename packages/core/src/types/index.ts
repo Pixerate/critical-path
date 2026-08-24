@@ -1,0 +1,154 @@
+export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
+
+export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled';
+
+export type Role = 'admin' | 'project_manager' | 'contributor' | 'viewer';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  role: Role;
+  createdAt: string;
+}
+
+export interface CustomFieldDefinition {
+  id: string;
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'date' | 'boolean' | 'single_select' | 'multi_select' | 'user';
+  options?: string[];
+  required?: boolean;
+  defaultValue?: unknown;
+}
+
+export interface Project {
+  id: string;
+  key: string; // e.g. "CP" or "PROJ"
+  name: string;
+  description?: string;
+  ownerId?: string;
+  members?: string[]; // user IDs
+  customFieldDefinitions?: CustomFieldDefinition[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskDependency {
+  id: string;
+  taskId: string;
+  dependsOnTaskId: string;
+  type: 'blocking' | 'blocked_by' | 'relates_to';
+}
+
+export interface Task {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  priority: Priority;
+  assigneeId?: string;
+  reporterId?: string;
+  sprintId?: string;
+  dueDate?: string;
+  estimatedHours?: number;
+  loggedHours?: number;
+  tags?: string[];
+  customFields?: Record<string, unknown>;
+  parentId?: string; // Subtask support
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Sprint {
+  id: string;
+  projectId: string;
+  name: string;
+  goal?: string;
+  startDate: string;
+  endDate: string;
+  status: 'planning' | 'active' | 'completed';
+  createdAt: string;
+}
+
+export interface Comment {
+  id: string;
+  taskId: string;
+  authorId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TimeEntry {
+  id: string;
+  taskId: string;
+  userId: string;
+  hours: number;
+  description?: string;
+  loggedAt: string;
+}
+
+export interface Activity {
+  id: string;
+  projectId?: string;
+  taskId?: string;
+  actorId: string;
+  action: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface Webhook {
+  id: string;
+  name: string;
+  url: string;
+  secret?: string;
+  events: WebhookEvent[];
+  active: boolean;
+  createdAt: string;
+}
+
+export type WebhookEvent =
+  | 'project.created'
+  | 'project.updated'
+  | 'task.created'
+  | 'task.updated'
+  | 'task.deleted'
+  | 'task.status_changed'
+  | 'comment.created'
+  | 'sprint.started'
+  | 'sprint.completed';
+
+export interface PluginHooks {
+  beforeTaskCreate?: (task: Partial<Task>) => Promise<Partial<Task>> | Partial<Task>;
+  afterTaskCreate?: (task: Task) => Promise<void> | void;
+  beforeTaskUpdate?: (id: string, updates: Partial<Task>) => Promise<Partial<Task>> | Partial<Task>;
+  afterTaskUpdate?: (task: Task, previousState: Task) => Promise<void> | void;
+  beforeTaskDelete?: (id: string) => Promise<void> | void;
+  afterTaskDelete?: (id: string) => Promise<void> | void;
+}
+
+export interface CriticalPathPlugin {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  hooks?: PluginHooks;
+  customFieldTypes?: CustomFieldDefinition[];
+  init?: (engine: unknown) => Promise<void> | void;
+}
+
+export interface CriticalPathConfig {
+  store?: 'memory' | 'sqlite' | unknown;
+  plugins?: CriticalPathPlugin[];
+  webhooks?: Omit<Webhook, 'id' | 'createdAt'>[];
+  initialData?: {
+    projects?: Project[];
+    tasks?: Task[];
+    users?: User[];
+    sprints?: Sprint[];
+  };
+}

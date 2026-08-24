@@ -1,0 +1,29 @@
+{
+  "name": "critical-path-root",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Headless Project Management System Framework",
+  "author": "Jack James",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "pnpm --recursive run build",
+    "test": "pnpm --recursive run test",
+    "lint": "pnpm --recursive run lint",
+    "dev": "pnpm --recursive --parallel run dev",
+    "clean": "pnpm --recursive run clean"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "packageManager": "pnpm@10.28.2"
+}

@@ -1,0 +1,40 @@
+{
+  "name": "@critical-path/server",
+  "version": "0.1.0",
+  "description": "Web Fetch API compatible server router and adapters for Next.js App Router, SvelteKit, and Express",
+  "author": "Jack James",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./next": {
+      "import": "./dist/adapters/next.js",
+      "types": "./dist/adapters/next.d.ts"
+    },
+    "./sveltekit": {
+      "import": "./dist/adapters/sveltekit.js",
+      "types": "./dist/adapters/sveltekit.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "test": "vitest run",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@critical-path/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
