@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.3.0
+
+### Minor Changes
+
+- 4b92228: Add project short key utilities (`generateProjectKey`, `validateProjectKey`, `formatTaskKey`) and automatic key generation fallback in `createProject`.
+
 ## 0.2.1
 
 ### Patch Changes
