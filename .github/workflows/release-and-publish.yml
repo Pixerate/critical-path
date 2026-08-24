@@ -23,14 +23,11 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Setup Node.js 24
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: 'pnpm'
-
-      - name: Upgrade npm to latest for OIDC Trusted Publishing
-        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: pnpm install
@@ -62,15 +59,7 @@ jobs:
         run: pnpm run test
 
       - name: Publish changed packages to NPM using OIDC Trusted Publishing
-        run: |
-          npmrc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
-          if [ -f "$npmrc" ]; then
-            rm -f "$npmrc"
-          fi
-          pnpm publish --filter @critical-path/svelte --access public --provenance --no-git-checks
-        env:
-          NPM_CONFIG_PROVENANCE: "true"
-          NPM_CONFIG_USERCONFIG: "/dev/null"
+        run: pnpm publish --filter @critical-path/svelte --access public --no-git-checks
 
       - name: Commit version bumps & changelogs, push git tags
         if: steps.changeset_check.outputs.count > 0
