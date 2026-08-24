@@ -49,10 +49,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Bump package versions
-        run: |
-          BUMP="${{ inputs.bump_type || 'patch' }}"
-          pnpm -r exec npm version $BUMP --no-git-tag-version
-          npm version $BUMP --no-git-tag-version
+        run: node scripts/bump-version.js "${{ inputs.bump_type || 'patch' }}"
 
       - name: Build all packages
         run: pnpm run build
