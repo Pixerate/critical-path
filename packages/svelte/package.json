@@ -1,6 +1,6 @@
 {
   "name": "@critical-path/svelte",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Svelte 5 Runes state and reactive integrations for Critical Path headless project management framework",
   "author": "Jack James",
   "license": "MIT",

@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.2.1
+
+### Patch Changes
+
+- df22aad: Remove implicit InMemoryFirestoreMock fallback and require explicit db parameter in FirebaseStore constructor
+
 ## 0.2.0
 
 ### Minor Changes
