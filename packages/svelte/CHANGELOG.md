@@ -1,5 +1,11 @@
 # @critical-path/svelte
 
+## 0.2.1
+
+### Patch Changes
+
+- 5160802: Publish Svelte 5 Runes state classes on 0.2.x prerelease line.
+
 ## 1.0.0
 
 ### Major Changes
