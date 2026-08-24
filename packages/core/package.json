@@ -4,6 +4,10 @@
   "description": "Core headless domain engine, plugin architecture, and data stores for Critical Path",
   "author": "Jack James",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pixerate/critical-path.git"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
