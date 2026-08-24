@@ -1,6 +1,6 @@
 {
   "name": "create-critical-path",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "CLI scaffolding tool for bootstrapping Next.js and SvelteKit applications with Critical Path headless project management",
   "author": "Jack James",
   "license": "MIT",
