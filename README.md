@@ -29,7 +29,7 @@ For a detailed view of entity relationships, custom status lifecycle states, tea
 graph TD
     subgraph UI ["Presentation & UI Layer"]
         React["@critical-path/react<br/>(CriticalPathProvider, useKanban, useTasks)"]
-        Svelte["@critical-path/svelte<br/>(createProjectStore, createTaskStore)"]
+        Svelte["@critical-path/svelte<br/>(createProjectState, createTaskState)"]
         Client["@critical-path/client<br/>(CriticalPathClient SDK)"]
     end
 
@@ -165,7 +165,7 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 | [`@critical-path/server`](./packages/server) | Web Fetch API router with adapters for Next.js App Router & SvelteKit | ![npm](https://img.shields.io/npm/v/@critical-path/server) |
 | [`@critical-path/client`](./packages/client) | Type-safe HTTP Client SDK for web applications | ![npm](https://img.shields.io/npm/v/@critical-path/client) |
 | [`@critical-path/react`](./packages/react) | React Context Provider and hooks (`useProjects`, `useTasks`, `useKanban`) | ![npm](https://img.shields.io/npm/v/@critical-path/react) |
-| [`@critical-path/svelte`](./packages/svelte) | Svelte stores (`createProjectStore`, `createTaskStore`) | ![npm](https://img.shields.io/npm/v/@critical-path/svelte) |
+| [`@critical-path/svelte`](./packages/svelte) | Svelte 5 Runes state (`createProjectState`, `createTaskState`) | ![npm](https://img.shields.io/npm/v/@critical-path/svelte) |
 | [`create-critical-path`](./packages/create-critical-path) | CLI tool (`npx create-critical-path@latest`) to scaffold new apps | ![npm](https://img.shields.io/npm/v/create-critical-path) |
 
 ---

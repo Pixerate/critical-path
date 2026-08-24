@@ -37,7 +37,7 @@ The repository uses pnpm workspaces containing the following core packages:
 - `packages/server` (`@critical-path/server`): Web Fetch router and platform adapters (`createNextHandler`, `createSvelteKitHandler`).
 - `packages/client` (`@critical-path/client`): Type-safe HTTP Client SDK (`CriticalPathClient`).
 - `packages/react` (`@critical-path/react`): React Context Provider (`CriticalPathProvider`) and hooks (`useProjects`, `useTasks`, `useKanban`).
-- `packages/svelte` (`@critical-path/svelte`): Svelte store factory functions (`createProjectStore`, `createTaskStore`).
+- `packages/svelte` (`@critical-path/svelte`): Svelte 5 Runes state classes & factory functions (`createProjectState`, `createTaskState`).
 - `packages/create-critical-path` (`create-critical-path`): CLI scaffolder executable (`npx create-critical-path@latest`).
 
 ---

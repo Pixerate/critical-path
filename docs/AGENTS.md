@@ -15,7 +15,7 @@ When a user asks you to implement, extend, or consume project management feature
    - `@critical-path/server`: Route handlers and framework adapters (`createNextHandler`, `createSvelteKitHandler`).
    - `@critical-path/client`: `CriticalPathClient` type-safe SDK.
    - `@critical-path/react`: `CriticalPathProvider`, `useProjects`, `useTasks`, `useKanban`.
-   - `@critical-path/svelte`: `createCriticalPathClient`, `createProjectStore`, `createTaskStore`.
+   - `@critical-path/svelte`: `createCriticalPathClient`, `createProjectState`, `createTaskState`, `ProjectState`, `TaskState`.
 
 ---
 
