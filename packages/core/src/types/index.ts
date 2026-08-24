@@ -48,7 +48,7 @@ export interface CustomFieldDefinition {
 
 export interface Project {
   id: string;
-  key: string; // e.g. "CP" or "PROJ"
+  key?: string; // e.g. "CP" or "PROJ"
   name: string;
   description?: string;
   ownerId?: string;
@@ -90,6 +90,7 @@ export interface TaskDependencyGraph {
 export interface Task {
   id: string;
   projectId: string;
+  key?: string; // e.g. "MOB-12"
   title: string;
   description?: string;
   status: TaskStatus;

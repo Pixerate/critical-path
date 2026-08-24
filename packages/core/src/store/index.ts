@@ -13,6 +13,7 @@ import type {
   Webhook,
   TaskDependency
 } from '../types/index.js';
+import { generateProjectKey } from '../utils/key.js';
 
 export interface StorageAdapter {
   // Projects
@@ -92,8 +93,10 @@ export class InMemoryStore implements StorageAdapter {
   async createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project> {
     const id = `proj_${Math.random().toString(36).substring(2, 9)}`;
     const now = new Date().toISOString();
+    const key = project.key || generateProjectKey(project.name);
     const newProject: Project = {
       ...project,
+      key,
       id,
       createdAt: now,
       updatedAt: now
