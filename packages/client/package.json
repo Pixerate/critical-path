@@ -1,6 +1,6 @@
 {
   "name": "@critical-path/client",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Type-safe JavaScript/TypeScript client SDK for consuming Critical Path API endpoints",
   "author": "Jack James",
   "license": "MIT",
