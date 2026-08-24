@@ -4,20 +4,10 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch:
-    inputs:
-      bump_type:
-        description: 'Semver bump type (patch, minor, major)'
-        required: true
-        default: 'patch'
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
 
 jobs:
   publish:
-    name: Build, Version Bump & Publish to NPM
+    name: Build & Publish Changed Packages to NPM
     runs-on: ubuntu-latest
     if: github.repository_owner == 'Pixerate' || github.event_name == 'workflow_dispatch'
     permissions:
@@ -48,24 +38,38 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump package versions
-        run: node scripts/bump-version.js "${{ inputs.bump_type || 'patch' }}"
+      - name: Check for pending changesets
+        id: changeset_check
+        run: |
+          CHANGESETS=$(find .changeset -name "*.md" ! -name "README.md" | wc -l)
+          echo "count=$CHANGESETS" >> $GITHUB_OUTPUT
+          if [ "$CHANGESETS" -gt "0" ]; then
+            echo "Pending changesets found: $CHANGESETS"
+          else
+            echo "No pending changesets found. Skipping NPM publish."
+          fi
+
+      - name: Version packages & update CHANGELOG.md files
+        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
+        run: pnpm exec changeset version
 
       - name: Build all packages
+        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
         run: pnpm run build
 
       - name: Run test suite
+        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
         run: pnpm run test
 
-      - name: Publish packages to NPM using Trusted Publishing (OIDC Provenance)
-        run: pnpm --recursive publish --access public --no-git-checks --provenance
+      - name: Publish changed packages to NPM using Trusted Publishing (OIDC Provenance)
+        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
+        run: pnpm exec changeset publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Commit version bump and push git tags
+      - name: Commit version bumps & changelogs, push git tags
+        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
         run: |
-          NEW_VERSION=$(node -p "require('./package.json').version")
           git add .
-          git commit -m "chore(release): bump version to v${NEW_VERSION} [skip ci]" || echo "No changes to commit"
-          git tag "v${NEW_VERSION}" || echo "Tag v${NEW_VERSION} already exists"
+          git commit -m "chore(release): version packages and update changelogs [skip ci]" || echo "No changes to commit"
           git push origin HEAD --tags || echo "Failed to push tags"

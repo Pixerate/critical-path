@@ -15,9 +15,13 @@
     "test": "pnpm --recursive run test",
     "lint": "pnpm --recursive run lint",
     "dev": "pnpm --recursive --parallel run dev",
-    "clean": "pnpm --recursive run clean"
+    "clean": "pnpm --recursive run clean",
+    "changeset": "changeset",
+    "version:packages": "changeset version",
+    "release": "changeset publish"
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.1",
     "@types/node": "^24.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
