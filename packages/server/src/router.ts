@@ -47,9 +47,11 @@ export class CriticalPathRouter {
         }
       }
 
-      // Tasks API
+      // Tasks API & Task Sub-resources (Dependencies, Lifecycle State)
       if (segments[0] === 'tasks') {
         const taskId = segments[1];
+        const subResource = segments[2];
+
         if (!taskId) {
           if (method === 'GET') {
             const projectId = url.searchParams.get('projectId') || undefined;
@@ -60,6 +62,26 @@ export class CriticalPathRouter {
             const body = await request.json();
             const task = await this.engine.createTask(body);
             return this.jsonResponse({ task }, 201);
+          }
+        } else if (subResource === 'dependencies') {
+          if (method === 'GET') {
+            const graph = await this.engine.getTaskDependencyGraph(taskId);
+            return this.jsonResponse({ graph });
+          }
+          if (method === 'POST') {
+            const body = await request.json();
+            const dep = await this.engine.store.addDependency({
+              taskId,
+              dependsOnTaskId: body.dependsOnTaskId,
+              type: body.type || 'blocking'
+            });
+            return this.jsonResponse({ dependency: dep }, 201);
+          }
+        } else if (subResource === 'state' || subResource === 'lifecycle') {
+          if (method === 'GET') {
+            const state = await this.engine.getTaskLifecycleState(taskId);
+            if (!state) return this.jsonResponse({ error: 'Task not found' }, 404);
+            return this.jsonResponse({ state });
           }
         } else {
           if (method === 'GET') {
@@ -75,6 +97,106 @@ export class CriticalPathRouter {
           }
           if (method === 'DELETE') {
             const deleted = await this.engine.deleteTask(taskId);
+            return this.jsonResponse({ success: deleted });
+          }
+        }
+      }
+
+      // Teams API
+      if (segments[0] === 'teams') {
+        const teamId = segments[1];
+        if (!teamId) {
+          if (method === 'GET') {
+            const teams = await this.engine.getTeams();
+            return this.jsonResponse({ teams });
+          }
+          if (method === 'POST') {
+            const body = await request.json();
+            const team = await this.engine.createTeam(body);
+            return this.jsonResponse({ team }, 201);
+          }
+        } else {
+          if (method === 'GET') {
+            const team = await this.engine.getTeam(teamId);
+            if (!team) return this.jsonResponse({ error: 'Team not found' }, 404);
+            return this.jsonResponse({ team });
+          }
+          if (method === 'PATCH' || method === 'PUT') {
+            const body = await request.json();
+            const updated = await this.engine.updateTeam(teamId, body);
+            if (!updated) return this.jsonResponse({ error: 'Team not found' }, 404);
+            return this.jsonResponse({ team: updated });
+          }
+          if (method === 'DELETE') {
+            const deleted = await this.engine.deleteTeam(teamId);
+            return this.jsonResponse({ success: deleted });
+          }
+        }
+      }
+
+      // Task Containers API
+      if (segments[0] === 'containers') {
+        const containerId = segments[1];
+        if (!containerId) {
+          if (method === 'GET') {
+            const projectId = url.searchParams.get('projectId');
+            if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
+            const containers = await this.engine.getContainers(projectId);
+            return this.jsonResponse({ containers });
+          }
+          if (method === 'POST') {
+            const body = await request.json();
+            const container = await this.engine.createContainer(body);
+            return this.jsonResponse({ container }, 201);
+          }
+        } else {
+          if (method === 'GET') {
+            const container = await this.engine.getContainer(containerId);
+            if (!container) return this.jsonResponse({ error: 'Container not found' }, 404);
+            return this.jsonResponse({ container });
+          }
+          if (method === 'PATCH' || method === 'PUT') {
+            const body = await request.json();
+            const updated = await this.engine.updateContainer(containerId, body);
+            if (!updated) return this.jsonResponse({ error: 'Container not found' }, 404);
+            return this.jsonResponse({ container: updated });
+          }
+          if (method === 'DELETE') {
+            const deleted = await this.engine.deleteContainer(containerId);
+            return this.jsonResponse({ success: deleted });
+          }
+        }
+      }
+
+      // Iterations API
+      if (segments[0] === 'iterations') {
+        const iterationId = segments[1];
+        if (!iterationId) {
+          if (method === 'GET') {
+            const projectId = url.searchParams.get('projectId');
+            if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
+            const iterations = await this.engine.getIterations(projectId);
+            return this.jsonResponse({ iterations });
+          }
+          if (method === 'POST') {
+            const body = await request.json();
+            const iteration = await this.engine.createIteration(body);
+            return this.jsonResponse({ iteration }, 201);
+          }
+        } else {
+          if (method === 'GET') {
+            const iteration = await this.engine.getIteration(iterationId);
+            if (!iteration) return this.jsonResponse({ error: 'Iteration not found' }, 404);
+            return this.jsonResponse({ iteration });
+          }
+          if (method === 'PATCH' || method === 'PUT') {
+            const body = await request.json();
+            const updated = await this.engine.updateIteration(iterationId, body);
+            if (!updated) return this.jsonResponse({ error: 'Iteration not found' }, 404);
+            return this.jsonResponse({ iteration: updated });
+          }
+          if (method === 'DELETE') {
+            const deleted = await this.engine.deleteIteration(iterationId);
             return this.jsonResponse({ success: deleted });
           }
         }

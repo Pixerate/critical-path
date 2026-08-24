@@ -3,7 +3,9 @@ import type { StorageAdapter } from './index.js';
 import type {
   Project,
   Task,
-  Sprint,
+  Iteration,
+  Team,
+  TaskContainer,
   Comment,
   TimeEntry,
   Activity,
@@ -44,7 +46,32 @@ export class SQLiteStore implements StorageAdapter {
         description TEXT,
         ownerId TEXT,
         members TEXT,
+        teamIds TEXT,
+        statusDefinitions TEXT,
+        priorityDefinitions TEXT,
         customFieldDefinitions TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS teams (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        leaderId TEXT,
+        memberIds TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS containers (
+        id TEXT PRIMARY KEY,
+        projectId TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        parentId TEXT,
+        type TEXT,
+        color TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       );
@@ -58,7 +85,13 @@ export class SQLiteStore implements StorageAdapter {
         priority TEXT NOT NULL,
         assigneeId TEXT,
         reporterId TEXT,
-        sprintId TEXT,
+        reviewerId TEXT,
+        iterationId TEXT,
+        teamId TEXT,
+        containerId TEXT,
+        plannedStartDate TEXT,
+        actualStartDate TEXT,
+        actualEndDate TEXT,
         dueDate TEXT,
         estimatedHours REAL,
         loggedHours REAL,
@@ -69,11 +102,12 @@ export class SQLiteStore implements StorageAdapter {
         updatedAt TEXT NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS sprints (
+      CREATE TABLE IF NOT EXISTS iterations (
         id TEXT PRIMARY KEY,
         projectId TEXT NOT NULL,
         name TEXT NOT NULL,
         goal TEXT,
+        type TEXT,
         startDate TEXT,
         endDate TEXT,
         status TEXT NOT NULL,
@@ -145,8 +179,8 @@ export class SQLiteStore implements StorageAdapter {
     const newProj: Project = { ...project, id, createdAt: now, updatedAt: now };
 
     const stmt = this.db.prepare(`
-      INSERT INTO projects (id, key, name, description, ownerId, members, customFieldDefinitions, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO projects (id, key, name, description, ownerId, members, teamIds, statusDefinitions, priorityDefinitions, customFieldDefinitions, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newProj.id,
@@ -155,6 +189,9 @@ export class SQLiteStore implements StorageAdapter {
       newProj.description || null,
       newProj.ownerId || null,
       JSON.stringify(newProj.members || []),
+      JSON.stringify(newProj.teamIds || []),
+      JSON.stringify(newProj.statusDefinitions || []),
+      JSON.stringify(newProj.priorityDefinitions || []),
       JSON.stringify(newProj.customFieldDefinitions || []),
       newProj.createdAt,
       newProj.updatedAt
@@ -174,7 +211,7 @@ export class SQLiteStore implements StorageAdapter {
 
     const stmt = this.db.prepare(`
       UPDATE projects
-      SET key = ?, name = ?, description = ?, ownerId = ?, members = ?, customFieldDefinitions = ?, updatedAt = ?
+      SET key = ?, name = ?, description = ?, ownerId = ?, members = ?, teamIds = ?, statusDefinitions = ?, priorityDefinitions = ?, customFieldDefinitions = ?, updatedAt = ?
       WHERE id = ?
     `);
     stmt.run(
@@ -183,6 +220,9 @@ export class SQLiteStore implements StorageAdapter {
       updated.description || null,
       updated.ownerId || null,
       JSON.stringify(updated.members || []),
+      JSON.stringify(updated.teamIds || []),
+      JSON.stringify(updated.statusDefinitions || []),
+      JSON.stringify(updated.priorityDefinitions || []),
       JSON.stringify(updated.customFieldDefinitions || []),
       updated.updatedAt,
       id
@@ -192,6 +232,129 @@ export class SQLiteStore implements StorageAdapter {
 
   async deleteProject(id: string): Promise<boolean> {
     const stmt = this.db.prepare('DELETE FROM projects WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  }
+
+  // --- Teams ---
+  async getTeams(): Promise<Team[]> {
+    const stmt = this.db.prepare('SELECT * FROM teams');
+    const rows = stmt.all() as any[];
+    return rows.map((r) => this.mapTeam(r));
+  }
+
+  async getTeam(id: string): Promise<Team | null> {
+    const stmt = this.db.prepare('SELECT * FROM teams WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row ? this.mapTeam(row) : null;
+  }
+
+  async createTeam(team: Omit<Team, 'id' | 'createdAt' | 'updatedAt'>): Promise<Team> {
+    const id = `team_${Math.random().toString(36).substring(2, 9)}`;
+    const now = new Date().toISOString();
+    const newTeam: Team = { ...team, id, createdAt: now, updatedAt: now };
+
+    const stmt = this.db.prepare(`
+      INSERT INTO teams (id, name, description, leaderId, memberIds, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      newTeam.id,
+      newTeam.name,
+      newTeam.description || null,
+      newTeam.leaderId || null,
+      JSON.stringify(newTeam.memberIds || []),
+      newTeam.createdAt,
+      newTeam.updatedAt
+    );
+    return newTeam;
+  }
+
+  async updateTeam(id: string, updates: Partial<Team>): Promise<Team | null> {
+    const existing = await this.getTeam(id);
+    if (!existing) return null;
+
+    const updated: Team = { ...existing, ...updates, updatedAt: new Date().toISOString() };
+    const stmt = this.db.prepare(`
+      UPDATE teams SET name = ?, description = ?, leaderId = ?, memberIds = ?, updatedAt = ?
+      WHERE id = ?
+    `);
+    stmt.run(
+      updated.name,
+      updated.description || null,
+      updated.leaderId || null,
+      JSON.stringify(updated.memberIds || []),
+      updated.updatedAt,
+      id
+    );
+    return updated;
+  }
+
+  async deleteTeam(id: string): Promise<boolean> {
+    const stmt = this.db.prepare('DELETE FROM teams WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  }
+
+  // --- Task Containers ---
+  async getContainers(projectId: string): Promise<TaskContainer[]> {
+    const stmt = this.db.prepare('SELECT * FROM containers WHERE projectId = ?');
+    const rows = stmt.all(projectId) as any[];
+    return rows;
+  }
+
+  async getContainer(id: string): Promise<TaskContainer | null> {
+    const stmt = this.db.prepare('SELECT * FROM containers WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row || null;
+  }
+
+  async createContainer(container: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer> {
+    const id = `cnt_${Math.random().toString(36).substring(2, 9)}`;
+    const now = new Date().toISOString();
+    const newContainer: TaskContainer = { ...container, id, createdAt: now, updatedAt: now };
+
+    const stmt = this.db.prepare(`
+      INSERT INTO containers (id, projectId, name, description, parentId, type, color, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      newContainer.id,
+      newContainer.projectId,
+      newContainer.name,
+      newContainer.description || null,
+      newContainer.parentId || null,
+      newContainer.type || null,
+      newContainer.color || null,
+      newContainer.createdAt,
+      newContainer.updatedAt
+    );
+    return newContainer;
+  }
+
+  async updateContainer(id: string, updates: Partial<TaskContainer>): Promise<TaskContainer | null> {
+    const existing = await this.getContainer(id);
+    if (!existing) return null;
+
+    const updated: TaskContainer = { ...existing, ...updates, updatedAt: new Date().toISOString() };
+    const stmt = this.db.prepare(`
+      UPDATE containers SET name = ?, description = ?, parentId = ?, type = ?, color = ?, updatedAt = ?
+      WHERE id = ?
+    `);
+    stmt.run(
+      updated.name,
+      updated.description || null,
+      updated.parentId || null,
+      updated.type || null,
+      updated.color || null,
+      updated.updatedAt,
+      id
+    );
+    return updated;
+  }
+
+  async deleteContainer(id: string): Promise<boolean> {
+    const stmt = this.db.prepare('DELETE FROM containers WHERE id = ?');
     const result = stmt.run(id);
     return (result.changes ?? 0) > 0;
   }
@@ -223,8 +386,9 @@ export class SQLiteStore implements StorageAdapter {
     const stmt = this.db.prepare(`
       INSERT INTO tasks (
         id, projectId, title, description, status, priority, assigneeId, reporterId,
-        sprintId, dueDate, estimatedHours, loggedHours, tags, customFields, parentId, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        reviewerId, iterationId, teamId, containerId, plannedStartDate, actualStartDate, actualEndDate,
+        dueDate, estimatedHours, loggedHours, tags, customFields, parentId, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newTask.id,
@@ -235,7 +399,13 @@ export class SQLiteStore implements StorageAdapter {
       newTask.priority,
       newTask.assigneeId || null,
       newTask.reporterId || null,
-      newTask.sprintId || null,
+      newTask.reviewerId || null,
+      newTask.iterationId || null,
+      newTask.teamId || null,
+      newTask.containerId || null,
+      newTask.plannedStartDate || null,
+      newTask.actualStartDate || null,
+      newTask.actualEndDate || null,
       newTask.dueDate || null,
       newTask.estimatedHours ?? null,
       newTask.loggedHours ?? null,
@@ -261,7 +431,8 @@ export class SQLiteStore implements StorageAdapter {
     const stmt = this.db.prepare(`
       UPDATE tasks SET
         projectId = ?, title = ?, description = ?, status = ?, priority = ?,
-        assigneeId = ?, reporterId = ?, sprintId = ?, dueDate = ?,
+        assigneeId = ?, reporterId = ?, reviewerId = ?, iterationId = ?, teamId = ?, containerId = ?,
+        plannedStartDate = ?, actualStartDate = ?, actualEndDate = ?, dueDate = ?,
         estimatedHours = ?, loggedHours = ?, tags = ?, customFields = ?, parentId = ?, updatedAt = ?
       WHERE id = ?
     `);
@@ -273,7 +444,13 @@ export class SQLiteStore implements StorageAdapter {
       updated.priority,
       updated.assigneeId || null,
       updated.reporterId || null,
-      updated.sprintId || null,
+      updated.reviewerId || null,
+      updated.iterationId || null,
+      updated.teamId || null,
+      updated.containerId || null,
+      updated.plannedStartDate || null,
+      updated.actualStartDate || null,
+      updated.actualEndDate || null,
       updated.dueDate || null,
       updated.estimatedHours ?? null,
       updated.loggedHours ?? null,
@@ -292,59 +469,68 @@ export class SQLiteStore implements StorageAdapter {
     return (result.changes ?? 0) > 0;
   }
 
-  // --- Sprints ---
-  async getSprints(projectId: string): Promise<Sprint[]> {
-    const stmt = this.db.prepare('SELECT * FROM sprints WHERE projectId = ?');
+  // --- Iterations ---
+  async getIterations(projectId: string): Promise<Iteration[]> {
+    const stmt = this.db.prepare('SELECT * FROM iterations WHERE projectId = ?');
     const rows = stmt.all(projectId) as any[];
-    return rows.map((r) => ({
-      ...r,
-      description: r.goal
-    }));
+    return rows;
   }
 
-  async createSprint(sprint: Omit<Sprint, 'id' | 'createdAt'>): Promise<Sprint> {
-    const id = `sprint_${Math.random().toString(36).substring(2, 9)}`;
+  async getIteration(id: string): Promise<Iteration | null> {
+    const stmt = this.db.prepare('SELECT * FROM iterations WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row || null;
+  }
+
+  async createIteration(iteration: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
+    const id = `iter_${Math.random().toString(36).substring(2, 9)}`;
     const now = new Date().toISOString();
-    const newSprint: Sprint = { ...sprint, id, createdAt: now };
+    const newIteration: Iteration = { ...iteration, id, createdAt: now };
 
     const stmt = this.db.prepare(`
-      INSERT INTO sprints (id, projectId, name, goal, startDate, endDate, status, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO iterations (id, projectId, name, goal, type, startDate, endDate, status, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
-      newSprint.id,
-      newSprint.projectId,
-      newSprint.name,
-      newSprint.goal || null,
-      newSprint.startDate || null,
-      newSprint.endDate || null,
-      newSprint.status,
-      newSprint.createdAt
+      newIteration.id,
+      newIteration.projectId,
+      newIteration.name,
+      newIteration.goal || null,
+      newIteration.type || null,
+      newIteration.startDate || null,
+      newIteration.endDate || null,
+      newIteration.status,
+      newIteration.createdAt
     );
-    return newSprint;
+    return newIteration;
   }
 
-  async updateSprint(id: string, updates: Partial<Sprint>): Promise<Sprint | null> {
-    const stmt = this.db.prepare('SELECT * FROM sprints WHERE id = ?');
-    const existingRow = stmt.get(id) as any;
-    if (!existingRow) return null;
+  async updateIteration(id: string, updates: Partial<Iteration>): Promise<Iteration | null> {
+    const existing = await this.getIteration(id);
+    if (!existing) return null;
 
-    const existing: Sprint = { ...existingRow, goal: existingRow.goal };
-    const updated: Sprint = { ...existing, ...updates };
+    const updated: Iteration = { ...existing, ...updates };
 
     const updateStmt = this.db.prepare(`
-      UPDATE sprints SET name = ?, goal = ?, startDate = ?, endDate = ?, status = ?
+      UPDATE iterations SET name = ?, goal = ?, type = ?, startDate = ?, endDate = ?, status = ?
       WHERE id = ?
     `);
     updateStmt.run(
       updated.name,
       updated.goal || null,
+      updated.type || null,
       updated.startDate || null,
       updated.endDate || null,
       updated.status,
       id
     );
     return updated;
+  }
+
+  async deleteIteration(id: string): Promise<boolean> {
+    const stmt = this.db.prepare('DELETE FROM iterations WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
   }
 
   // --- Comments & Activity ---
@@ -487,7 +673,17 @@ export class SQLiteStore implements StorageAdapter {
     return {
       ...row,
       members: row.members ? JSON.parse(row.members) : [],
+      teamIds: row.teamIds ? JSON.parse(row.teamIds) : [],
+      statusDefinitions: row.statusDefinitions ? JSON.parse(row.statusDefinitions) : [],
+      priorityDefinitions: row.priorityDefinitions ? JSON.parse(row.priorityDefinitions) : [],
       customFieldDefinitions: row.customFieldDefinitions ? JSON.parse(row.customFieldDefinitions) : []
+    };
+  }
+
+  private mapTeam(row: any): Team {
+    return {
+      ...row,
+      memberIds: row.memberIds ? JSON.parse(row.memberIds) : []
     };
   }
 

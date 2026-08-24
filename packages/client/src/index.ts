@@ -1,4 +1,14 @@
-import type { Project, Task, Activity, Comment, TimeEntry } from '@critical-path/core';
+import type {
+  Project,
+  Task,
+  TaskDependencyGraph,
+  Team,
+  TaskContainer,
+  Iteration,
+  Activity,
+  Comment,
+  TimeEntry
+} from '@critical-path/core';
 
 export interface ClientOptions {
   baseUrl: string; // e.g. "http://localhost:3000/api/critical-path"
@@ -91,6 +101,103 @@ export class CriticalPathClient {
 
   async deleteTask(id: string): Promise<boolean> {
     const res = await this.request<{ success: boolean }>(`/tasks/${id}`, {
+      method: 'DELETE'
+    });
+    return res.success;
+  }
+
+  async getTaskDependencies(taskId: string): Promise<TaskDependencyGraph> {
+    const res = await this.request<{ graph: TaskDependencyGraph }>(`/tasks/${encodeURIComponent(taskId)}/dependencies`);
+    return res.graph;
+  }
+
+  // Teams
+  async getTeams(): Promise<Team[]> {
+    const res = await this.request<{ teams: Team[] }>('/teams');
+    return res.teams;
+  }
+
+  async getTeam(id: string): Promise<Team> {
+    const res = await this.request<{ team: Team }>(`/teams/${id}`);
+    return res.team;
+  }
+
+  async createTeam(data: Omit<Team, 'id' | 'createdAt' | 'updatedAt'>): Promise<Team> {
+    const res = await this.request<{ team: Team }>('/teams', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.team;
+  }
+
+  async updateTeam(id: string, updates: Partial<Team>): Promise<Team> {
+    const res = await this.request<{ team: Team }>(`/teams/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+    return res.team;
+  }
+
+  async deleteTeam(id: string): Promise<boolean> {
+    const res = await this.request<{ success: boolean }>(`/teams/${id}`, {
+      method: 'DELETE'
+    });
+    return res.success;
+  }
+
+  // Containers
+  async getContainers(projectId: string): Promise<TaskContainer[]> {
+    const res = await this.request<{ containers: TaskContainer[] }>(`/containers?projectId=${encodeURIComponent(projectId)}`);
+    return res.containers;
+  }
+
+  async createContainer(data: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer> {
+    const res = await this.request<{ container: TaskContainer }>('/containers', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.container;
+  }
+
+  async updateContainer(id: string, updates: Partial<TaskContainer>): Promise<TaskContainer> {
+    const res = await this.request<{ container: TaskContainer }>(`/containers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+    return res.container;
+  }
+
+  async deleteContainer(id: string): Promise<boolean> {
+    const res = await this.request<{ success: boolean }>(`/containers/${id}`, {
+      method: 'DELETE'
+    });
+    return res.success;
+  }
+
+  // Iterations
+  async getIterations(projectId: string): Promise<Iteration[]> {
+    const res = await this.request<{ iterations: Iteration[] }>(`/iterations?projectId=${encodeURIComponent(projectId)}`);
+    return res.iterations;
+  }
+
+  async createIteration(data: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
+    const res = await this.request<{ iteration: Iteration }>('/iterations', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.iteration;
+  }
+
+  async updateIteration(id: string, updates: Partial<Iteration>): Promise<Iteration> {
+    const res = await this.request<{ iteration: Iteration }>(`/iterations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+    return res.iteration;
+  }
+
+  async deleteIteration(id: string): Promise<boolean> {
+    const res = await this.request<{ success: boolean }>(`/iterations/${id}`, {
       method: 'DELETE'
     });
     return res.success;
