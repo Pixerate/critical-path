@@ -12,6 +12,7 @@ import type {
   Webhook,
   TaskDependency
 } from '../types/index.js';
+import { generateProjectKey } from '../utils/key.js';
 
 export interface SQLiteStoreConfig {
   /**
@@ -183,7 +184,8 @@ export class SQLiteStore implements StorageAdapter {
   async createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project> {
     const id = `proj_${Math.random().toString(36).substring(2, 9)}`;
     const now = new Date().toISOString();
-    const newProj: Project = { ...project, id, createdAt: now, updatedAt: now };
+    const key = project.key || generateProjectKey(project.name);
+    const newProj: Project = { ...project, key, id, createdAt: now, updatedAt: now };
 
     const stmt = this.db.prepare(`
       INSERT INTO projects (id, key, name, description, ownerId, members, teamIds, statusDefinitions, priorityDefinitions, customFieldDefinitions, createdAt, updatedAt)
@@ -191,7 +193,7 @@ export class SQLiteStore implements StorageAdapter {
     `);
     stmt.run(
       newProj.id,
-      newProj.key,
+      newProj.key || '',
       newProj.name,
       newProj.description || null,
       newProj.ownerId || null,
@@ -222,7 +224,7 @@ export class SQLiteStore implements StorageAdapter {
       WHERE id = ?
     `);
     stmt.run(
-      updated.key,
+      updated.key || '',
       updated.name,
       updated.description || null,
       updated.ownerId || null,

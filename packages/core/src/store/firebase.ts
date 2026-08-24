@@ -11,6 +11,7 @@ import type {
   Webhook,
   TaskDependency
 } from '../types/index.js';
+import { generateProjectKey } from '../utils/key.js';
 
 export interface FirestoreDBInterface {
   collection(name: string): {
@@ -126,7 +127,8 @@ export class FirebaseStore implements StorageAdapter {
   async createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project> {
     const docRef = this.db.collection('projects').doc();
     const now = new Date().toISOString();
-    const newProj: Project = { ...project, id: docRef.id, createdAt: now, updatedAt: now };
+    const key = project.key || generateProjectKey(project.name);
+    const newProj: Project = { ...project, key, id: docRef.id, createdAt: now, updatedAt: now };
     await docRef.set(newProj);
     return newProj;
   }
