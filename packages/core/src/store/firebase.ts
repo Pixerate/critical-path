@@ -2,7 +2,9 @@ import type { StorageAdapter } from './index.js';
 import type {
   Project,
   Task,
-  Sprint,
+  Iteration,
+  Team,
+  TaskContainer,
   Comment,
   TimeEntry,
   Activity,
@@ -144,6 +146,78 @@ export class FirebaseStore implements StorageAdapter {
     return true;
   }
 
+  // --- Teams ---
+  async getTeams(): Promise<Team[]> {
+    const snap = await this.db.collection('teams').get();
+    return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+  }
+
+  async getTeam(id: string): Promise<Team | null> {
+    const snap = await this.db.collection('teams').doc(id).get();
+    if (!snap.exists) return null;
+    return { ...snap.data(), id: snap.id };
+  }
+
+  async createTeam(team: Omit<Team, 'id' | 'createdAt' | 'updatedAt'>): Promise<Team> {
+    const docRef = this.db.collection('teams').doc();
+    const now = new Date().toISOString();
+    const newTeam: Team = { ...team, id: docRef.id, createdAt: now, updatedAt: now };
+    await docRef.set(newTeam);
+    return newTeam;
+  }
+
+  async updateTeam(id: string, updates: Partial<Team>): Promise<Team | null> {
+    const existing = await this.getTeam(id);
+    if (!existing) return null;
+
+    const updated: Team = { ...existing, ...updates, updatedAt: new Date().toISOString() };
+    await this.db.collection('teams').doc(id).set(updated, { merge: true });
+    return updated;
+  }
+
+  async deleteTeam(id: string): Promise<boolean> {
+    const existing = await this.getTeam(id);
+    if (!existing) return false;
+    await this.db.collection('teams').doc(id).delete();
+    return true;
+  }
+
+  // --- Containers ---
+  async getContainers(projectId: string): Promise<TaskContainer[]> {
+    const snap = await this.db.collection('containers').where('projectId', '==', projectId).get();
+    return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+  }
+
+  async getContainer(id: string): Promise<TaskContainer | null> {
+    const snap = await this.db.collection('containers').doc(id).get();
+    if (!snap.exists) return null;
+    return { ...snap.data(), id: snap.id };
+  }
+
+  async createContainer(container: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer> {
+    const docRef = this.db.collection('containers').doc();
+    const now = new Date().toISOString();
+    const newContainer: TaskContainer = { ...container, id: docRef.id, createdAt: now, updatedAt: now };
+    await docRef.set(newContainer);
+    return newContainer;
+  }
+
+  async updateContainer(id: string, updates: Partial<TaskContainer>): Promise<TaskContainer | null> {
+    const existing = await this.getContainer(id);
+    if (!existing) return null;
+
+    const updated: TaskContainer = { ...existing, ...updates, updatedAt: new Date().toISOString() };
+    await this.db.collection('containers').doc(id).set(updated, { merge: true });
+    return updated;
+  }
+
+  async deleteContainer(id: string): Promise<boolean> {
+    const existing = await this.getContainer(id);
+    if (!existing) return false;
+    await this.db.collection('containers').doc(id).delete();
+    return true;
+  }
+
   // --- Tasks ---
   async getTasks(projectId?: string): Promise<Task[]> {
     let snap;
@@ -189,27 +263,40 @@ export class FirebaseStore implements StorageAdapter {
     return true;
   }
 
-  // --- Sprints ---
-  async getSprints(projectId: string): Promise<Sprint[]> {
-    const snap = await this.db.collection('sprints').where('projectId', '==', projectId).get();
+  // --- Iterations ---
+  async getIterations(projectId: string): Promise<Iteration[]> {
+    const snap = await this.db.collection('iterations').where('projectId', '==', projectId).get();
     return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
   }
 
-  async createSprint(sprint: Omit<Sprint, 'id' | 'createdAt'>): Promise<Sprint> {
-    const docRef = this.db.collection('sprints').doc();
-    const now = new Date().toISOString();
-    const newSprint: Sprint = { ...sprint, id: docRef.id, createdAt: now };
-    await docRef.set(newSprint);
-    return newSprint;
+  async getIteration(id: string): Promise<Iteration | null> {
+    const snap = await this.db.collection('iterations').doc(id).get();
+    if (!snap.exists) return null;
+    return { ...snap.data(), id: snap.id };
   }
 
-  async updateSprint(id: string, updates: Partial<Sprint>): Promise<Sprint | null> {
-    const snap = await this.db.collection('sprints').doc(id).get();
+  async createIteration(iteration: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
+    const docRef = this.db.collection('iterations').doc();
+    const now = new Date().toISOString();
+    const newIteration: Iteration = { ...iteration, id: docRef.id, createdAt: now };
+    await docRef.set(newIteration);
+    return newIteration;
+  }
+
+  async updateIteration(id: string, updates: Partial<Iteration>): Promise<Iteration | null> {
+    const snap = await this.db.collection('iterations').doc(id).get();
     if (!snap.exists) return null;
 
-    const updated: Sprint = { ...snap.data(), id, ...updates };
-    await this.db.collection('sprints').doc(id).set(updated, { merge: true });
+    const updated: Iteration = { ...snap.data(), id, ...updates };
+    await this.db.collection('iterations').doc(id).set(updated, { merge: true });
     return updated;
+  }
+
+  async deleteIteration(id: string): Promise<boolean> {
+    const existing = await this.getIteration(id);
+    if (!existing) return false;
+    await this.db.collection('iterations').doc(id).delete();
+    return true;
   }
 
   // --- Comments & Activity ---

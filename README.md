@@ -20,7 +20,10 @@ Whether you're building a custom client portal, an internal software engineering
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ Architecture Overview & Data Model
+
+For a detailed view of entity relationships, custom status lifecycle states, teams, containers, and iterations, see [`docs/DATA_MODEL.md`](./docs/DATA_MODEL.md).
+
 
 ```mermaid
 graph TD

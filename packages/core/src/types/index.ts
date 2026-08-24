@@ -1,6 +1,19 @@
-export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
+export type DefaultPriority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
+export type Priority = DefaultPriority | (string & {});
 
-export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled';
+export type DefaultTaskStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled';
+export type TaskStatus = DefaultTaskStatus | (string & {});
+
+export type CompletionState = 'done' | 'not_done';
+export type ExecutionState = 'active' | 'inactive';
+
+export interface StatusDefinition {
+  key: string;
+  label: string;
+  completionState: CompletionState;
+  executionState: ExecutionState;
+  isCancelled?: boolean;
+}
 
 export type Role = 'admin' | 'project_manager' | 'contributor' | 'viewer';
 
@@ -11,6 +24,16 @@ export interface User {
   avatarUrl?: string;
   role: Role;
   createdAt: string;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  description?: string;
+  leaderId?: string;
+  memberIds: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CustomFieldDefinition {
@@ -30,7 +53,22 @@ export interface Project {
   description?: string;
   ownerId?: string;
   members?: string[]; // user IDs
+  teamIds?: string[]; // team IDs
+  statusDefinitions?: StatusDefinition[];
+  priorityDefinitions?: Array<{ key: string; label: string; level?: number }>;
   customFieldDefinitions?: CustomFieldDefinition[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskContainer {
+  id: string;
+  projectId: string;
+  name: string;
+  description?: string;
+  parentId?: string; // nested container hierarchy (e.g., folder -> epic -> group)
+  type?: 'epic' | 'group' | 'section' | 'folder' | string;
+  color?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -42,6 +80,13 @@ export interface TaskDependency {
   type: 'blocking' | 'blocked_by' | 'relates_to';
 }
 
+export interface TaskDependencyGraph {
+  taskId: string;
+  upstreamTasks: Task[];   // tasks that this task depends on
+  downstreamTasks: Task[]; // tasks that depend on this task
+  dependencies: TaskDependency[];
+}
+
 export interface Task {
   id: string;
   projectId: string;
@@ -51,10 +96,24 @@ export interface Task {
   priority: Priority;
   assigneeId?: string;
   reporterId?: string;
-  sprintId?: string;
+  reviewerId?: string;
+  iterationId?: string;
+  teamId?: string;
+  containerId?: string;
+  plannedStartDate?: string;
+  actualStartDate?: string;
+  actualEndDate?: string;
   dueDate?: string;
+  // Duration & Effort (in hours and/or minutes)
   estimatedHours?: number;
   loggedHours?: number;
+  actualHours?: number;
+  billableHours?: number;
+  estimatedDurationMinutes?: number;
+  actualDurationMinutes?: number;
+  billableDurationMinutes?: number;
+  // Progress (0 to 100 percentage)
+  progress?: number;
   tags?: string[];
   customFields?: Record<string, unknown>;
   parentId?: string; // Subtask support
@@ -62,13 +121,14 @@ export interface Task {
   updatedAt: string;
 }
 
-export interface Sprint {
+export interface Iteration {
   id: string;
   projectId: string;
   name: string;
   goal?: string;
-  startDate: string;
-  endDate: string;
+  type?: 'sprint' | 'cycle' | 'milestone' | string;
+  startDate?: string;
+  endDate?: string;
   status: 'planning' | 'active' | 'completed';
   createdAt: string;
 }
@@ -87,6 +147,7 @@ export interface TimeEntry {
   taskId: string;
   userId: string;
   hours: number;
+  isBillable?: boolean;
   description?: string;
   loggedAt: string;
 }
@@ -119,8 +180,10 @@ export type WebhookEvent =
   | 'task.deleted'
   | 'task.status_changed'
   | 'comment.created'
-  | 'sprint.started'
-  | 'sprint.completed';
+  | 'iteration.started'
+  | 'iteration.completed'
+  | 'team.created'
+  | 'container.created';
 
 export interface PluginHooks {
   beforeTaskCreate?: (task: Partial<Task>) => Promise<Partial<Task>> | Partial<Task>;
@@ -149,6 +212,8 @@ export interface CriticalPathConfig {
     projects?: Project[];
     tasks?: Task[];
     users?: User[];
-    sprints?: Sprint[];
+    iterations?: Iteration[];
+    teams?: Team[];
+    containers?: TaskContainer[];
   };
 }
