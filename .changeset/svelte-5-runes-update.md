@@ -1,5 +1,5 @@
 ---
-"@critical-path/svelte": major
+"@critical-path/svelte": minor
 ---
 
 Modernize `@critical-path/svelte` for Svelte 5 Runes:
