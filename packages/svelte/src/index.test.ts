@@ -45,7 +45,7 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       expect(projectState.error).toBeNull();
     });
 
-    it('creates project and appends to reactive data', async () => {
+    it('creates project optimistically and rolls back on failure', async () => {
       const mockCreated: Project = {
         id: 'proj_2',
         name: 'Project 2',
@@ -62,11 +62,20 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
 
       expect(res).toEqual(mockCreated);
       expect(projectState.data).toEqual([mockCreated]);
+
+      // Test error rollback
+      const failingClient = {
+        createProject: vi.fn().mockRejectedValue(new Error('Network error'))
+      } as unknown as CriticalPathClient;
+      const failingState = new ProjectState(failingClient);
+
+      await expect(failingState.createProject({ name: 'Failed Proj', key: 'FAIL' })).rejects.toThrow('Network error');
+      expect(failingState.data).toEqual([]);
     });
   });
 
   describe('TaskState', () => {
-    it('fetches, creates, updates status, and deletes tasks', async () => {
+    it('fetches, creates, updates status, and deletes tasks with optimistic updates', async () => {
       const mockTask: Task = {
         id: 'task_1',
         projectId: 'proj_1',
@@ -90,11 +99,61 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
 
       expect(taskState.data).toEqual([mockTask]);
 
+      // Update status
       await taskState.updateTaskStatus('task_1', 'in_progress');
       expect(taskState.data[0].status).toBe('in_progress');
 
+      // Delete task
       await taskState.deleteTask('task_1');
       expect(taskState.data).toEqual([]);
+    });
+
+    it('rolls back task status update on server error', async () => {
+      const mockTask: Task = {
+        id: 'task_1',
+        projectId: 'proj_1',
+        title: 'Task 1',
+        status: 'todo',
+        priority: 'medium',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      };
+
+      const failingClient = {
+        getTasks: vi.fn().mockResolvedValue([mockTask]),
+        updateTask: vi.fn().mockRejectedValue(new Error('Server error'))
+      } as unknown as CriticalPathClient;
+
+      const taskState = createTaskState(failingClient, 'proj_1');
+      await taskState.fetch();
+
+      await expect(taskState.updateTaskStatus('task_1', 'in_progress')).rejects.toThrow('Server error');
+      // Should be rolled back to 'todo'
+      expect(taskState.data[0].status).toBe('todo');
+    });
+
+    it('rolls back task deletion on server error', async () => {
+      const mockTask: Task = {
+        id: 'task_1',
+        projectId: 'proj_1',
+        title: 'Task 1',
+        status: 'todo',
+        priority: 'medium',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      };
+
+      const failingClient = {
+        getTasks: vi.fn().mockResolvedValue([mockTask]),
+        deleteTask: vi.fn().mockRejectedValue(new Error('Delete failed'))
+      } as unknown as CriticalPathClient;
+
+      const taskState = createTaskState(failingClient, 'proj_1');
+      await taskState.fetch();
+
+      await expect(taskState.deleteTask('task_1')).rejects.toThrow('Delete failed');
+      // Should restore deleted task
+      expect(taskState.data).toEqual([mockTask]);
     });
   });
 });
