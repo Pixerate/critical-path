@@ -4,6 +4,10 @@
   "description": "React Context Provider and Hooks for Critical Path headless project management framework",
   "author": "Jack James",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pixerate/Critical-Path.git"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
