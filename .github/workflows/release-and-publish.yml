@@ -27,7 +27,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -37,6 +36,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Enable NPM Provenance for OIDC Trusted Publishing
+        run: npm config set provenance true --location=global
 
       - name: Check for pending changesets
         id: changeset_check
@@ -59,7 +61,7 @@ jobs:
       - name: Run test suite
         run: pnpm run test
 
-      - name: Publish changed packages to NPM using Trusted Publishing
+      - name: Publish changed packages to NPM using OIDC Trusted Publishing
         run: |
           if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
             NODE_AUTH_TOKEN="${{ secrets.NPM_TOKEN }}" pnpm exec changeset publish
