@@ -61,14 +61,9 @@ jobs:
         if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
         run: pnpm run test
 
-      - name: Publish changed packages to NPM
+      - name: Publish changed packages to NPM using Trusted Publishing
         if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
-        run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::warning::NPM_TOKEN secret is empty or missing. Skipping publishing packages to NPM."
-          else
-            pnpm exec changeset publish
-          fi
+        run: pnpm exec changeset publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
