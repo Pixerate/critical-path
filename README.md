@@ -3,7 +3,7 @@
 > **The Open-Source, Headless Project Management System Framework**  
 > *Embed enterprise-grade project tracking, agile workflows, and task engines into any Web application in minutes.*
 
-[![CI](https://github.com/jack/critical-path/actions/workflows/ci.yml/badge.svg)](https://github.com/jack/critical-path/actions/workflows/ci.yml)
+[![CI](https://github.com/Pixerate/Critical-Path/actions/workflows/ci.yml/badge.svg)](https://github.com/Pixerate/Critical-Path/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-24%2B-brightgreen.svg)](https://nodejs.org)
 [![pnpm](https://img.shields.io/badge/pnpm-10%2B-orange.svg)](https://pnpm.io)
@@ -12,7 +12,7 @@
 
 ## 💡 What is Critical Path?
 
-**Critical Path** is a modern, headless project management framework inspired by the modularity and developer experience of [Strapi](https://strapi.io). Instead of forcing your organization into a rigid, monolithic PM web app, Critical Path provides a powerful, embeddable domain engine, database adapters, Web Fetch API compatible route handlers, and reactive UI client libraries.
+**Critical Path** is a modern, headless project management framework designed for modularity and effortless developer experience. Instead of forcing your organization into a rigid, monolithic PM web app, Critical Path provides a powerful, embeddable domain engine, database adapters, Web Fetch API compatible route handlers, and reactive UI client libraries.
 
 Whether you're building a custom client portal, an internal software engineering dashboard, or an AI-driven project workspace in **Next.js** or **SvelteKit**, Critical Path handles task tracking, sprint management, custom schemas, role-based permissions, and activity feeds behind a clean, type-safe API.
 
@@ -20,32 +20,7 @@ Whether you're building a custom client portal, an internal software engineering
 
 ## 🏗️ Architecture Overview
 
-```
-                        ┌──────────────────────────────────────────────┐
-                        │              YOUR APPLICATION                │
-                        │       (Next.js / SvelteKit / Custom)         │
-                        └──────────────────────┬───────────────────────┘
-                                               │
-                      ┌────────────────────────┴────────────────────────┐
-                      │    @critical-path/react  |  @critical-path/svelte│  ◄── Client Hooks & Stores
-                      └────────────────────────┬────────────────────────┘
-                                               │ HTTP / Fetch API
-                      ┌────────────────────────▼────────────────────────┐
-                      │             @critical-path/client               │  ◄── Type-Safe SDK
-                      └────────────────────────┬────────────────────────┘
-                                               │
-                      ┌────────────────────────▼────────────────────────┐
-                      │             @critical-path/server               │  ◄── Next.js / SvelteKit Route Handler
-                      └────────────────────────┬────────────────────────┘
-                                               │
-                      ┌────────────────────────▼────────────────────────┐
-                      │              @critical-path/core                │  ◄── Domain Engine, Hooks & Stores
-                      └────────────────────────┬────────────────────────┘
-                                               │
-                     ┌─────────────────────────┴─────────────────────────┐
-                     │ Storage Adapters: InMemory | SQLite | Postgres   │
-                     └───────────────────────────────────────────────────┘
-```
+![Critical Path Architecture Overview](./docs/assets/architecture_overview.png)
 
 ---
 
@@ -53,11 +28,62 @@ Whether you're building a custom client portal, an internal software engineering
 
 - 🎯 **Headless & Frontend-Agnostic**: Pure API-first architecture designed for Next.js (App Router), SvelteKit, Express, Fastify, and edge runtimes.
 - 📋 **Comprehensive PM Work Items**: Full CRUD for Projects, Tasks, Sprints/Cycles, Task Dependencies, Subtasks, Priorities, and Estimates.
-- 🔌 **Strapi-Style Plugin Engine**: Lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`), custom field type registries, and custom route middlewares.
+- 🔌 **Extensible Plugin Engine**: Lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`), custom field type registries, and custom route middlewares.
 - ⚙️ **Dynamic Custom Fields**: Attach structured custom fields (text, select, user, date, number, boolean) to projects and tasks on the fly.
 - 🔔 **Webhooks & Audit Streams**: Real-time event notifications (`task.created`, `task.status_changed`) and immutable activity logs.
 - ⏱️ **Time Tracking & Comments**: Threaded task discussions and built-in time entry logging.
 - ⚡ **Type-Safe Ecosystem**: First-class TypeScript types across engine, server route adapters, client SDK, and React/Svelte hooks.
+
+---
+
+## 📋 MVP Feature Checklist
+
+Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md):
+
+### Core Data & API Layer
+- [x] **RESTful API**: Endpoints for projects, tasks, sprints, comments, and activities
+- [ ] **GraphQL API**: *(Planned)*
+- [x] **Webhook & Hook Support**: Async lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, etc.)
+- [x] **Flexible Data Models**: Custom fields, custom statuses, and configurable priority levels
+- [x] **Role-Based Access Control**: Project and task level RBAC role definitions
+
+### Project & Task Management
+- [x] **Work Item Tracking**: Task CRUD with priorities, due dates, estimates, and tags
+- [x] **Multiple Views**: Interactive Kanban board (`useKanban`) and structured task list views
+- [x] **Sprint & Cycle Management**: Sprint creation, task assignment, and cycle tracking
+- [x] **Dependencies & Relationships**: Parent-child task hierarchies (`parentId`) and task linking
+
+### Collaboration Features
+- [x] **Comments & Discussions**: Threaded comments on tasks
+- [x] **Activity Streams**: Immutable audit log feed of entity updates
+- [ ] **File Attachments**: *(Planned)*
+- [ ] **Wiki / Documentation**: *(Planned)*
+
+### Time & Resource Management
+- [x] **Time Tracking**: Logged hours, estimated hours, and `TimeEntry` models
+- [ ] **Resource Allocation**: *(Planned)*
+- [ ] **Budget Tracking**: *(Planned)*
+
+### Reporting & Analytics
+- [ ] **Built-in Reports**: Burndown charts and velocity metrics *(Planned)*
+- [x] **Export Capabilities**: Structured JSON exports via REST API
+- [ ] **Dashboard Widgets**: *(Planned)*
+
+### Integration & Extensibility
+- [ ] **Third-Party Integrations**: GitHub/GitLab native connectors *(Planned)*
+- [x] **Plugin Architecture**: `PluginRegistry` with lifecycle hooks and route middlewares
+- [ ] **Import/Export Tools**: Jira/Trello migration importers *(Planned)*
+
+### Security & Compliance
+- [x] **Authentication**: Route handler auth hooks and session propagation
+- [x] **Data Encryption**: Full TLS/HTTPS support across API edge runtimes
+- [x] **Audit Logging**: Structured mutation logging in `Activity` stream
+- [x] **Vulnerability Policy**: Standard `SECURITY.md` reporting workflow
+
+### Developer Experience & Headless Essentials
+- [x] **Comprehensive Documentation**: Developer guide and package-level READMEs
+- [x] **Sandbox Environments**: Built-in Next.js and SvelteKit interactive demo apps
+- [x] **Multi-Channel & Frontend Agnostic**: Pure Web Fetch API compatible engine for any presentation layer
 
 ---
 
@@ -179,7 +205,7 @@ Critical Path uses a [pnpm workspace](https://pnpm.io/workspaces) monorepo setup
 
 ```bash
 # Clone repository
-git clone https://github.com/jack/critical-path.git
+git clone https://github.com/Pixerate/Critical-Path.git
 cd "Critical Path"
 
 # Install workspace dependencies
