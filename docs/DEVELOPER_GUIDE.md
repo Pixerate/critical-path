@@ -15,7 +15,7 @@ Welcome to the **Critical Path** developer documentation. This guide provides an
    - [SvelteKit Integration](#sveltekit-integration)
 6. [Client SDKs & Reactive UI Bindings](#6-client-sdks--reactive-ui-bindings)
 7. [Extensibility & Plugin Development](#7-extensibility--plugin-development)
-8. [Custom Database Adapters](#8-custom-storage-adapters)
+8. [Storage Adapters (InMemory, SQLite, Firebase)](#8-storage-adapters)
 
 ---
 
@@ -33,7 +33,7 @@ Critical Path is built on three core pillars:
 
 The repository uses pnpm workspaces containing the following core packages:
 
-- `packages/core` (`@critical-path/core`): Domain models, `CriticalPathEngine`, `PluginRegistry`, `StorageAdapter` interface, and `InMemoryStore`.
+- `packages/core` (`@critical-path/core`): Domain models, `CriticalPathEngine`, `PluginRegistry`, `StorageAdapter` interface, `InMemoryStore`, `SQLiteStore`, and `FirebaseStore`.
 - `packages/server` (`@critical-path/server`): Web Fetch router and platform adapters (`createNextHandler`, `createSvelteKitHandler`).
 - `packages/client` (`@critical-path/client`): Type-safe HTTP Client SDK (`CriticalPathClient`).
 - `packages/react` (`@critical-path/react`): React Context Provider (`CriticalPathProvider`) and hooks (`useProjects`, `useTasks`, `useKanban`).
@@ -122,11 +122,10 @@ File: `app/api/critical-path/[...path]/route.ts`
 
 ```ts
 import { createNextHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
 
 const handler = createNextHandler({
-  initialData: {
-    projects: [{ id: 'proj_1', key: 'NEXT', name: 'Next.js App Roadmap' }]
-  }
+  store: new SQLiteStore({ filename: 'app.db' })
 });
 
 export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE, handler as OPTIONS };
@@ -138,11 +137,10 @@ File: `src/routes/api/critical-path/[...path]/+server.ts`
 
 ```ts
 import { createSvelteKitHandler } from '@critical-path/server';
+import { FirebaseStore } from '@critical-path/core';
 
 const handler = createSvelteKitHandler({
-  initialData: {
-    projects: [{ id: 'proj_1', key: 'SVELTE', name: 'SvelteKit Workspace' }]
-  }
+  store: new FirebaseStore({ db: myFirestore })
 });
 
 export const GET = handler.GET;
@@ -241,15 +239,40 @@ export const handler = createNextHandler({
 
 ---
 
-## 8. Custom Storage Adapters
+## 8. Storage Adapters
 
-Implement the `StorageAdapter` interface from `@critical-path/core` to connect PostgreSQL, Prisma, Drizzle, or MongoDB:
+Critical Path provides three built-in storage adapter implementations and an extensible `StorageAdapter` interface:
+
+### 1. `InMemoryStore`
+- Fast, zero-config in-memory Map store. Ideal for local prototyping and fast unit tests.
+
+### 2. `SQLiteStore`
+- Embedded relational database powered by native Node.js SQLite (`node:sqlite`).
+- Automatic table initialization for projects, tasks, sprints, comments, activities, time entries, dependencies, and webhooks.
+
+```ts
+import { SQLiteStore } from '@critical-path/core';
+
+const store = new SQLiteStore({ filename: 'critical-path.db' });
+```
+
+### 3. `FirebaseStore`
+- Native Firestore integration supporting both Web SDK (`firebase/firestore`) and Admin SDK (`firebase-admin/firestore`).
+
+```ts
+import { FirebaseStore } from '@critical-path/core';
+
+const store = new FirebaseStore({ db: firestoreInstance });
+```
+
+### 4. Custom Storage Adapter
+To connect PostgreSQL, Prisma, Drizzle, or MongoDB, implement the `StorageAdapter` interface:
 
 ```ts
 import type { StorageAdapter, Project, Task } from '@critical-path/core';
 
 export class PostgresStorageAdapter implements StorageAdapter {
-  // Implement CRUD methods for getProjects, getProject, createProject,
+  // Implement full async CRUD methods: getProjects, getProject, createProject,
   // getTasks, getTask, createTask, updateTask, deleteTask, etc.
 }
 ```

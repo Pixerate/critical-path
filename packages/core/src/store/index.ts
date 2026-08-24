@@ -1,7 +1,9 @@
+export * from './sqlite.js';
+export * from './firebase.js';
+
 import type {
   Project,
   Task,
-  User,
   Sprint,
   Comment,
   TimeEntry,

@@ -1,55 +1,72 @@
-# @critical-path/core
+# `@critical-path/core`
 
-> **Core domain engine, data models, and plugin architecture for Critical Path.**
-
-`@critical-path/core` provides the core business logic, type definitions, storage abstractions, and plugin lifecycle hooks for the [Critical Path](https://github.com/Pixerate/Critical-Path) headless project management framework.
+> The foundational domain engine, plugin lifecycle hooks, and storage adapters for **Critical Path**.
 
 ---
 
-## 📦 Installation
+## 📦 Features
 
-```bash
-npm install @critical-path/core
-# or
-pnpm add @critical-path/core
-```
-
----
-
-## 🚀 Key Features
-
-- **Domain Models**: TypeScript interfaces for `Project`, `Task`, `Sprint`, `Comment`, `Activity`, `TimeEntry`, and `CustomFieldDefinition`.
-- **`CriticalPathEngine`**: Central engine that coordinates storage operations and executes plugin lifecycle hooks.
-- **Storage Abstraction**: `StorageAdapter` interface for connecting custom databases (PostgreSQL, SQLite, Prisma, Drizzle) and included `InMemoryStore`.
-- **Strapi-Style Plugin Architecture**: `PluginRegistry` supporting lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`).
+- **Domain Engine**: Complete business logic for projects, tasks, sprints, comments, activities, time tracking, task dependencies, and webhooks.
+- **Plugin Lifecycle Architecture**: Extensible hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`, etc.).
+- **Multiple Built-in Storage Adapters**:
+  - `InMemoryStore`: Fast, zero-config in-memory storage for local dev and testing.
+  - `SQLiteStore`: Embedded relational database storage powered by native Node.js SQLite (`node:sqlite`).
+  - `FirebaseStore`: Firestore collection mapping for cloud-native web and mobile backends.
+  - Custom `StorageAdapter` interface for connecting PostgreSQL, Prisma, or Drizzle.
 
 ---
 
-## 💡 Quick Example
+## 🚀 Usage Example
+
+### Using SQLiteStore
 
 ```ts
-import { CriticalPathEngine, InMemoryStore } from '@critical-path/core';
+import { CriticalPathEngine, SQLiteStore } from '@critical-path/core';
 
-const store = new InMemoryStore();
+// Initialize SQLite database store (file-backed or :memory:)
+const store = new SQLiteStore({ filename: 'critical-path.db' });
 const engine = new CriticalPathEngine({ store });
 
 // Create a project
 const project = await engine.createProject({
   key: 'MAIN',
-  name: 'Core Engine Roadmap'
+  name: 'Core Roadmap'
 });
 
 // Create a task
 const task = await engine.createTask({
   projectId: project.id,
-  title: 'Setup Core Engine',
-  status: 'in_progress',
+  title: 'Setup Database Migration',
+  status: 'todo',
   priority: 'high'
 });
 ```
 
+### Using FirebaseStore
+
+```ts
+import { CriticalPathEngine, FirebaseStore } from '@critical-path/core';
+
+// Initialize Firebase / Firestore store
+const store = new FirebaseStore({ db: myFirestoreInstance });
+const engine = new CriticalPathEngine({ store });
+```
+
 ---
 
-## 📄 License
+## 🔌 Creating a Custom Plugin
 
-MIT © [Critical Path](https://github.com/Pixerate/Critical-Path)
+```ts
+import type { CriticalPathPlugin } from '@critical-path/core';
+
+export const auditPlugin: CriticalPathPlugin = {
+  id: 'audit-logger',
+  name: 'Audit Logger',
+  version: '1.0.0',
+  hooks: {
+    beforeTaskCreate: (task) => {
+      return { ...task, tags: [...(task.tags || []), 'AUDITED'] };
+    }
+  }
+};
+```
