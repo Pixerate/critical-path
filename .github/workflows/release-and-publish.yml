@@ -37,9 +37,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Enable NPM Provenance for OIDC Trusted Publishing
-        run: npm config set provenance true --location=global
-
       - name: Check for pending changesets
         id: changeset_check
         run: |
@@ -62,12 +59,7 @@ jobs:
         run: pnpm run test
 
       - name: Publish changed packages to NPM using OIDC Trusted Publishing
-        run: |
-          if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
-            NODE_AUTH_TOKEN="${{ secrets.NPM_TOKEN }}" pnpm exec changeset publish
-          else
-            pnpm exec changeset publish
-          fi
+        run: pnpm publish -r --access public --provenance --no-git-checks
 
       - name: Commit version bumps & changelogs, push git tags
         if: steps.changeset_check.outputs.count > 0
