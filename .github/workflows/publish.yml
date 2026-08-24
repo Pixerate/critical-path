@@ -1,0 +1,66 @@
+name: Publish Packages to NPM
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Build & Publish Package
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'Pixerate' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install
+
+      - name: Build Packages
+        run: pnpm run build
+
+      - name: Run Test Suite
+        run: pnpm run test
+
+      - name: Publish @critical-path/svelte to NPM if Version Bumped
+        run: |
+          cd packages/svelte
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          echo "Checking if $PACKAGE_NAME@$PACKAGE_VERSION is already published on npm..."
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version > /dev/null 2>&1; then
+            echo "Version $PACKAGE_VERSION is already published to npm. Skipping publish."
+          else
+            echo "Publishing $PACKAGE_NAME@$PACKAGE_VERSION to npm via Trusted Publishing..."
+            npm publish --access public --provenance
+
+            TAG_NAME="$PACKAGE_NAME@$PACKAGE_VERSION"
+            echo "Tagging commit with $TAG_NAME in GitHub..."
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            if git rev-parse "$TAG_NAME" >/dev/null 2>&1 || git ls-remote --tags origin "refs/tags/$TAG_NAME" | grep -q "$TAG_NAME"; then
+              echo "Tag $TAG_NAME already exists. Skipping tag creation."
+            else
+              git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+              git push origin "$TAG_NAME" || true
+            fi
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
