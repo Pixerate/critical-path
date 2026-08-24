@@ -16,11 +16,78 @@
 
 Whether you're building a custom client portal, an internal software engineering dashboard, or an AI-driven project workspace in **Next.js** or **SvelteKit**, Critical Path handles task tracking, sprint management, custom schemas, role-based permissions, and activity feeds behind a clean, type-safe API.
 
+![Critical Path Framework Overview](./docs/assets/framework_overview.png)
+
 ---
 
 ## 🏗️ Architecture Overview
 
-![Critical Path Architecture Overview](./docs/assets/architecture_overview.png)
+```mermaid
+graph TD
+    subgraph UI ["Presentation & UI Layer"]
+        React["@critical-path/react<br/>(CriticalPathProvider, useKanban, useTasks)"]
+        Svelte["@critical-path/svelte<br/>(createProjectStore, createTaskStore)"]
+        Client["@critical-path/client<br/>(CriticalPathClient SDK)"]
+    end
+
+    subgraph Server ["Transport & Server Layer"]
+        ServerPackage["@critical-path/server"]
+        NextAdapter["createNextHandler<br/>(Next.js App Router)"]
+        SvelteAdapter["createSvelteKitHandler<br/>(SvelteKit Routes)"]
+        Router["CriticalPathRouter<br/>(Web Fetch API: Request / Response)"]
+
+        ServerPackage --> NextAdapter
+        ServerPackage --> SvelteAdapter
+        NextAdapter --> Router
+        SvelteAdapter --> Router
+    end
+
+    subgraph Core ["Domain & Engine Layer (@critical-path/core)"]
+        Engine["CriticalPathEngine"]
+        PluginRegistry["PluginRegistry<br/>(Lifecycle Hooks)"]
+        
+        Engine --> PluginRegistry
+    end
+
+    subgraph Storage ["Storage Adapters (@critical-path/core)"]
+        InMemory["InMemoryStore<br/>(Dev / Testing)"]
+        SQLite["SQLiteStore<br/>(node:sqlite)"]
+        Firebase["FirebaseStore<br/>(Firestore)"]
+        Custom["Custom Adapter<br/>(Postgres / Prisma / Drizzle)"]
+    end
+
+    subgraph Persistence ["Databases & External Systems"]
+        SQLiteDB[("SQLite Database<br/>(.db / :memory:)")]
+        FirestoreDB[("Cloud Firestore")]
+        Webhooks["Webhooks & Audit Stream"]
+    end
+
+    React --> Client
+    Svelte --> Client
+    Client -- "HTTP REST API" --> Router
+    Router --> Engine
+
+    Engine --> InMemory
+    Engine --> SQLite
+    Engine --> Firebase
+    Engine --> Custom
+
+    SQLite --> SQLiteDB
+    Firebase --> FirestoreDB
+    Engine --> Webhooks
+
+    classDef UIStyle fill:#1e1b4b,stroke:#818cf8,color:#fff;
+    classDef ServerStyle fill:#064e3b,stroke:#34d399,color:#fff;
+    classDef CoreStyle fill:#4c1d95,stroke:#c084fc,color:#fff;
+    classDef StorageStyle fill:#78350f,stroke:#fbbf24,color:#fff;
+    classDef DBStyle fill:#1f2937,stroke:#9ca3af,color:#fff;
+
+    class React,Svelte,Client UIStyle;
+    class ServerPackage,NextAdapter,SvelteAdapter,Router ServerStyle;
+    class Engine,PluginRegistry CoreStyle;
+    class InMemory,SQLite,Firebase,Custom StorageStyle;
+    class SQLiteDB,FirestoreDB,Webhooks DBStyle;
+```
 
 ---
 
