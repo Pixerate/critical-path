@@ -20,13 +20,15 @@ jobs:
     name: Build, Version Bump & Publish to NPM
     runs-on: ubuntu-latest
     if: github.repository_owner == 'Pixerate' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -47,7 +49,7 @@ jobs:
       - name: Run test suite
         run: pnpm run test
 
-      - name: Publish packages to NPM
-        run: pnpm --recursive publish --access public --no-git-checks
+      - name: Publish packages to NPM using Trusted Publishing (OIDC Provenance)
+        run: pnpm --recursive publish --access public --no-git-checks --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
