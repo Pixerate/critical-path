@@ -1,5 +1,11 @@
 # @critical-path/react
 
+## 0.1.5
+
+### Patch Changes
+
+- 3470b61: add optimistic updates with error rollback to Svelte state classes and React hooks
+
 ## 0.1.4
 
 ### Patch Changes
