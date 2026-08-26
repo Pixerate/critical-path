@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import type { StorageAdapter } from './index.js';
 import type {
   Project,
@@ -34,7 +34,15 @@ export class SQLiteStore implements StorageAdapter {
     if (config.db) {
       this.db = config.db;
     } else {
-      this.db = new DatabaseSync(config.filename || ':memory:');
+      if (typeof window !== 'undefined') {
+        throw new Error('SQLiteStore is only available in Node.js environments.');
+      }
+      try {
+        const nodeSqlite = eval("require('node:sqlite')");
+        this.db = new nodeSqlite.DatabaseSync(config.filename || ':memory:');
+      } catch (err: any) {
+        throw new Error(`Failed to load node:sqlite module: ${err.message}`);
+      }
     }
     this.initTables();
   }
