@@ -54,7 +54,7 @@ export const DEFAULT_SOFTWARE_WORKFLOW: Workflow = {
   ],
   taskTypes: DEFAULT_TASK_TYPES,
   defaultStatusKey: 'todo',
-  isDefault: true,
+  isDefault: false,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z'
 };
