@@ -1,5 +1,12 @@
 # @critical-path/server
 
+## 0.2.4
+
+### Patch Changes
+
+- Updated dependencies [6e9dece]
+  - @critical-path/core@0.6.0
+
 ## 0.2.3
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # @critical-path/core
 
+## 0.6.0
+
+### Minor Changes
+
+- 6e9dece: Introduce Domain-Driven Design (DDD) constructs:
+  - Rich Domain Aggregates (`TaskEntity`, `ProjectEntity`, `BaseEntity`) encapsulating invariants, transitions, and uncommitted events.
+  - Typed `DomainEventBus` and domain event interfaces (`task.created`, `task.status_changed`, `time.logged`, `dependency.added`, etc.).
+  - DAG task dependency graph cycle detection (`detectDependencyCycle`, `CircularDependencyError`).
+  - Custom field value object validation (`validateCustomFieldValues`, `CustomFieldValidationError`).
+  - Interface segregation for discrete repositories (`ProjectRepository`, `TaskRepository`, `WorkflowRepository`, etc.).
+
 ## 0.5.2
 
 ### Patch Changes
