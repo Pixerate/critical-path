@@ -1,5 +1,16 @@
 # @critical-path/server
 
+## 0.2.0
+
+### Minor Changes
+
+- 35576a6: Introduce Workflow concept to the project management model with status definitions, allowed transition validation, task types, webhook events (workflow.created, workflow.updated, workflow.deleted), server routes, SDK methods, and React/Svelte state hooks.
+
+### Patch Changes
+
+- Updated dependencies [35576a6]
+  - @critical-path/core@0.4.0
+
 ## 0.1.5
 
 ### Patch Changes
