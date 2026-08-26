@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.5.2
+
+### Patch Changes
+
+- c24b76c: Set `isDefault: false` on DEFAULT_SOFTWARE_WORKFLOW so only DEFAULT_SIMPLE_WORKFLOW is default
+
 ## 0.5.1
 
 ### Patch Changes
