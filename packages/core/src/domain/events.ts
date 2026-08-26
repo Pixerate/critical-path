@@ -7,14 +7,15 @@ import type {
   TaskContainer,
   TaskDependency,
   TimeEntry,
-  Comment
+  Comment,
+  Attachment
 } from '../types/index.js';
 
 export interface DomainEvent<TPayload = Record<string, unknown>> {
   readonly id: string;
   readonly name: string;
   readonly aggregateId: string;
-  readonly aggregateType: 'Task' | 'Project' | 'Workflow' | 'Iteration' | 'Team' | 'Container' | 'Dependency';
+  readonly aggregateType: 'Task' | 'Project' | 'Workflow' | 'Iteration' | 'Team' | 'Container' | 'Dependency' | 'Comment' | 'Attachment';
   readonly occurredAt: string;
   readonly payload: TPayload;
 }
@@ -51,7 +52,27 @@ export interface TimeLoggedEvent extends DomainEvent<{ timeEntry: TimeEntry; tas
 
 export interface CommentAddedEvent extends DomainEvent<{ comment: Comment; taskId: string }> {
   readonly name: 'comment.created';
-  readonly aggregateType: 'Task';
+  readonly aggregateType: 'Comment';
+}
+
+export interface CommentUpdatedEvent extends DomainEvent<{ comment: Comment; previous: Comment }> {
+  readonly name: 'comment.updated';
+  readonly aggregateType: 'Comment';
+}
+
+export interface CommentDeletedEvent extends DomainEvent<{ commentId: string; taskId: string }> {
+  readonly name: 'comment.deleted';
+  readonly aggregateType: 'Comment';
+}
+
+export interface AttachmentCreatedEvent extends DomainEvent<{ attachment: Attachment }> {
+  readonly name: 'attachment.created';
+  readonly aggregateType: 'Attachment';
+}
+
+export interface AttachmentDeletedEvent extends DomainEvent<{ attachmentId: string; storageKey?: string; url: string }> {
+  readonly name: 'attachment.deleted';
+  readonly aggregateType: 'Attachment';
 }
 
 export interface TaskDependencyAddedEvent extends DomainEvent<{ dependency: TaskDependency }> {
@@ -111,6 +132,10 @@ export type CriticalPathDomainEvent =
   | TaskDeletedEvent
   | TimeLoggedEvent
   | CommentAddedEvent
+  | CommentUpdatedEvent
+  | CommentDeletedEvent
+  | AttachmentCreatedEvent
+  | AttachmentDeletedEvent
   | TaskDependencyAddedEvent
   | ProjectCreatedEvent
   | ProjectUpdatedEvent

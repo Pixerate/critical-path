@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { Project, Task, TaskStatus, Workflow } from '@critical-path/core';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import type { Project, Task, TaskStatus, Workflow, Comment, Attachment } from '@critical-path/core';
 import { useCriticalPathClient } from './provider.js';
 
 export function useWorkflows() {
@@ -268,4 +268,164 @@ export function useKanban(projectId?: string) {
   };
 
   return { columns, tasks, loading, error, refresh, moveTask, createTask };
+}
+
+export interface ThreadedComment extends Comment {
+  replies: ThreadedComment[];
+}
+
+export function useComments(taskId: string) {
+  const client = useCriticalPathClient();
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchComments = useCallback(async () => {
+    if (!taskId) {
+      setComments([]);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const data = await client.getComments(taskId);
+      setComments(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, taskId]);
+
+  useEffect(() => {
+    fetchComments();
+  }, [fetchComments]);
+
+  const addComment = async (input: Omit<Comment, 'id' | 'taskId' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const created = await client.addComment({ ...input, taskId });
+      setComments((prev) => [...prev, created]);
+      return created;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const updateComment = async (id: string, updates: Partial<Comment>) => {
+    try {
+      const updated = await client.updateComment(id, updates);
+      setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
+      return updated;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const deleteComment = async (id: string) => {
+    try {
+      await client.deleteComment(id);
+      setComments((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  // Build tree of threaded comments
+  const threads = useMemo(() => {
+    const map = new Map<string, ThreadedComment>();
+    const roots: ThreadedComment[] = [];
+
+    // First pass: wrap comments
+    for (const c of comments) {
+      map.set(c.id, { ...c, replies: [] });
+    }
+
+    // Second pass: link replies to parents
+    for (const c of comments) {
+      const threaded = map.get(c.id)!;
+      if (c.parentId && map.has(c.parentId)) {
+        map.get(c.parentId)!.replies.push(threaded);
+      } else {
+        roots.push(threaded);
+      }
+    }
+
+    return roots;
+  }, [comments]);
+
+  return {
+    comments,
+    threads,
+    loading,
+    error,
+    refresh: fetchComments,
+    addComment,
+    updateComment,
+    deleteComment
+  };
+}
+
+export function useAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string }) {
+  const client = useCriticalPathClient();
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const filterKey = JSON.stringify(filter || {});
+
+  const fetchAttachments = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await client.getAttachments(filter);
+      setAttachments(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, filterKey]);
+
+  useEffect(() => {
+    fetchAttachments();
+  }, [fetchAttachments]);
+
+  const createAttachment = async (input: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const created = await client.createAttachment(input);
+      setAttachments((prev) => [created, ...prev]);
+      return created;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const deleteAttachment = async (id: string) => {
+    try {
+      await client.deleteAttachment(id);
+      setAttachments((prev) => prev.filter((a) => a.id !== id));
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  return {
+    attachments,
+    loading,
+    error,
+    refresh: fetchAttachments,
+    createAttachment,
+    deleteAttachment
+  };
 }

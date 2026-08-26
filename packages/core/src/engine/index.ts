@@ -8,6 +8,11 @@ import type {
   TaskContainer,
   Iteration,
   Comment,
+  Attachment,
+  FileStorageAdapter,
+  UploadFileInput,
+  PresignedUrlOptions,
+  PresignedUploadResult,
   TimeEntry,
   WebhookEvent,
   Workflow,
@@ -40,13 +45,18 @@ import {
   ContainerCreatedEvent,
   TaskDependencyAddedEvent,
   TimeLoggedEvent,
-  CommentAddedEvent
+  CommentAddedEvent,
+  CommentUpdatedEvent,
+  CommentDeletedEvent,
+  AttachmentCreatedEvent,
+  AttachmentDeletedEvent
 } from '../domain/events.js';
 import { validateCustomFieldValues } from '../domain/custom-fields.js';
 import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
 
 export class CriticalPathEngine {
   public readonly store: StorageAdapter;
+  public readonly fileStorage?: FileStorageAdapter;
   public readonly plugins: PluginRegistry;
   public readonly events: DomainEventBus;
 
@@ -55,6 +65,7 @@ export class CriticalPathEngine {
       ? (config.store as StorageAdapter)
       : new InMemoryStore();
 
+    this.fileStorage = config.fileStorage;
     this.plugins = new PluginRegistry();
     this.events = new DomainEventBus();
 
@@ -601,6 +612,14 @@ export class CriticalPathEngine {
   }
 
   // --- Comments ---
+  async getComments(taskId: string): Promise<Comment[]> {
+    return this.store.getComments(taskId);
+  }
+
+  async getComment(id: string): Promise<Comment | null> {
+    return this.store.getComment(id);
+  }
+
   async addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
     const created = await this.store.addComment(comment);
     const now = new Date().toISOString();
@@ -608,8 +627,8 @@ export class CriticalPathEngine {
     const event: CommentAddedEvent = {
       id: `evt_${Math.random().toString(36).substring(2, 9)}`,
       name: 'comment.created',
-      aggregateId: comment.taskId,
-      aggregateType: 'Task',
+      aggregateId: created.id,
+      aggregateType: 'Comment',
       occurredAt: now,
       payload: { taskId: comment.taskId, comment: created }
     };
@@ -617,6 +636,150 @@ export class CriticalPathEngine {
 
     this.dispatchWebhook('comment.created', { comment: created });
     return created;
+  }
+
+  async updateComment(id: string, updates: Partial<Comment>): Promise<Comment | null> {
+    const existing = await this.store.getComment(id);
+    if (!existing) return null;
+
+    const updated = await this.store.updateComment(id, updates);
+    if (!updated) return null;
+
+    const now = new Date().toISOString();
+    const event: CommentUpdatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'comment.updated',
+      aggregateId: updated.id,
+      aggregateType: 'Comment',
+      occurredAt: now,
+      payload: { comment: updated, previous: existing }
+    };
+    await this.events.publish(event);
+
+    this.dispatchWebhook('comment.updated', { comment: updated });
+    return updated;
+  }
+
+  async deleteComment(id: string): Promise<boolean> {
+    const existing = await this.store.getComment(id);
+    if (!existing) return false;
+
+    const deleted = await this.store.deleteComment(id);
+    if (deleted) {
+      const now = new Date().toISOString();
+      const event: CommentDeletedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'comment.deleted',
+        aggregateId: id,
+        aggregateType: 'Comment',
+        occurredAt: now,
+        payload: { taskId: existing.taskId, commentId: id }
+      };
+      await this.events.publish(event);
+
+      this.dispatchWebhook('comment.deleted', { commentId: id, taskId: existing.taskId });
+    }
+    return deleted;
+  }
+
+  // --- Attachments ---
+  async getAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string }): Promise<Attachment[]> {
+    return this.store.getAttachments(filter);
+  }
+
+  async getAttachment(id: string): Promise<Attachment | null> {
+    return this.store.getAttachment(id);
+  }
+
+  async createAttachment(attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
+    const created = await this.store.createAttachment(attachment);
+    const now = new Date().toISOString();
+
+    const event: AttachmentCreatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'attachment.created',
+      aggregateId: created.id,
+      aggregateType: 'Attachment',
+      occurredAt: now,
+      payload: { attachment: created }
+    };
+    await this.events.publish(event);
+
+    this.dispatchWebhook('attachment.created', { attachment: created });
+    return created;
+  }
+
+  async deleteAttachment(id: string): Promise<boolean> {
+    const existing = await this.store.getAttachment(id);
+    if (!existing) return false;
+
+    if (existing.storageKey && this.fileStorage) {
+      try {
+        await this.fileStorage.delete(existing.storageKey);
+      } catch {
+        // Silently continue if underlying file is already gone
+      }
+    }
+
+    const deleted = await this.store.deleteAttachment(id);
+    if (deleted) {
+      const now = new Date().toISOString();
+      const event: AttachmentDeletedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'attachment.deleted',
+        aggregateId: id,
+        aggregateType: 'Attachment',
+        occurredAt: now,
+        payload: { attachmentId: id, storageKey: existing.storageKey, url: existing.url }
+      };
+      await this.events.publish(event);
+
+      this.dispatchWebhook('attachment.deleted', { attachmentId: id, taskId: existing.taskId, projectId: existing.projectId });
+    }
+    return deleted;
+  }
+
+  async uploadAttachmentFile(
+    input: UploadFileInput & {
+      taskId?: string;
+      projectId?: string;
+      commentId?: string;
+      uploaderId: string;
+      uploaderType?: 'user' | 'agent' | 'system';
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<Attachment> {
+    if (!this.fileStorage) {
+      throw new Error('No FileStorageAdapter configured in CriticalPathEngine. Pass "fileStorage" in config to enable direct file uploads.');
+    }
+
+    const uploadResult = await this.fileStorage.upload({
+      filename: input.filename,
+      data: input.data,
+      mimeType: input.mimeType,
+      pathPrefix: input.pathPrefix || (input.projectId ? `projects/${input.projectId}` : input.taskId ? `tasks/${input.taskId}` : undefined)
+    });
+
+    return this.createAttachment({
+      taskId: input.taskId,
+      projectId: input.projectId,
+      commentId: input.commentId,
+      uploaderId: input.uploaderId,
+      uploaderType: input.uploaderType || 'user',
+      filename: input.filename,
+      mimeType: uploadResult.mimeType,
+      sizeBytes: uploadResult.sizeBytes,
+      url: uploadResult.url,
+      storageKey: uploadResult.storageKey,
+      metadata: input.metadata
+    });
+  }
+
+  async getPresignedAttachmentUploadUrl(options: PresignedUrlOptions): Promise<PresignedUploadResult> {
+    if (!this.fileStorage || !this.fileStorage.getPresignedUploadUrl) {
+      throw new Error('Presigned uploads are not supported by the configured FileStorageAdapter.');
+    }
+    return this.fileStorage.getPresignedUploadUrl(options);
   }
 
   // --- Teams ---

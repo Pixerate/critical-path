@@ -16,7 +16,9 @@ Welcome to the **Critical Path** developer documentation. This guide provides an
 6. [Client SDKs & Reactive UI Bindings](#6-client-sdks--reactive-ui-bindings)
 7. [Extensibility & Plugin Development](#7-extensibility--plugin-development)
 8. [Storage Adapters (InMemory, SQLite, Firebase)](#8-storage-adapters)
-9. [Domain-Driven Design (DDD) & Event-Driven Architecture](#9-domain-driven-design-ddd--event-driven-architecture)
+9. [File Storage Adapters (Attachments & S3 / Firebase Storage)](#9-file-storage-adapters-attachments--s3--firebase-storage)
+10. [Threaded Comments & Attachments (React & Svelte)](#10-threaded-comments--attachments-react--svelte)
+11. [Domain-Driven Design (DDD) & Event-Driven Architecture](#11-domain-driven-design-ddd--event-driven-architecture)
 
 ---
 
@@ -326,7 +328,111 @@ export class PostgresStorageAdapter implements StorageAdapter {
 
 ---
 
-## 9. Domain-Driven Design (DDD) & Event-Driven Architecture
+## 9. File Storage Adapters (Attachments & S3 / Firebase Storage)
+
+Critical Path provides dedicated `FileStorageAdapter` implementations for binary attachments and assets:
+
+### 1. `InMemoryFileStore`
+- Local testing and development store with in-memory buffer storage and simulated presigned URLs.
+
+```ts
+import { InMemoryFileStore, CriticalPathEngine } from '@critical-path/core';
+
+const fileStorage = new InMemoryFileStore();
+const engine = new CriticalPathEngine({ fileStorage });
+```
+
+### 2. `S3StorageAdapter`
+- Zero-runtime-dependency S3 adapter compatible with AWS SDK v3 (`@aws-sdk/client-s3`), AWS SDK v2, MinIO, and Cloudflare R2.
+
+```ts
+import { S3Client } from '@aws-sdk/client-s3';
+import { S3StorageAdapter, CriticalPathEngine } from '@critical-path/core';
+
+const s3Client = new S3Client({ region: 'us-east-1' });
+const fileStorage = new S3StorageAdapter({
+  bucket: 'my-project-attachments',
+  region: 'us-east-1',
+  s3Client
+});
+
+const engine = new CriticalPathEngine({ fileStorage });
+```
+
+### 3. `FirebaseStorageAdapter`
+- Duck-typed adapter compatible with Google Cloud Storage (`@google-cloud/storage`) and Firebase Admin Storage bucket instances.
+
+```ts
+import { getStorage } from 'firebase-admin/storage';
+import { FirebaseStorageAdapter, CriticalPathEngine } from '@critical-path/core';
+
+const bucket = getStorage().bucket();
+const fileStorage = new FirebaseStorageAdapter({ bucket });
+
+const engine = new CriticalPathEngine({ fileStorage });
+```
+
+---
+
+## 10. Threaded Comments & Attachments (React & Svelte)
+
+### React Hooks (`@critical-path/react`)
+
+```tsx
+import { useComments, useAttachments } from '@critical-path/react';
+
+function TaskDetail({ taskId }: { taskId: string }) {
+  const { comments, threads, addComment, updateComment, deleteComment } = useComments(taskId);
+  const { attachments, createAttachment, deleteAttachment } = useAttachments({ taskId });
+
+  return (
+    <div>
+      <h3>Discussion ({comments.length})</h3>
+      {threads.map(thread => (
+        <div key={thread.id}>
+          <p><strong>{thread.authorId}</strong> ({thread.authorType}): {thread.content}</p>
+          {thread.replies.map(reply => (
+            <p key={reply.id} style={{ marginLeft: 20 }}>↪ {reply.content}</p>
+          ))}
+        </div>
+      ))}
+
+      <h3>Attachments ({attachments.length})</h3>
+      {attachments.map(att => (
+        <a key={att.id} href={att.url} target="_blank" rel="noreferrer">{att.filename}</a>
+      ))}
+    </div>
+  );
+}
+```
+
+### Svelte 5 Runes (`@critical-path/svelte`)
+
+```svelte
+<script lang="ts">
+  import { createCommentState, createAttachmentState, createCriticalPathClient } from '@critical-path/svelte';
+
+  const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
+  const commentState = createCommentState(client, 'task_123');
+  const attachmentState = createAttachmentState(client, { taskId: 'task_123' });
+
+  commentState.fetch();
+  attachmentState.fetch();
+</script>
+
+{#each commentState.threads as thread}
+  <div>
+    <p>{thread.content}</p>
+    {#each thread.replies as reply}
+      <p style="margin-left: 20px;">↪ {reply.content}</p>
+    {/each}
+  </div>
+{/each}
+```
+
+---
+
+## 11. Domain-Driven Design (DDD) & Event-Driven Architecture
 
 `@critical-path/core` provides first-class Domain-Driven Design constructs:
 

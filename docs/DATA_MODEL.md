@@ -27,11 +27,16 @@ erDiagram
     USER ||--o{ TASK : reviewed
     USER ||--o{ COMMENT : authored
     USER ||--o{ TIME_ENTRY : logged
+    USER ||--o{ ATTACHMENT : uploaded
 
     TASK ||--o{ TASK : parent_of
     TASK ||--o{ COMMENT : has
     TASK ||--o{ TIME_ENTRY : tracks
     TASK ||--o{ TASK_DEPENDENCY : dependent_on
+    TASK ||--o{ ATTACHMENT : has
+
+    COMMENT ||--o{ COMMENT : parent_of
+    COMMENT ||--o{ ATTACHMENT : has
 
     WORKFLOW {
         string id PK
@@ -140,7 +145,27 @@ erDiagram
         string id PK
         string taskId FK
         string authorId FK
+        string authorType "user | agent | system"
+        string parentId FK "Threaded reply support"
         string content
+        object metadata
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    ATTACHMENT {
+        string id PK
+        string taskId FK
+        string projectId FK
+        string commentId FK
+        string uploaderId FK
+        string uploaderType "user | agent | system"
+        string filename
+        string mimeType
+        number sizeBytes
+        string url
+        string storageKey
+        object metadata
         datetime createdAt
         datetime updatedAt
     }

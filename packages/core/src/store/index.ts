@@ -8,6 +8,7 @@ import type {
   Team,
   TaskContainer,
   Comment,
+  Attachment,
   TimeEntry,
   Activity,
   Webhook,
@@ -66,7 +67,17 @@ export interface IterationRepository {
 
 export interface CommentRepository {
   getComments(taskId: string): Promise<Comment[]>;
+  getComment(id: string): Promise<Comment | null>;
   addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment>;
+  updateComment(id: string, updates: Partial<Comment>): Promise<Comment | null>;
+  deleteComment(id: string): Promise<boolean>;
+}
+
+export interface AttachmentRepository {
+  getAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string }): Promise<Attachment[]>;
+  getAttachment(id: string): Promise<Attachment | null>;
+  createAttachment(attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment>;
+  deleteAttachment(id: string): Promise<boolean>;
 }
 
 export interface ActivityRepository {
@@ -97,6 +108,7 @@ export interface StorageAdapter
     ContainerRepository,
     IterationRepository,
     CommentRepository,
+    AttachmentRepository,
     ActivityRepository,
     TimeEntryRepository,
     DependencyRepository,
@@ -110,6 +122,7 @@ export class InMemoryStore implements StorageAdapter {
   private containers = new Map<string, TaskContainer>();
   private iterations = new Map<string, Iteration>();
   private comments = new Map<string, Comment>();
+  private attachments = new Map<string, Attachment>();
   private activities: Activity[] = [];
   private timeEntries = new Map<string, TimeEntry>();
   private dependencies = new Map<string, TaskDependency>();
@@ -328,12 +341,63 @@ export class InMemoryStore implements StorageAdapter {
     return Array.from(this.comments.values()).filter((c) => c.taskId === taskId);
   }
 
+  async getComment(id: string): Promise<Comment | null> {
+    return this.comments.get(id) || null;
+  }
+
   async addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
     const id = `cmt_${Math.random().toString(36).substring(2, 9)}`;
     const now = new Date().toISOString();
     const newComment: Comment = { ...comment, id, createdAt: now, updatedAt: now };
     this.comments.set(id, newComment);
     return newComment;
+  }
+
+  async updateComment(id: string, updates: Partial<Comment>): Promise<Comment | null> {
+    const existing = this.comments.get(id);
+    if (!existing) return null;
+    const updated: Comment = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    this.comments.set(id, updated);
+    return updated;
+  }
+
+  async deleteComment(id: string): Promise<boolean> {
+    return this.comments.delete(id);
+  }
+
+  // Attachments
+  async getAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string }): Promise<Attachment[]> {
+    return Array.from(this.attachments.values()).filter((a) => {
+      if (filter?.taskId && a.taskId !== filter.taskId) return false;
+      if (filter?.projectId && a.projectId !== filter.projectId) return false;
+      if (filter?.commentId && a.commentId !== filter.commentId) return false;
+      return true;
+    });
+  }
+
+  async getAttachment(id: string): Promise<Attachment | null> {
+    return this.attachments.get(id) || null;
+  }
+
+  async createAttachment(attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
+    const id = `att_${Math.random().toString(36).substring(2, 9)}`;
+    const now = new Date().toISOString();
+    const newAttachment: Attachment = {
+      ...attachment,
+      id,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.attachments.set(id, newAttachment);
+    return newAttachment;
+  }
+
+  async deleteAttachment(id: string): Promise<boolean> {
+    return this.attachments.delete(id);
   }
 
   // Activities

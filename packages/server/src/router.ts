@@ -95,6 +95,26 @@ export class CriticalPathRouter {
             const task = await this.engine.createTask(body);
             return this.jsonResponse({ task }, 201);
           }
+        } else if (subResource === 'comments') {
+          if (method === 'GET') {
+            const comments = await this.engine.getComments(taskId);
+            return this.jsonResponse({ comments });
+          }
+          if (method === 'POST') {
+            const body = await request.json();
+            const comment = await this.engine.addComment({ ...body, taskId });
+            return this.jsonResponse({ comment }, 201);
+          }
+        } else if (subResource === 'attachments') {
+          if (method === 'GET') {
+            const attachments = await this.engine.getAttachments({ taskId });
+            return this.jsonResponse({ attachments });
+          }
+          if (method === 'POST') {
+            const body = await request.json();
+            const attachment = await this.engine.createAttachment({ ...body, taskId });
+            return this.jsonResponse({ attachment }, 201);
+          }
         } else if (subResource === 'dependencies') {
           if (method === 'GET') {
             const graph = await this.engine.getTaskDependencyGraph(taskId);
@@ -251,16 +271,70 @@ export class CriticalPathRouter {
 
       // Comments API
       if (segments[0] === 'comments') {
-        if (method === 'GET') {
-          const taskId = url.searchParams.get('taskId');
-          if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
-          const comments = await this.engine.store.getComments(taskId);
-          return this.jsonResponse({ comments });
+        const commentId = segments[1];
+        if (!commentId) {
+          if (method === 'GET') {
+            const taskId = url.searchParams.get('taskId');
+            if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
+            const comments = await this.engine.getComments(taskId);
+            return this.jsonResponse({ comments });
+          }
+          if (method === 'POST') {
+            const body = await request.json();
+            const comment = await this.engine.addComment(body);
+            return this.jsonResponse({ comment }, 201);
+          }
+        } else {
+          if (method === 'GET') {
+            const comment = await this.engine.getComment(commentId);
+            if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
+            return this.jsonResponse({ comment });
+          }
+          if (method === 'PATCH' || method === 'PUT') {
+            const body = await request.json();
+            const updated = await this.engine.updateComment(commentId, body);
+            if (!updated) return this.jsonResponse({ error: 'Comment not found' }, 404);
+            return this.jsonResponse({ comment: updated });
+          }
+          if (method === 'DELETE') {
+            const deleted = await this.engine.deleteComment(commentId);
+            return this.jsonResponse({ success: deleted });
+          }
         }
-        if (method === 'POST') {
-          const body = await request.json();
-          const comment = await this.engine.store.addComment(body);
-          return this.jsonResponse({ comment }, 201);
+      }
+
+      // Attachments API
+      if (segments[0] === 'attachments') {
+        const attachmentId = segments[1];
+        if (attachmentId === 'presign') {
+          if (method === 'POST') {
+            const body = await request.json();
+            const presigned = await this.engine.getPresignedAttachmentUploadUrl(body);
+            return this.jsonResponse({ presigned });
+          }
+        } else if (!attachmentId) {
+          if (method === 'GET') {
+            const taskId = url.searchParams.get('taskId') || undefined;
+            const projectId = url.searchParams.get('projectId') || undefined;
+            const commentId = url.searchParams.get('commentId') || undefined;
+            const attachments = await this.engine.getAttachments({ taskId, projectId, commentId });
+            return this.jsonResponse({ attachments });
+          }
+          if (method === 'POST') {
+            const body = await request.json();
+            const attachment = await this.engine.createAttachment(body);
+            return this.jsonResponse({ attachment }, 201);
+          }
+        } else {
+          if (method === 'GET') {
+            const attachment = await this.engine.getAttachment(attachmentId);
+            if (!attachment) return this.jsonResponse({ error: 'Attachment not found' }, 404);
+            return this.jsonResponse({ attachment });
+          }
+          if (method === 'DELETE') {
+            const deleted = await this.engine.deleteAttachment(attachmentId);
+            return this.jsonResponse({ success: deleted });
+          }
         }
       }
 

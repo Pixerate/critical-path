@@ -6,6 +6,7 @@ import type {
   Team,
   TaskContainer,
   Comment,
+  Attachment,
   TimeEntry,
   Activity,
   Webhook,
@@ -347,10 +348,16 @@ export class FirebaseStore implements StorageAdapter {
     return true;
   }
 
-  // --- Comments & Activity ---
+  // --- Comments ---
   async getComments(taskId: string): Promise<Comment[]> {
     const snap = await this.db.collection('comments').where('taskId', '==', taskId).get();
     return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+  }
+
+  async getComment(id: string): Promise<Comment | null> {
+    const snap = await this.db.collection('comments').doc(id).get();
+    if (!snap.exists) return null;
+    return { ...snap.data(), id: snap.id };
   }
 
   async addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
@@ -359,6 +366,62 @@ export class FirebaseStore implements StorageAdapter {
     const newComment: Comment = { ...comment, id: docRef.id, createdAt: now, updatedAt: now };
     await docRef.set(newComment);
     return newComment;
+  }
+
+  async updateComment(id: string, updates: Partial<Comment>): Promise<Comment | null> {
+    const existing = await this.getComment(id);
+    if (!existing) return null;
+
+    const updated: Comment = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    await this.db.collection('comments').doc(id).set(updated, { merge: true });
+    return updated;
+  }
+
+  async deleteComment(id: string): Promise<boolean> {
+    const existing = await this.getComment(id);
+    if (!existing) return false;
+    await this.db.collection('comments').doc(id).delete();
+    return true;
+  }
+
+  // --- Attachments ---
+  async getAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string }): Promise<Attachment[]> {
+    let snap;
+    if (filter?.taskId) {
+      snap = await this.db.collection('attachments').where('taskId', '==', filter.taskId).get();
+    } else if (filter?.projectId) {
+      snap = await this.db.collection('attachments').where('projectId', '==', filter.projectId).get();
+    } else if (filter?.commentId) {
+      snap = await this.db.collection('attachments').where('commentId', '==', filter.commentId).get();
+    } else {
+      snap = await this.db.collection('attachments').get();
+    }
+    return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+  }
+
+  async getAttachment(id: string): Promise<Attachment | null> {
+    const snap = await this.db.collection('attachments').doc(id).get();
+    if (!snap.exists) return null;
+    return { ...snap.data(), id: snap.id };
+  }
+
+  async createAttachment(attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
+    const docRef = this.db.collection('attachments').doc();
+    const now = new Date().toISOString();
+    const newAtt: Attachment = { ...attachment, id: docRef.id, createdAt: now, updatedAt: now };
+    await docRef.set(newAtt);
+    return newAtt;
+  }
+
+  async deleteAttachment(id: string): Promise<boolean> {
+    const existing = await this.getAttachment(id);
+    if (!existing) return false;
+    await this.db.collection('attachments').doc(id).delete();
+    return true;
   }
 
   async getActivities(filter?: { projectId?: string; taskId?: string }): Promise<Activity[]> {

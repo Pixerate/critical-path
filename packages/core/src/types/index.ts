@@ -174,13 +174,71 @@ export interface Iteration {
   createdAt: string;
 }
 
+export type AuthorType = 'user' | 'agent' | 'system';
+
 export interface Comment {
   id: string;
   taskId: string;
   authorId: string;
+  authorType?: AuthorType;
+  parentId?: string; // Threaded reply support
   content: string;
+  metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Attachment {
+  id: string;
+  taskId?: string;
+  projectId?: string;
+  commentId?: string;
+  uploaderId: string;
+  uploaderType?: AuthorType;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+  storageKey?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateAttachmentInput = Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>;
+
+export interface UploadFileInput {
+  filename: string;
+  data: Uint8Array | ArrayBuffer | Buffer | Blob | string;
+  mimeType?: string;
+  pathPrefix?: string;
+}
+
+export interface UploadFileResult {
+  storageKey: string;
+  url: string;
+  sizeBytes: number;
+  mimeType: string;
+}
+
+export interface PresignedUrlOptions {
+  storageKey: string;
+  expiresInSeconds?: number;
+  contentType?: string;
+}
+
+export interface PresignedUploadResult {
+  uploadUrl: string;
+  storageKey: string;
+  method?: 'PUT' | 'POST';
+  headers?: Record<string, string>;
+}
+
+export interface FileStorageAdapter {
+  upload(input: UploadFileInput): Promise<UploadFileResult>;
+  delete(storageKey: string): Promise<boolean>;
+  getDownloadUrl?(storageKey: string): Promise<string>;
+  getPresignedUploadUrl?(options: PresignedUrlOptions): Promise<PresignedUploadResult>;
 }
 
 export interface TimeEntry {
@@ -221,6 +279,10 @@ export type WebhookEvent =
   | 'task.deleted'
   | 'task.status_changed'
   | 'comment.created'
+  | 'comment.updated'
+  | 'comment.deleted'
+  | 'attachment.created'
+  | 'attachment.deleted'
   | 'iteration.started'
   | 'iteration.completed'
   | 'team.created'
@@ -250,6 +312,7 @@ export interface CriticalPathPlugin {
 
 export interface CriticalPathConfig {
   store?: 'memory' | 'sqlite' | unknown;
+  fileStorage?: FileStorageAdapter;
   plugins?: CriticalPathPlugin[];
   webhooks?: Omit<Webhook, 'id' | 'createdAt'>[];
   initialData?: {

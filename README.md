@@ -104,7 +104,9 @@ graph TD
 - 🔌 **Extensible Plugin Engine**: Lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`), custom field type registries, and custom route middlewares.
 - ⚙️ **Dynamic Custom Fields**: Attach structured custom fields (text, select, user, date, number, boolean) to projects and tasks on the fly with strict runtime validation.
 - 🔔 **Webhooks & Audit Streams**: Real-time event notifications (`task.created`, `task.status_changed`) and immutable activity logs.
-- ⏱️ **Time Tracking & Comments**: Threaded task discussions and built-in time entry logging.
+- 💬 **Threaded Conversations & Discussions**: Hierarchical threaded discussions with parent/reply mapping and multi-author taxonomy (`user`, `agent`, `system`).
+- 📁 **Attachment Management & Cloud Storage**: Attachment metadata tracking with zero-dependency adapters for **AWS S3** (`S3StorageAdapter`), **Google Cloud / Firebase Storage** (`FirebaseStorageAdapter`), and in-memory (`InMemoryFileStore`).
+- ⏱️ **Time Tracking & Activity Streams**: Full time entry logging and audit feeds.
 - ⚡ **Type-Safe Ecosystem**: First-class TypeScript types across engine, server route adapters, client SDK, and React/Svelte hooks.
 
 ---

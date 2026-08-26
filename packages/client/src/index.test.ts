@@ -45,4 +45,65 @@ describe('@critical-path/client Tests', () => {
     const transitions = await client.getAllowedTaskTransitions('t1');
     expect(transitions).toEqual(['in_progress', 'canceled']);
   });
+
+  it('handles comments and attachments through client SDK methods', async () => {
+    const mockFetch = async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      const method = init?.method?.toUpperCase() || 'GET';
+
+      if (urlStr.includes('/comments?taskId=t1') && method === 'GET') {
+        return new Response(JSON.stringify({ comments: [{ id: 'c1', taskId: 't1', content: 'SDK Comment', authorId: 'u1', authorType: 'user' }] }), { status: 200 });
+      }
+      if (urlStr.endsWith('/comments') && method === 'POST') {
+        const body = JSON.parse(init?.body as string);
+        return new Response(JSON.stringify({ comment: { id: 'c2', ...body } }), { status: 201 });
+      }
+      if (urlStr.endsWith('/comments/c1') && method === 'PATCH') {
+        const body = JSON.parse(init?.body as string);
+        return new Response(JSON.stringify({ comment: { id: 'c1', content: body.content } }), { status: 200 });
+      }
+      if (urlStr.endsWith('/comments/c1') && method === 'DELETE') {
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }
+      if (urlStr.includes('/attachments?taskId=t1') && method === 'GET') {
+        return new Response(JSON.stringify({ attachments: [{ id: 'a1', filename: 'SDK Doc', mimeType: 'text/plain', sizeBytes: 50, url: 'https://cdn.example.com/a1' }] }), { status: 200 });
+      }
+      if (urlStr.endsWith('/attachments') && method === 'POST') {
+        const body = JSON.parse(init?.body as string);
+        return new Response(JSON.stringify({ attachment: { id: 'a2', ...body } }), { status: 201 });
+      }
+      if (urlStr.endsWith('/attachments/a1') && method === 'DELETE') {
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+    };
+
+    const client = new CriticalPathClient({
+      baseUrl: 'http://localhost:3000/api/critical-path',
+      fetch: mockFetch as typeof fetch
+    });
+
+    const comments = await client.getComments('t1');
+    expect(comments).toHaveLength(1);
+    expect(comments[0].content).toBe('SDK Comment');
+
+    const createdComment = await client.addComment({ taskId: 't1', content: 'New comment', authorId: 'u2', authorType: 'user' });
+    expect(createdComment.id).toBe('c2');
+
+    const updatedComment = await client.updateComment('c1', { content: 'Updated' });
+    expect(updatedComment.content).toBe('Updated');
+
+    const deletedComment = await client.deleteComment('c1');
+    expect(deletedComment).toBe(true);
+
+    const attachments = await client.getAttachments({ taskId: 't1' });
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0].filename).toBe('SDK Doc');
+
+    const createdAtt = await client.createAttachment({ filename: 'file.txt', mimeType: 'text/plain', sizeBytes: 12, url: 'https://example.com/file.txt', uploaderId: 'u1' });
+    expect(createdAtt.id).toBe('a2');
+
+    const deletedAtt = await client.deleteAttachment('a1');
+    expect(deletedAtt).toBe(true);
+  });
 });

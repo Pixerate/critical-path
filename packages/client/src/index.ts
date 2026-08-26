@@ -7,6 +7,9 @@ import type {
   Iteration,
   Activity,
   Comment,
+  Attachment,
+  PresignedUrlOptions,
+  PresignedUploadResult,
   TimeEntry,
   Workflow
 } from '@critical-path/core';
@@ -259,12 +262,71 @@ export class CriticalPathClient {
     return res.comments;
   }
 
+  async getComment(id: string): Promise<Comment> {
+    const res = await this.request<{ comment: Comment }>(`/comments/${encodeURIComponent(id)}`);
+    return res.comment;
+  }
+
   async addComment(data: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
     const res = await this.request<{ comment: Comment }>('/comments', {
       method: 'POST',
       body: JSON.stringify(data)
     });
     return res.comment;
+  }
+
+  async updateComment(id: string, updates: Partial<Comment>): Promise<Comment> {
+    const res = await this.request<{ comment: Comment }>(`/comments/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+    return res.comment;
+  }
+
+  async deleteComment(id: string): Promise<boolean> {
+    const res = await this.request<{ success: boolean }>(`/comments/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    return res.success;
+  }
+
+  // Attachments
+  async getAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string }): Promise<Attachment[]> {
+    const params = new URLSearchParams();
+    if (filter?.taskId) params.set('taskId', filter.taskId);
+    if (filter?.projectId) params.set('projectId', filter.projectId);
+    if (filter?.commentId) params.set('commentId', filter.commentId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await this.request<{ attachments: Attachment[] }>(`/attachments${query}`);
+    return res.attachments;
+  }
+
+  async getAttachment(id: string): Promise<Attachment> {
+    const res = await this.request<{ attachment: Attachment }>(`/attachments/${encodeURIComponent(id)}`);
+    return res.attachment;
+  }
+
+  async createAttachment(data: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
+    const res = await this.request<{ attachment: Attachment }>('/attachments', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.attachment;
+  }
+
+  async deleteAttachment(id: string): Promise<boolean> {
+    const res = await this.request<{ success: boolean }>(`/attachments/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    return res.success;
+  }
+
+  async getPresignedAttachmentUploadUrl(options: PresignedUrlOptions): Promise<PresignedUploadResult> {
+    const res = await this.request<{ presigned: PresignedUploadResult }>('/attachments/presign', {
+      method: 'POST',
+      body: JSON.stringify(options)
+    });
+    return res.presigned;
   }
 
   // Time Entries

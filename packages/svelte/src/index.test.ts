@@ -6,7 +6,11 @@ import {
   TaskState,
   createTaskState,
   WorkflowState,
-  createWorkflowState
+  createWorkflowState,
+  CommentState,
+  createCommentState,
+  AttachmentState,
+  createAttachmentState
 } from './index.js';
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Project, Task, Workflow } from '@critical-path/core';
@@ -183,6 +187,69 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       await expect(taskState.deleteTask('task_1')).rejects.toThrow('Delete failed');
       // Should restore deleted task
       expect(taskState.data).toEqual([mockTask]);
+    });
+  });
+
+  describe('CommentState', () => {
+    it('fetches, creates, updates, and deletes comments', async () => {
+      const mockComment = {
+        id: 'cmt_1',
+        taskId: 'task_1',
+        content: 'Root comment',
+        authorId: 'u1',
+        authorType: 'user' as const,
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      };
+      const updatedComment = { ...mockComment, content: 'Updated comment' };
+
+      const mockClient = {
+        getComments: vi.fn().mockResolvedValue([mockComment]),
+        addComment: vi.fn().mockResolvedValue(mockComment),
+        updateComment: vi.fn().mockResolvedValue(updatedComment),
+        deleteComment: vi.fn().mockResolvedValue(true)
+      } as unknown as CriticalPathClient;
+
+      const commentState = new CommentState(mockClient, 'task_1');
+      await commentState.fetch();
+
+      expect(commentState.data).toEqual([mockComment]);
+
+      await commentState.updateComment('cmt_1', { content: 'Updated comment' });
+      expect(commentState.data[0].content).toBe('Updated comment');
+
+      await commentState.deleteComment('cmt_1');
+      expect(commentState.data).toEqual([]);
+    });
+  });
+
+  describe('AttachmentState', () => {
+    it('fetches, creates, and deletes attachments', async () => {
+      const mockAttachment = {
+        id: 'att_1',
+        filename: 'spec.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 1024,
+        url: 'https://storage.example.com/spec.pdf',
+        uploaderId: 'u1',
+        uploaderType: 'user' as const,
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      };
+
+      const mockClient = {
+        getAttachments: vi.fn().mockResolvedValue([mockAttachment]),
+        createAttachment: vi.fn().mockResolvedValue(mockAttachment),
+        deleteAttachment: vi.fn().mockResolvedValue(true)
+      } as unknown as CriticalPathClient;
+
+      const attachmentState = new AttachmentState(mockClient, { taskId: 'task_1' });
+      await attachmentState.fetch();
+
+      expect(attachmentState.data).toEqual([mockAttachment]);
+
+      await attachmentState.deleteAttachment('att_1');
+      expect(attachmentState.data).toEqual([]);
     });
   });
 });

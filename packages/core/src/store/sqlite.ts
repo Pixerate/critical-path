@@ -7,6 +7,7 @@ import type {
   Team,
   TaskContainer,
   Comment,
+  Attachment,
   TimeEntry,
   Activity,
   Webhook,
@@ -150,7 +151,27 @@ export class SQLiteStore implements StorageAdapter {
         id TEXT PRIMARY KEY,
         taskId TEXT NOT NULL,
         authorId TEXT NOT NULL,
+        authorType TEXT,
+        parentId TEXT,
         content TEXT NOT NULL,
+        metadata TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS attachments (
+        id TEXT PRIMARY KEY,
+        taskId TEXT,
+        projectId TEXT,
+        commentId TEXT,
+        uploaderId TEXT NOT NULL,
+        uploaderType TEXT,
+        filename TEXT NOT NULL,
+        mimeType TEXT NOT NULL,
+        sizeBytes INTEGER NOT NULL,
+        url TEXT NOT NULL,
+        storageKey TEXT,
+        metadata TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       );
@@ -660,10 +681,24 @@ export class SQLiteStore implements StorageAdapter {
     return (result.changes ?? 0) > 0;
   }
 
-  // --- Comments & Activity ---
+  // --- Comments ---
   async getComments(taskId: string): Promise<Comment[]> {
-    const stmt = this.db.prepare('SELECT * FROM comments WHERE taskId = ?');
-    return stmt.all(taskId) as any[];
+    const stmt = this.db.prepare('SELECT * FROM comments WHERE taskId = ? ORDER BY createdAt ASC');
+    const rows = stmt.all(taskId) as any[];
+    return rows.map((r) => ({
+      ...r,
+      metadata: r.metadata ? JSON.parse(r.metadata) : undefined
+    }));
+  }
+
+  async getComment(id: string): Promise<Comment | null> {
+    const stmt = this.db.prepare('SELECT * FROM comments WHERE id = ?');
+    const row = stmt.get(id) as any;
+    if (!row) return null;
+    return {
+      ...row,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+    };
   }
 
   async addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
@@ -672,11 +707,142 @@ export class SQLiteStore implements StorageAdapter {
     const newComment: Comment = { ...comment, id, createdAt: now, updatedAt: now };
 
     const stmt = this.db.prepare(`
-      INSERT INTO comments (id, taskId, authorId, content, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO comments (id, taskId, authorId, authorType, parentId, content, metadata, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(newComment.id, newComment.taskId, newComment.authorId, newComment.content, newComment.createdAt, newComment.updatedAt);
+    stmt.run(
+      newComment.id,
+      newComment.taskId,
+      newComment.authorId,
+      newComment.authorType || 'user',
+      newComment.parentId || null,
+      newComment.content,
+      newComment.metadata ? JSON.stringify(newComment.metadata) : null,
+      newComment.createdAt,
+      newComment.updatedAt
+    );
     return newComment;
+  }
+
+  async updateComment(id: string, updates: Partial<Comment>): Promise<Comment | null> {
+    const existing = await this.getComment(id);
+    if (!existing) return null;
+
+    const updated: Comment = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+
+    const stmt = this.db.prepare(`
+      UPDATE comments SET
+        authorId = ?,
+        authorType = ?,
+        parentId = ?,
+        content = ?,
+        metadata = ?,
+        updatedAt = ?
+      WHERE id = ?
+    `);
+    stmt.run(
+      updated.authorId,
+      updated.authorType || 'user',
+      updated.parentId || null,
+      updated.content,
+      updated.metadata ? JSON.stringify(updated.metadata) : null,
+      updated.updatedAt,
+      id
+    );
+    return updated;
+  }
+
+  async deleteComment(id: string): Promise<boolean> {
+    const stmt = this.db.prepare('DELETE FROM comments WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  }
+
+  // --- Attachments ---
+  async getAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string }): Promise<Attachment[]> {
+    let sql = 'SELECT * FROM attachments';
+    const params: any[] = [];
+    const conditions: string[] = [];
+
+    if (filter?.taskId) {
+      conditions.push('taskId = ?');
+      params.push(filter.taskId);
+    }
+    if (filter?.projectId) {
+      conditions.push('projectId = ?');
+      params.push(filter.projectId);
+    }
+    if (filter?.commentId) {
+      conditions.push('commentId = ?');
+      params.push(filter.commentId);
+    }
+
+    if (conditions.length > 0) {
+      sql += ' WHERE ' + conditions.join(' AND ');
+    }
+    sql += ' ORDER BY createdAt DESC';
+
+    const stmt = this.db.prepare(sql);
+    const rows = stmt.all(...params) as any[];
+    return rows.map((r) => ({
+      ...r,
+      sizeBytes: Number(r.sizeBytes),
+      metadata: r.metadata ? JSON.parse(r.metadata) : undefined
+    }));
+  }
+
+  async getAttachment(id: string): Promise<Attachment | null> {
+    const stmt = this.db.prepare('SELECT * FROM attachments WHERE id = ?');
+    const row = stmt.get(id) as any;
+    if (!row) return null;
+    return {
+      ...row,
+      sizeBytes: Number(row.sizeBytes),
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+    };
+  }
+
+  async createAttachment(attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
+    const id = `att_${Math.random().toString(36).substring(2, 9)}`;
+    const now = new Date().toISOString();
+    const newAtt: Attachment = {
+      ...attachment,
+      id,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    const stmt = this.db.prepare(`
+      INSERT INTO attachments (id, taskId, projectId, commentId, uploaderId, uploaderType, filename, mimeType, sizeBytes, url, storageKey, metadata, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      newAtt.id,
+      newAtt.taskId || null,
+      newAtt.projectId || null,
+      newAtt.commentId || null,
+      newAtt.uploaderId,
+      newAtt.uploaderType || 'user',
+      newAtt.filename,
+      newAtt.mimeType,
+      newAtt.sizeBytes,
+      newAtt.url,
+      newAtt.storageKey || null,
+      newAtt.metadata ? JSON.stringify(newAtt.metadata) : null,
+      newAtt.createdAt,
+      newAtt.updatedAt
+    );
+    return newAtt;
+  }
+
+  async deleteAttachment(id: string): Promise<boolean> {
+    const stmt = this.db.prepare('DELETE FROM attachments WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
   }
 
   async getActivities(filter?: { projectId?: string; taskId?: string }): Promise<Activity[]> {
