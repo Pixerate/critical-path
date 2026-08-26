@@ -97,10 +97,12 @@ graph TD
 ## ✨ Key Features
 
 - 🎯 **Headless & Frontend-Agnostic**: Pure API-first architecture designed for Next.js (App Router), SvelteKit, Express, Fastify, and edge runtimes.
+- 🏛️ **Domain-Driven Design (DDD)**: Rich Domain Aggregates (`TaskEntity`, `ProjectEntity`), DAG dependency cycle prevention (`detectDependencyCycle`), custom field Value Object validation, and interface-segregated repositories.
+- 📡 **Typed Domain Event Bus**: In-memory pub/sub broker (`DomainEventBus`) emitting typed domain events (`task.created`, `task.status_changed`, `time.logged`, `dependency.added`) on all mutations.
 - ⚡ **Built-in & Custom Industry Workflows**: Pre-configured workflow templates for Software Development (`DEFAULT_SOFTWARE_WORKFLOW`), VFX Production (`DEFAULT_VFX_WORKFLOW`), and Simple Tasks (`DEFAULT_SIMPLE_WORKFLOW`), or build fully custom status transition pipelines.
 - 📋 **Comprehensive PM Work Items**: Full CRUD for Projects, Workflows, Tasks, Sprints/Cycles, Deliverable Containers (`sequence`, `shot`, `epic`), Task Dependencies, Subtasks, Priorities, and Estimates.
 - 🔌 **Extensible Plugin Engine**: Lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`), custom field type registries, and custom route middlewares.
-- ⚙️ **Dynamic Custom Fields**: Attach structured custom fields (text, select, user, date, number, boolean) to projects and tasks on the fly.
+- ⚙️ **Dynamic Custom Fields**: Attach structured custom fields (text, select, user, date, number, boolean) to projects and tasks on the fly with strict runtime validation.
 - 🔔 **Webhooks & Audit Streams**: Real-time event notifications (`task.created`, `task.status_changed`) and immutable activity logs.
 - ⏱️ **Time Tracking & Comments**: Threaded task discussions and built-in time entry logging.
 - ⚡ **Type-Safe Ecosystem**: First-class TypeScript types across engine, server route adapters, client SDK, and React/Svelte hooks.
@@ -113,10 +115,12 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 
 ### Core Data & API Layer
 - [x] **RESTful API**: Endpoints for projects, tasks, sprints, comments, and activities
+- [x] **Domain Events & Event Bus**: Typed domain event contracts and in-memory event bus
 - [ ] **GraphQL API**: *(Planned)*
 - [x] **Webhook & Hook Support**: Async lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, etc.)
 - [x] **Flexible Data Models**: Custom fields, custom statuses, and configurable priority levels
 - [x] **Role-Based Access Control**: Project and task level RBAC role definitions
+
 
 ### Project & Task Management
 - [x] **Work Item Tracking**: Task CRUD with priorities, due dates, estimates, and tags

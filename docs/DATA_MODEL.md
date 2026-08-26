@@ -209,3 +209,16 @@ Querying `engine.getTaskDependencyGraph(taskId)` returns:
 - `upstreamTasks`: Tasks that `taskId` depends on.
 - `downstreamTasks`: Tasks that depend on `taskId`.
 - `dependencies`: Raw dependency records.
+
+### DAG Invariant & Cycle Prevention
+The dependency graph enforces a strict **Directed Acyclic Graph (DAG)** invariant. Calling `engine.addDependency()` or `detectDependencyCycle()` performs depth-first cycle traversal. If adding an edge would introduce a cycle, a `CircularDependencyError` is thrown with the exact cycle path (e.g. `['task_C', 'task_A', 'task_B', 'task_C']`).
+
+---
+
+## Domain Aggregates & Event Contracts
+
+In addition to DTO interfaces, `@critical-path/core` provides rich Domain Aggregates:
+- `TaskEntity`: Manages state transitions, duration calculations, and raises uncommitted domain events (`task.created`, `task.status_changed`, `time.logged`).
+- `ProjectEntity`: Manages key generation and schema validation for custom fields.
+- `DomainEventBus`: Dispatches strongly typed events (`DomainEvent<T>`) across the domain boundary.
+

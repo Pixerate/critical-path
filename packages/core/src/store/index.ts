@@ -16,67 +16,91 @@ import type {
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
 
-export interface StorageAdapter {
-  // Projects
+export interface ProjectRepository {
   getProjects(): Promise<Project[]>;
   getProject(id: string): Promise<Project | null>;
   createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project>;
   updateProject(id: string, updates: Partial<Project>): Promise<Project | null>;
   deleteProject(id: string): Promise<boolean>;
+}
 
-  // Workflows
+export interface WorkflowRepository {
   getWorkflows(): Promise<Workflow[]>;
   getWorkflow(id: string): Promise<Workflow | null>;
   createWorkflow(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow>;
   updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow | null>;
   deleteWorkflow(id: string): Promise<boolean>;
+}
 
-  // Tasks
+export interface TaskRepository {
   getTasks(projectId?: string): Promise<Task[]>;
   getTask(id: string): Promise<Task | null>;
   createTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task>;
   updateTask(id: string, updates: Partial<Task>): Promise<Task | null>;
   deleteTask(id: string): Promise<boolean>;
+}
 
-  // Teams
+export interface TeamRepository {
   getTeams(): Promise<Team[]>;
   getTeam(id: string): Promise<Team | null>;
   createTeam(team: Omit<Team, 'id' | 'createdAt' | 'updatedAt'>): Promise<Team>;
   updateTeam(id: string, updates: Partial<Team>): Promise<Team | null>;
   deleteTeam(id: string): Promise<boolean>;
+}
 
-  // Task Containers
+export interface ContainerRepository {
   getContainers(projectId: string): Promise<TaskContainer[]>;
   getContainer(id: string): Promise<TaskContainer | null>;
   createContainer(container: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer>;
   updateContainer(id: string, updates: Partial<TaskContainer>): Promise<TaskContainer | null>;
   deleteContainer(id: string): Promise<boolean>;
+}
 
-  // Iterations
+export interface IterationRepository {
   getIterations(projectId: string): Promise<Iteration[]>;
   getIteration(id: string): Promise<Iteration | null>;
   createIteration(iteration: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration>;
   updateIteration(id: string, updates: Partial<Iteration>): Promise<Iteration | null>;
   deleteIteration(id: string): Promise<boolean>;
+}
 
-  // Comments & Activity
+export interface CommentRepository {
   getComments(taskId: string): Promise<Comment[]>;
   addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment>;
+}
+
+export interface ActivityRepository {
   getActivities(filter?: { projectId?: string; taskId?: string }): Promise<Activity[]>;
   logActivity(activity: Omit<Activity, 'id' | 'createdAt'>): Promise<Activity>;
+}
 
-  // Time Tracking
+export interface TimeEntryRepository {
   getTimeEntries(taskId: string): Promise<TimeEntry[]>;
   logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'>): Promise<TimeEntry>;
+}
 
-  // Dependencies
+export interface DependencyRepository {
   getDependencies(taskId: string): Promise<TaskDependency[]>;
   addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency>;
+}
 
-  // Webhooks
+export interface WebhookRepository {
   getWebhooks(): Promise<Webhook[]>;
   addWebhook(webhook: Omit<Webhook, 'id' | 'createdAt'>): Promise<Webhook>;
 }
+
+export interface StorageAdapter
+  extends ProjectRepository,
+    WorkflowRepository,
+    TaskRepository,
+    TeamRepository,
+    ContainerRepository,
+    IterationRepository,
+    CommentRepository,
+    ActivityRepository,
+    TimeEntryRepository,
+    DependencyRepository,
+    WebhookRepository {}
 
 export class InMemoryStore implements StorageAdapter {
   private projects = new Map<string, Project>();

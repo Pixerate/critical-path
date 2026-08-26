@@ -16,6 +16,7 @@ Welcome to the **Critical Path** developer documentation. This guide provides an
 6. [Client SDKs & Reactive UI Bindings](#6-client-sdks--reactive-ui-bindings)
 7. [Extensibility & Plugin Development](#7-extensibility--plugin-development)
 8. [Storage Adapters (InMemory, SQLite, Firebase)](#8-storage-adapters)
+9. [Domain-Driven Design (DDD) & Event-Driven Architecture](#9-domain-driven-design-ddd--event-driven-architecture)
 
 ---
 
@@ -319,7 +320,82 @@ To connect PostgreSQL, Prisma, Drizzle, or MongoDB, implement the `StorageAdapte
 import type { StorageAdapter, Project, Task } from '@critical-path/core';
 
 export class PostgresStorageAdapter implements StorageAdapter {
-  // Implement full async CRUD methods: getProjects, getProject, createProject,
-  // getTasks, getTask, createTask, updateTask, deleteTask, etc.
+  // Implement discrete repository methods or compose ProjectRepository, TaskRepository, etc.
 }
 ```
+
+---
+
+## 9. Domain-Driven Design (DDD) & Event-Driven Architecture
+
+`@critical-path/core` provides first-class Domain-Driven Design constructs:
+
+### Domain Event Bus & Typed Events
+Aggregates and the `CriticalPathEngine` raise typed domain events on every state mutation:
+```ts
+import { CriticalPathEngine, type TaskStatusChangedEvent } from '@critical-path/core';
+
+const engine = new CriticalPathEngine();
+
+// Subscribe to specific typed domain events
+const unsubscribe = engine.events.subscribe<TaskStatusChangedEvent>('task.status_changed', (event) => {
+  console.log(`Task ${event.aggregateId} status changed from ${event.payload.previousStatus} to ${event.payload.newStatus}`);
+});
+
+// Wildcard listener
+engine.events.subscribe('*', (event) => {
+  console.log(`[Event: ${event.name}]`, event.payload);
+});
+```
+
+### Rich Domain Entities & Aggregates
+Encapsulate internal state invariants, transition validation, and uncommitted event accumulation:
+```ts
+import { TaskEntity, DEFAULT_SOFTWARE_WORKFLOW } from '@critical-path/core';
+
+const task = TaskEntity.create({
+  projectId: 'proj_1',
+  title: 'Implement Core Feature',
+  status: 'todo',
+  priority: 'high'
+});
+
+// Invariant-validated state transition
+task.transitionTo('in_progress', DEFAULT_SOFTWARE_WORKFLOW);
+
+// Domain time tracking
+task.logTime({ hours: 2.5, isBillable: true });
+
+// Read & dispatch events
+const events = task.getUncommittedEvents();
+task.clearEvents();
+```
+
+### DAG Graph Dependency Invariants
+Prevents cyclic dependencies in task dependency graphs:
+```ts
+import { detectDependencyCycle, CircularDependencyError } from '@critical-path/core';
+
+// Throws CircularDependencyError if a cycle would be introduced
+await engine.addDependency({
+  taskId: 'task_C',
+  dependsOnTaskId: 'task_A',
+  type: 'blocking'
+});
+```
+
+### Interface-Segregated Repositories
+Discrete interfaces are provided for repository segregation:
+- `ProjectRepository`
+- `WorkflowRepository`
+- `TaskRepository`
+- `TeamRepository`
+- `ContainerRepository`
+- `IterationRepository`
+- `CommentRepository`
+- `ActivityRepository`
+- `TimeEntryRepository`
+- `DependencyRepository`
+- `WebhookRepository`
+- `StorageAdapter` (composition of all repositories)
+

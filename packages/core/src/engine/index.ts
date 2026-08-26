@@ -2,26 +2,53 @@ import type {
   CriticalPathConfig,
   Project,
   Task,
+  TaskDependency,
   TaskDependencyGraph,
   Team,
   TaskContainer,
   Iteration,
+  Comment,
+  TimeEntry,
   WebhookEvent,
-  Workflow
+  Workflow,
+  CreateTaskInput,
+  CreateProjectInput
 } from '../types/index.js';
 import { StorageAdapter, InMemoryStore } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
-import { deriveTaskLifecycleState, type TaskLifecycleState } from '../utils/status.js';
+import { deriveTaskLifecycleState, type TaskLifecycleState, resolveStatusDefinition } from '../utils/status.js';
 import {
   validateTransition,
   getAllowedNextStatuses,
   WorkflowValidationError,
   DEFAULT_SOFTWARE_WORKFLOW
 } from '../utils/workflow.js';
+import {
+  DomainEventBus,
+  TaskCreatedEvent,
+  TaskUpdatedEvent,
+  TaskStatusChangedEvent,
+  TaskDeletedEvent,
+  ProjectCreatedEvent,
+  ProjectUpdatedEvent,
+  WorkflowCreatedEvent,
+  WorkflowUpdatedEvent,
+  WorkflowDeletedEvent,
+  IterationStartedEvent,
+  IterationCompletedEvent,
+  TeamCreatedEvent,
+  ContainerCreatedEvent,
+  TaskDependencyAddedEvent,
+  TimeLoggedEvent,
+  CommentAddedEvent
+} from '../domain/events.js';
+import { validateCustomFieldValues } from '../domain/custom-fields.js';
+import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
 
 export class CriticalPathEngine {
   public readonly store: StorageAdapter;
   public readonly plugins: PluginRegistry;
+  public readonly events: DomainEventBus;
 
   constructor(config: CriticalPathConfig = {}) {
     this.store = typeof config.store === 'object' && config.store !== null
@@ -29,6 +56,7 @@ export class CriticalPathEngine {
       : new InMemoryStore();
 
     this.plugins = new PluginRegistry();
+    this.events = new DomainEventBus();
 
     if (config.plugins) {
       for (const plugin of config.plugins) {
@@ -85,6 +113,18 @@ export class CriticalPathEngine {
 
   async createWorkflow(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow> {
     const created = await this.store.createWorkflow(workflow);
+    const now = new Date().toISOString();
+
+    const event: WorkflowCreatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'workflow.created',
+      aggregateId: created.id,
+      aggregateType: 'Workflow',
+      occurredAt: now,
+      payload: { workflow: created }
+    };
+    await this.events.publish(event);
+
     await this.store.logActivity({
       actorId: 'system',
       action: 'workflow.created',
@@ -100,6 +140,17 @@ export class CriticalPathEngine {
 
     const updated = await this.store.updateWorkflow(id, updates);
     if (updated) {
+      const now = new Date().toISOString();
+      const event: WorkflowUpdatedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'workflow.updated',
+        aggregateId: updated.id,
+        aggregateType: 'Workflow',
+        occurredAt: now,
+        payload: { workflow: updated, previous: existing }
+      };
+      await this.events.publish(event);
+
       await this.store.logActivity({
         actorId: 'system',
         action: 'workflow.updated',
@@ -116,6 +167,17 @@ export class CriticalPathEngine {
 
     const deleted = await this.store.deleteWorkflow(id);
     if (deleted) {
+      const now = new Date().toISOString();
+      const event: WorkflowDeletedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'workflow.deleted',
+        aggregateId: id,
+        aggregateType: 'Workflow',
+        occurredAt: now,
+        payload: { workflowId: id, name: existing.name }
+      };
+      await this.events.publish(event);
+
       await this.store.logActivity({
         actorId: 'system',
         action: 'workflow.deleted',
@@ -160,6 +222,18 @@ export class CriticalPathEngine {
 
   async createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project> {
     const created = await this.store.createProject(project);
+    const now = new Date().toISOString();
+
+    const event: ProjectCreatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'project.created',
+      aggregateId: created.id,
+      aggregateType: 'Project',
+      occurredAt: now,
+      payload: { project: created }
+    };
+    await this.events.publish(event);
+
     await this.store.logActivity({
       projectId: created.id,
       actorId: project.ownerId || 'system',
@@ -168,6 +242,34 @@ export class CriticalPathEngine {
     });
     this.dispatchWebhook('project.created', { project: created });
     return created;
+  }
+
+  async updateProject(id: string, updates: Partial<Project>): Promise<Project | null> {
+    const existing = await this.store.getProject(id);
+    if (!existing) return null;
+
+    const updated = await this.store.updateProject(id, updates);
+    if (updated) {
+      const now = new Date().toISOString();
+      const event: ProjectUpdatedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'project.updated',
+        aggregateId: updated.id,
+        aggregateType: 'Project',
+        occurredAt: now,
+        payload: { project: updated, previous: existing }
+      };
+      await this.events.publish(event);
+
+      await this.store.logActivity({
+        projectId: updated.id,
+        actorId: 'system',
+        action: 'project.updated',
+        details: { name: updated.name }
+      });
+      this.dispatchWebhook('project.updated', { project: updated });
+    }
+    return updated;
   }
 
   // --- Tasks ---
@@ -179,18 +281,34 @@ export class CriticalPathEngine {
     return this.store.getTask(id);
   }
 
-  async createTask(taskInput: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task> {
+  async createTask(taskInput: CreateTaskInput): Promise<Task> {
     const processedInput = await this.plugins.runBeforeTaskCreate(taskInput);
     const projectId = processedInput.projectId || taskInput.projectId;
+    const project = await this.store.getProject(projectId);
     const workflow = await this.resolveProjectWorkflow(projectId);
 
+    // Validate custom field domain invariants
+    if (project?.customFieldDefinitions && (processedInput.customFields || taskInput.customFields)) {
+      validateCustomFieldValues(
+        project.customFieldDefinitions,
+        processedInput.customFields || taskInput.customFields
+      );
+    }
+
     const defaultStatus = workflow?.defaultStatusKey || 'todo';
+    const initialStatus = processedInput.status || taskInput.status || defaultStatus;
+    const now = new Date().toISOString();
+
+    // Derive initial lifecycle timestamps
+    const statusDef = resolveStatusDefinition(initialStatus, project?.statusDefinitions || workflow?.statuses);
+    const actualStartDate = processedInput.actualStartDate ?? taskInput.actualStartDate ?? (statusDef.executionState === 'active' ? now : undefined);
+    const actualEndDate = processedInput.actualEndDate ?? taskInput.actualEndDate ?? (statusDef.completionState === 'done' ? now : undefined);
 
     const created = await this.store.createTask({
       projectId,
       title: processedInput.title || taskInput.title,
       description: processedInput.description ?? taskInput.description,
-      status: processedInput.status || taskInput.status || defaultStatus,
+      status: initialStatus,
       priority: processedInput.priority || taskInput.priority || 'medium',
       taskType: processedInput.taskType || taskInput.taskType || 'task',
       assigneeId: processedInput.assigneeId ?? taskInput.assigneeId,
@@ -200,8 +318,8 @@ export class CriticalPathEngine {
       teamId: processedInput.teamId ?? taskInput.teamId,
       containerId: processedInput.containerId ?? taskInput.containerId,
       plannedStartDate: processedInput.plannedStartDate ?? taskInput.plannedStartDate,
-      actualStartDate: processedInput.actualStartDate ?? taskInput.actualStartDate,
-      actualEndDate: processedInput.actualEndDate ?? taskInput.actualEndDate,
+      actualStartDate,
+      actualEndDate,
       dueDate: processedInput.dueDate ?? taskInput.dueDate,
       estimatedHours: processedInput.estimatedHours ?? taskInput.estimatedHours,
       loggedHours: processedInput.loggedHours ?? taskInput.loggedHours ?? 0,
@@ -210,13 +328,24 @@ export class CriticalPathEngine {
       estimatedDurationMinutes: processedInput.estimatedDurationMinutes ?? taskInput.estimatedDurationMinutes,
       actualDurationMinutes: processedInput.actualDurationMinutes ?? taskInput.actualDurationMinutes,
       billableDurationMinutes: processedInput.billableDurationMinutes ?? taskInput.billableDurationMinutes,
-      progress: processedInput.progress ?? taskInput.progress ?? 0,
+      progress: processedInput.progress ?? taskInput.progress ?? (statusDef.completionState === 'done' ? 100 : 0),
       tags: processedInput.tags ?? taskInput.tags ?? [],
       customFields: processedInput.customFields ?? taskInput.customFields ?? {},
       parentId: processedInput.parentId ?? taskInput.parentId
     });
 
     await this.plugins.runAfterTaskCreate(created);
+
+    // Publish typed Domain Event
+    const event: TaskCreatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'task.created',
+      aggregateId: created.id,
+      aggregateType: 'Task',
+      occurredAt: now,
+      payload: { task: created }
+    };
+    await this.events.publish(event);
 
     await this.store.logActivity({
       projectId: created.projectId,
@@ -234,21 +363,83 @@ export class CriticalPathEngine {
     const existing = await this.store.getTask(id);
     if (!existing) return null;
 
+    const project = await this.store.getProject(existing.projectId);
+    const workflow = await this.resolveProjectWorkflow(existing.projectId);
+
+    // Validate workflow transition invariant
     if (updates.status && updates.status !== existing.status) {
-      const workflow = await this.resolveProjectWorkflow(existing.projectId);
       const isValid = validateTransition(workflow || undefined, existing.status, updates.status);
       if (!isValid) {
         throw new WorkflowValidationError(existing.status, updates.status, workflow?.id);
       }
     }
 
+    // Validate custom field invariants
+    if (project?.customFieldDefinitions && updates.customFields) {
+      validateCustomFieldValues(project.customFieldDefinitions, {
+        ...existing.customFields,
+        ...updates.customFields
+      });
+    }
+
     const processedUpdates = await this.plugins.runBeforeTaskUpdate(id, updates);
+
+    // Auto-update execution/completion timestamps if status changes
+    if (processedUpdates.status && processedUpdates.status !== existing.status) {
+      const statusDef = resolveStatusDefinition(
+        processedUpdates.status,
+        project?.statusDefinitions || workflow?.statuses
+      );
+      const now = new Date().toISOString();
+      if (statusDef.executionState === 'active' && !existing.actualStartDate && !processedUpdates.actualStartDate) {
+        processedUpdates.actualStartDate = now;
+      }
+      if (statusDef.completionState === 'done' && !processedUpdates.actualEndDate) {
+        processedUpdates.actualEndDate = now;
+        if (processedUpdates.progress === undefined && (existing.progress || 0) < 100) {
+          processedUpdates.progress = 100;
+        }
+      }
+    }
+
     const updated = await this.store.updateTask(id, processedUpdates);
     if (!updated) return null;
 
     await this.plugins.runAfterTaskUpdate(updated, existing);
 
+    const now = new Date().toISOString();
     const isStatusChange = existing.status !== updated.status;
+
+    // Publish typed Domain Events
+    if (isStatusChange) {
+      const statusEvent: TaskStatusChangedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'task.status_changed',
+        aggregateId: updated.id,
+        aggregateType: 'Task',
+        occurredAt: now,
+        payload: {
+          task: updated,
+          previousStatus: existing.status,
+          newStatus: updated.status
+        }
+      };
+      await this.events.publish(statusEvent);
+    } else {
+      const updateEvent: TaskUpdatedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'task.updated',
+        aggregateId: updated.id,
+        aggregateType: 'Task',
+        occurredAt: now,
+        payload: {
+          task: updated,
+          previous: existing
+        }
+      };
+      await this.events.publish(updateEvent);
+    }
+
     await this.store.logActivity({
       projectId: updated.projectId,
       taskId: updated.id,
@@ -274,6 +465,22 @@ export class CriticalPathEngine {
 
     if (deleted) {
       await this.plugins.runAfterTaskDelete(id);
+      const now = new Date().toISOString();
+
+      const event: TaskDeletedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'task.deleted',
+        aggregateId: id,
+        aggregateType: 'Task',
+        occurredAt: now,
+        payload: {
+          taskId: id,
+          projectId: existing.projectId,
+          title: existing.title
+        }
+      };
+      await this.events.publish(event);
+
       await this.store.logActivity({
         projectId: existing.projectId,
         taskId: id,
@@ -287,6 +494,35 @@ export class CriticalPathEngine {
   }
 
   // --- Task Dependencies & Graph ---
+  async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
+    const existingDependencies = await this.store.getDependencies(dep.taskId);
+    const allProjectDeps = [
+      ...existingDependencies,
+      ...(await this.store.getDependencies(dep.dependsOnTaskId))
+    ];
+
+    // Enforce Directed Acyclic Graph (DAG) Invariant
+    const cycleCheck = detectDependencyCycle(allProjectDeps, dep);
+    if (cycleCheck.hasCycle) {
+      throw new CircularDependencyError(dep.taskId, dep.dependsOnTaskId, cycleCheck.cyclePath);
+    }
+
+    const created = await this.store.addDependency(dep);
+    const now = new Date().toISOString();
+
+    const event: TaskDependencyAddedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'dependency.added',
+      aggregateId: created.id,
+      aggregateType: 'Dependency',
+      occurredAt: now,
+      payload: { dependency: created }
+    };
+    await this.events.publish(event);
+
+    return created;
+  }
+
   async getTaskDependencyGraph(taskId: string): Promise<TaskDependencyGraph> {
     const dependencies = await this.store.getDependencies(taskId);
     const upstreamTaskIds = new Set<string>();
@@ -325,6 +561,64 @@ export class CriticalPathEngine {
     return deriveTaskLifecycleState(task, statusDefs);
   }
 
+  // --- Time Tracking ---
+  async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt' | 'userId'> & { userId?: string }): Promise<TimeEntry> {
+    if (entry.hours <= 0) {
+      throw new Error('Logged hours must be a positive number.');
+    }
+
+    const task = await this.store.getTask(entry.taskId);
+    if (task) {
+      const newLoggedHours = (task.loggedHours || 0) + entry.hours;
+      const newActualHours = (task.actualHours || 0) + entry.hours;
+      const newBillableHours = entry.isBillable !== false ? (task.billableHours || 0) + entry.hours : task.billableHours;
+      await this.store.updateTask(task.id, {
+        loggedHours: newLoggedHours,
+        actualHours: newActualHours,
+        billableHours: newBillableHours
+      });
+    }
+
+    const fullEntry: Omit<TimeEntry, 'id' | 'loggedAt'> = {
+      ...entry,
+      userId: entry.userId || task?.assigneeId || 'system'
+    };
+
+    const created = await this.store.logTime(fullEntry);
+    const now = new Date().toISOString();
+
+    const event: TimeLoggedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'time.logged',
+      aggregateId: entry.taskId,
+      aggregateType: 'Task',
+      occurredAt: now,
+      payload: { taskId: entry.taskId, timeEntry: created }
+    };
+    await this.events.publish(event);
+
+    return created;
+  }
+
+  // --- Comments ---
+  async addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
+    const created = await this.store.addComment(comment);
+    const now = new Date().toISOString();
+
+    const event: CommentAddedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'comment.created',
+      aggregateId: comment.taskId,
+      aggregateType: 'Task',
+      occurredAt: now,
+      payload: { taskId: comment.taskId, comment: created }
+    };
+    await this.events.publish(event);
+
+    this.dispatchWebhook('comment.created', { comment: created });
+    return created;
+  }
+
   // --- Teams ---
   async getTeams(): Promise<Team[]> {
     return this.store.getTeams();
@@ -336,6 +630,18 @@ export class CriticalPathEngine {
 
   async createTeam(team: Omit<Team, 'id' | 'createdAt' | 'updatedAt'>): Promise<Team> {
     const created = await this.store.createTeam(team);
+    const now = new Date().toISOString();
+
+    const event: TeamCreatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'team.created',
+      aggregateId: created.id,
+      aggregateType: 'Team',
+      occurredAt: now,
+      payload: { team: created }
+    };
+    await this.events.publish(event);
+
     this.dispatchWebhook('team.created', { team: created });
     return created;
   }
@@ -359,6 +665,18 @@ export class CriticalPathEngine {
 
   async createContainer(container: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer> {
     const created = await this.store.createContainer(container);
+    const now = new Date().toISOString();
+
+    const event: ContainerCreatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'container.created',
+      aggregateId: created.id,
+      aggregateType: 'Container',
+      occurredAt: now,
+      payload: { container: created }
+    };
+    await this.events.publish(event);
+
     this.dispatchWebhook('container.created', { container: created });
     return created;
   }
@@ -383,6 +701,16 @@ export class CriticalPathEngine {
   async createIteration(iteration: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
     const created = await this.store.createIteration(iteration);
     if (created.status === 'active') {
+      const now = new Date().toISOString();
+      const event: IterationStartedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'iteration.started',
+        aggregateId: created.id,
+        aggregateType: 'Iteration',
+        occurredAt: now,
+        payload: { iteration: created }
+      };
+      await this.events.publish(event);
       this.dispatchWebhook('iteration.started', { iteration: created });
     }
     return created;
@@ -394,9 +722,28 @@ export class CriticalPathEngine {
 
     const updated = await this.store.updateIteration(id, updates);
     if (updated) {
+      const now = new Date().toISOString();
       if (existing.status !== 'active' && updated.status === 'active') {
+        const event: IterationStartedEvent = {
+          id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+          name: 'iteration.started',
+          aggregateId: updated.id,
+          aggregateType: 'Iteration',
+          occurredAt: now,
+          payload: { iteration: updated }
+        };
+        await this.events.publish(event);
         this.dispatchWebhook('iteration.started', { iteration: updated });
       } else if (existing.status !== 'completed' && updated.status === 'completed') {
+        const event: IterationCompletedEvent = {
+          id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+          name: 'iteration.completed',
+          aggregateId: updated.id,
+          aggregateType: 'Iteration',
+          occurredAt: now,
+          payload: { iteration: updated }
+        };
+        await this.events.publish(event);
         this.dispatchWebhook('iteration.completed', { iteration: updated });
       }
     }

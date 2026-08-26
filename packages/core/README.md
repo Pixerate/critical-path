@@ -1,55 +1,85 @@
 # `@critical-path/core`
 
-> The foundational domain engine, plugin lifecycle hooks, and storage adapters for **Critical Path**.
+> The foundational domain engine, Domain-Driven Design (DDD) aggregate roots, domain event bus, graph cycle detection, and storage adapters for **Critical Path**.
 
 ---
 
 ## 📦 Features
 
-- **Domain Engine**: Complete business logic for projects, workflows & status transition rules, tasks, sprints, comments, activities, time tracking, task dependencies, and webhooks.
+- **Domain-Driven Design (DDD) Engine**: Rich aggregates (`TaskEntity`, `ProjectEntity`) encapsulating lifecycle invariants, state transitions, time tracking, and uncommitted domain events.
+- **Typed Domain Event Bus**: In-memory pub/sub `DomainEventBus` enabling reactive subscriptions to granular domain events (`task.created`, `task.status_changed`, `time.logged`, `dependency.added`, etc.).
+- **DAG Graph Cycle Invariant**: Built-in topological validation (`detectDependencyCycle`, `CircularDependencyError`) to ensure strict acyclic task dependency graphs.
+- **Custom Field Value Object Validation**: Strict type-checking (`validateCustomFieldValues`, `CustomFieldValidationError`) against configured project field schemas.
+- **Interface Segregated Repositories**: Focused repository contracts (`ProjectRepository`, `TaskRepository`, `WorkflowRepository`, etc.) composed into `StorageAdapter`.
 - **Plugin Lifecycle Architecture**: Extensible hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`, etc.).
 - **Multiple Built-in Storage Adapters**:
   - `InMemoryStore`: Fast, zero-config in-memory storage for local dev and testing.
   - `SQLiteStore`: Embedded relational database storage powered by native Node.js SQLite (`node:sqlite`).
   - `FirebaseStore`: Firestore collection mapping for cloud-native web and mobile backends.
-  - Custom `StorageAdapter` interface for connecting PostgreSQL, Prisma, or Drizzle.
 
 ---
 
-## 🚀 Usage Example
+## 🚀 Usage Examples
 
-### Using SQLiteStore
+### 1. Initializing the Engine & Subscribing to Domain Events
 
 ```ts
-import { CriticalPathEngine, SQLiteStore } from '@critical-path/core';
+import { CriticalPathEngine, SQLiteStore, type TaskStatusChangedEvent } from '@critical-path/core';
 
-// Initialize SQLite database store (file-backed or :memory:)
 const store = new SQLiteStore({ filename: 'critical-path.db' });
 const engine = new CriticalPathEngine({ store });
 
-// Create a project
-const project = await engine.createProject({
-  key: 'MAIN',
-  name: 'Core Roadmap'
+// Subscribe to specific typed domain events
+engine.events.subscribe<TaskStatusChangedEvent>('task.status_changed', (event) => {
+  console.log(`Task ${event.aggregateId} moved from ${event.payload.previousStatus} to ${event.payload.newStatus}`);
 });
 
-// Create a task
-const task = await engine.createTask({
-  projectId: project.id,
-  title: 'Setup Database Migration',
-  status: 'todo',
-  priority: 'high'
+// Or subscribe to all domain events with wildcard
+engine.events.subscribe('*', (event) => {
+  console.log(`[Domain Event] ${event.name}`, event);
 });
 ```
 
-### Using FirebaseStore
+### 2. Rich Entities & Invariant Enforcement
 
 ```ts
-import { CriticalPathEngine, FirebaseStore } from '@critical-path/core';
+import { TaskEntity, DEFAULT_SOFTWARE_WORKFLOW } from '@critical-path/core';
 
-// Initialize Firebase / Firestore store
-const store = new FirebaseStore({ db: myFirestoreInstance });
-const engine = new CriticalPathEngine({ store });
+// Create a rich Task Aggregate Root
+const task = TaskEntity.create({
+  projectId: 'proj_123',
+  title: 'Implement Payment Gateway',
+  status: 'todo',
+  priority: 'high'
+});
+
+// Perform valid state transitions with workflow enforcement
+task.transitionTo('in_progress', DEFAULT_SOFTWARE_WORKFLOW);
+
+// Log time on aggregate
+task.logTime({ hours: 3.5, isBillable: true });
+
+// Read and dispatch uncommitted events
+const events = task.getUncommittedEvents();
+task.clearEvents();
+```
+
+### 3. DAG Dependency Cycle Prevention
+
+```ts
+import { CircularDependencyError } from '@critical-path/core';
+
+try {
+  await engine.addDependency({
+    taskId: 'task_C',
+    dependsOnTaskId: 'task_A',
+    type: 'blocking'
+  });
+} catch (error) {
+  if (error instanceof CircularDependencyError) {
+    console.error(`Blocked cyclic dependency! Cycle path: ${error.cyclePath.join(' -> ')}`);
+  }
+}
 ```
 
 ---

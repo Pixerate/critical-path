@@ -155,6 +155,13 @@ export interface Task {
   updatedAt: string;
 }
 
+export type CreateTaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'priority'> & {
+  status?: TaskStatus;
+  priority?: Priority;
+};
+
+export type CreateProjectInput = Omit<Project, 'id' | 'createdAt' | 'updatedAt'>;
+
 export interface Iteration {
   id: string;
   projectId: string;
