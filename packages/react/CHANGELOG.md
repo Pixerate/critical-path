@@ -1,5 +1,13 @@
 # @critical-path/react
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [83a5c17]
+  - @critical-path/core@0.5.0
+  - @critical-path/client@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes

@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.5.0
+
+### Minor Changes
+
+- 83a5c17: Add `DEFAULT_VFX_WORKFLOW` preset and validation suite for Software Development and Visual Effects (VFX) production use cases.
+
 ## 0.4.0
 
 ### Minor Changes
