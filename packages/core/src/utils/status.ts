@@ -36,7 +36,7 @@ export function resolveStatusDefinition(
     return DEFAULT_STATUS_DEFINITIONS[statusKey];
   }
   // Fallback heuristic for unknown custom statuses:
-  const isDoneKey = ['done', 'completed', 'finished', 'closed', 'canceled', 'cancelled'].includes(statusKey.toLowerCase());
+  const isDoneKey = ['done', 'completed', 'finished', 'closed', 'canceled', 'cancelled', 'approved', 'final'].includes(statusKey.toLowerCase());
   const isActiveKey = ['in_progress', 'active', 'working', 'in_review', 'review'].includes(statusKey.toLowerCase());
   return {
     key: statusKey,

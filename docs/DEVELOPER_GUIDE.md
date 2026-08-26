@@ -115,6 +115,14 @@ export interface Workflow {
 }
 ```
 
+### Built-in Industry Workflow Presets
+
+Critical Path exports pre-built workflows for common domain models:
+
+1. **`DEFAULT_SOFTWARE_WORKFLOW`**: Standard software engineering SDLC (Backlog -> To Do -> In Progress -> In Review -> Done).
+2. **`DEFAULT_VFX_WORKFLOW`**: Visual Effects production pipeline (Bidding & Draft -> Awarded -> In Production -> Internal Review -> Client Review -> Revision Requested -> Approved Final).
+3. **`DEFAULT_SIMPLE_WORKFLOW`**: Lightweight task workflow (To Do -> In Progress -> Done).
+
 ---
 
 ## 4. REST API Endpoint Reference

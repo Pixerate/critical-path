@@ -320,7 +320,9 @@ export class CriticalPathEngine {
     const task = await this.getTask(taskId);
     if (!task) return null;
     const project = await this.getProject(task.projectId);
-    return deriveTaskLifecycleState(task, project?.statusDefinitions);
+    const workflow = await this.resolveProjectWorkflow(task.projectId);
+    const statusDefs = project?.statusDefinitions || workflow?.statuses;
+    return deriveTaskLifecycleState(task, statusDefs);
   }
 
   // --- Teams ---

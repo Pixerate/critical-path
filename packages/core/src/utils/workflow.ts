@@ -81,6 +81,42 @@ export const DEFAULT_SIMPLE_WORKFLOW: Workflow = {
   updatedAt: '2026-01-01T00:00:00.000Z'
 };
 
+export const DEFAULT_VFX_WORKFLOW: Workflow = {
+  id: 'wf_vfx_default',
+  name: 'VFX Production Workflow',
+  description: 'Visual effects production pipeline from bidding and drafting to internal lead review and client supervisor approval.',
+  statuses: [
+    { key: 'bidding', label: 'Bidding & Draft', completionState: 'not_done', executionState: 'inactive' },
+    { key: 'awarded', label: 'Awarded / Ready', completionState: 'not_done', executionState: 'inactive' },
+    { key: 'in_production', label: 'In Production', completionState: 'not_done', executionState: 'active' },
+    { key: 'internal_review', label: 'Internal Review', completionState: 'not_done', executionState: 'active' },
+    { key: 'client_review', label: 'Client Review', completionState: 'not_done', executionState: 'active' },
+    { key: 'revision_requested', label: 'Revision Requested', completionState: 'not_done', executionState: 'active' },
+    { key: 'approved', label: 'Approved (Final)', completionState: 'done', executionState: 'inactive' },
+    DEFAULT_STATUS_DEFINITIONS.canceled
+  ],
+  transitions: [
+    { name: 'Award Bid', fromStatusKey: 'bidding', toStatusKey: 'awarded' },
+    { name: 'Start Work', fromStatusKey: 'awarded', toStatusKey: 'in_production' },
+    { name: 'Submit to Lead Review', fromStatusKey: 'in_production', toStatusKey: 'internal_review' },
+    { name: 'Submit to Client Review', fromStatusKey: 'internal_review', toStatusKey: 'client_review' },
+    { name: 'Request Internal Revisions', fromStatusKey: 'internal_review', toStatusKey: 'revision_requested' },
+    { name: 'Request Client Revisions', fromStatusKey: 'client_review', toStatusKey: 'revision_requested' },
+    { name: 'Address Revisions', fromStatusKey: 'revision_requested', toStatusKey: 'in_production' },
+    { name: 'Approve Final Shot', fromStatusKey: 'client_review', toStatusKey: 'approved' },
+    { name: 'Cancel', fromStatusKey: '*', toStatusKey: 'canceled' }
+  ],
+  taskTypes: [
+    { key: 'vfx_task', label: 'VFX Task', description: 'Department task (e.g. Matchmove, Animation, FX, Comp)', icon: 'film' },
+    { key: 'asset', label: 'Asset', description: '3D or 2D asset element', icon: 'box' },
+    { key: 'subtask', label: 'Subtask', description: 'Element subtask required to complete a department task', icon: 'corner-down-right' }
+  ],
+  defaultStatusKey: 'bidding',
+  isDefault: false,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z'
+};
+
 export function validateTransition(
   workflow: Workflow | undefined,
   fromStatus: string,
