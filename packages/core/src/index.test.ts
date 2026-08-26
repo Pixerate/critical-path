@@ -172,4 +172,58 @@ describe('CriticalPathEngine Core Tests', () => {
     const graphB = await engine.getTaskDependencyGraph(taskB.id);
     expect(graphB.upstreamTasks.map((t) => t.id)).toContain(taskA.id);
   });
+
+  it('manages workflows and enforces status transitions', async () => {
+    const engine = new CriticalPathEngine();
+
+    // Create a strict workflow
+    const workflow = await engine.createWorkflow({
+      name: 'Strict Software Workflow',
+      defaultStatusKey: 'backlog',
+      statuses: [
+        { key: 'backlog', label: 'Backlog', completionState: 'not_done', executionState: 'inactive' },
+        { key: 'in_progress', label: 'In Progress', completionState: 'not_done', executionState: 'active' },
+        { key: 'done', label: 'Done', completionState: 'done', executionState: 'inactive' }
+      ],
+      transitions: [
+        { id: 't1', fromStatusKey: 'backlog', toStatusKey: 'in_progress', name: 'Start Work' },
+        { id: 't2', fromStatusKey: 'in_progress', toStatusKey: 'done', name: 'Complete Work' }
+      ]
+    });
+
+    expect(workflow.id).toBeDefined();
+
+    // Create project tied to workflow
+    const proj = await engine.createProject({
+      key: 'WF',
+      name: 'Workflow Project',
+      workflowId: workflow.id
+    });
+
+    // Create task
+    const task = await engine.createTask({
+      projectId: proj.id,
+      title: 'Workflow Task',
+      status: 'backlog',
+      priority: 'high'
+    });
+
+    expect(task.status).toBe('backlog');
+    expect(task.taskType).toBe('task');
+
+    // Check allowed transitions
+    const allowed = await engine.getAllowedTaskTransitions(task.id);
+    expect(allowed).toEqual(['in_progress']);
+
+    // Valid transition: backlog -> in_progress
+    const updated = await engine.updateTask(task.id, { status: 'in_progress' });
+    expect(updated?.status).toBe('in_progress');
+
+    // Invalid transition: in_progress -> backlog (not allowed in strict workflow)
+    await expect(engine.updateTask(task.id, { status: 'backlog' })).rejects.toThrow();
+
+    // Valid transition: in_progress -> done
+    const doneTask = await engine.updateTask(task.id, { status: 'done' });
+    expect(doneTask?.status).toBe('done');
+  });
 });

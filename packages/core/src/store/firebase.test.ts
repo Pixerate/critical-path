@@ -56,4 +56,25 @@ describe('FirebaseStore', () => {
     const remaining = await store.getTasks(project.id);
     expect(remaining).toHaveLength(0);
   });
+
+  it('should create, update, and delete workflows in FirebaseStore', async () => {
+    const workflow = await store.createWorkflow({
+      name: 'Firebase Workflow',
+      isDefault: false,
+      defaultStatusKey: 'backlog',
+      statuses: [{ key: 'backlog', label: 'Backlog', completionState: 'not_done', executionState: 'inactive' }],
+      transitions: []
+    });
+
+    expect(workflow.id).toBeDefined();
+
+    const fetched = await store.getWorkflow(workflow.id);
+    expect(fetched?.name).toBe('Firebase Workflow');
+
+    const updated = await store.updateWorkflow(workflow.id, { isDefault: true });
+    expect(updated?.isDefault).toBe(true);
+
+    const deleted = await store.deleteWorkflow(workflow.id);
+    expect(deleted).toBe(true);
+  });
 });

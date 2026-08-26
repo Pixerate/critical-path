@@ -6,11 +6,18 @@ import type {
   Team,
   TaskContainer,
   Iteration,
-  WebhookEvent
+  WebhookEvent,
+  Workflow
 } from '../types/index.js';
 import { StorageAdapter, InMemoryStore } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
 import { deriveTaskLifecycleState, type TaskLifecycleState } from '../utils/status.js';
+import {
+  validateTransition,
+  getAllowedNextStatuses,
+  WorkflowValidationError,
+  DEFAULT_SOFTWARE_WORKFLOW
+} from '../utils/workflow.js';
 
 export class CriticalPathEngine {
   public readonly store: StorageAdapter;
@@ -35,6 +42,11 @@ export class CriticalPathEngine {
   }
 
   private async seedInitialData(data: NonNullable<CriticalPathConfig['initialData']>): Promise<void> {
+    if (data.workflows) {
+      for (const wf of data.workflows) {
+        await this.store.createWorkflow(wf);
+      }
+    }
     if (data.projects) {
       for (const p of data.projects) {
         await this.store.createProject(p);
@@ -60,6 +72,81 @@ export class CriticalPathEngine {
         await this.store.createTask(t);
       }
     }
+  }
+
+  // --- Workflows ---
+  async getWorkflows(): Promise<Workflow[]> {
+    return this.store.getWorkflows();
+  }
+
+  async getWorkflow(id: string): Promise<Workflow | null> {
+    return this.store.getWorkflow(id);
+  }
+
+  async createWorkflow(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow> {
+    const created = await this.store.createWorkflow(workflow);
+    await this.store.logActivity({
+      actorId: 'system',
+      action: 'workflow.created',
+      details: { name: created.name }
+    });
+    this.dispatchWebhook('workflow.created', { workflow: created });
+    return created;
+  }
+
+  async updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow | null> {
+    const existing = await this.store.getWorkflow(id);
+    if (!existing) return null;
+
+    const updated = await this.store.updateWorkflow(id, updates);
+    if (updated) {
+      await this.store.logActivity({
+        actorId: 'system',
+        action: 'workflow.updated',
+        details: { name: updated.name }
+      });
+      this.dispatchWebhook('workflow.updated', { workflow: updated, previous: existing });
+    }
+    return updated;
+  }
+
+  async deleteWorkflow(id: string): Promise<boolean> {
+    const existing = await this.store.getWorkflow(id);
+    if (!existing) return false;
+
+    const deleted = await this.store.deleteWorkflow(id);
+    if (deleted) {
+      await this.store.logActivity({
+        actorId: 'system',
+        action: 'workflow.deleted',
+        details: { name: existing.name }
+      });
+      this.dispatchWebhook('workflow.deleted', { workflowId: id, name: existing.name });
+    }
+    return deleted;
+  }
+
+  async resolveProjectWorkflow(projectId: string): Promise<Workflow | null> {
+    const project = await this.store.getProject(projectId);
+    if (project?.workflow) return project.workflow;
+    if (project?.workflowId) {
+      const wf = await this.store.getWorkflow(project.workflowId);
+      if (wf) return wf;
+    }
+
+    const workflows = await this.store.getWorkflows();
+    const defaultWf = workflows.find((w) => w.isDefault);
+    if (defaultWf) return defaultWf;
+    if (workflows.length > 0) return workflows[0];
+
+    return DEFAULT_SOFTWARE_WORKFLOW;
+  }
+
+  async getAllowedTaskTransitions(taskId: string): Promise<string[]> {
+    const task = await this.store.getTask(taskId);
+    if (!task) return [];
+    const workflow = await this.resolveProjectWorkflow(task.projectId);
+    return getAllowedNextStatuses(workflow || undefined, task.status);
   }
 
   // --- Projects ---
@@ -94,13 +181,18 @@ export class CriticalPathEngine {
 
   async createTask(taskInput: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task> {
     const processedInput = await this.plugins.runBeforeTaskCreate(taskInput);
+    const projectId = processedInput.projectId || taskInput.projectId;
+    const workflow = await this.resolveProjectWorkflow(projectId);
+
+    const defaultStatus = workflow?.defaultStatusKey || 'todo';
 
     const created = await this.store.createTask({
-      projectId: processedInput.projectId || taskInput.projectId,
+      projectId,
       title: processedInput.title || taskInput.title,
       description: processedInput.description ?? taskInput.description,
-      status: processedInput.status || taskInput.status || 'todo',
+      status: processedInput.status || taskInput.status || defaultStatus,
       priority: processedInput.priority || taskInput.priority || 'medium',
+      taskType: processedInput.taskType || taskInput.taskType || 'task',
       assigneeId: processedInput.assigneeId ?? taskInput.assigneeId,
       reporterId: processedInput.reporterId ?? taskInput.reporterId,
       reviewerId: processedInput.reviewerId ?? taskInput.reviewerId,
@@ -141,6 +233,14 @@ export class CriticalPathEngine {
   async updateTask(id: string, updates: Partial<Task>): Promise<Task | null> {
     const existing = await this.store.getTask(id);
     if (!existing) return null;
+
+    if (updates.status && updates.status !== existing.status) {
+      const workflow = await this.resolveProjectWorkflow(existing.projectId);
+      const isValid = validateTransition(workflow || undefined, existing.status, updates.status);
+      if (!isValid) {
+        throw new WorkflowValidationError(existing.status, updates.status, workflow?.id);
+      }
+    }
 
     const processedUpdates = await this.plugins.runBeforeTaskUpdate(id, updates);
     const updated = await this.store.updateTask(id, processedUpdates);

@@ -6,7 +6,7 @@
 
 ## 📦 Features
 
-- **Domain Engine**: Complete business logic for projects, tasks, sprints, comments, activities, time tracking, task dependencies, and webhooks.
+- **Domain Engine**: Complete business logic for projects, workflows & status transition rules, tasks, sprints, comments, activities, time tracking, task dependencies, and webhooks.
 - **Plugin Lifecycle Architecture**: Extensible hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`, etc.).
 - **Multiple Built-in Storage Adapters**:
   - `InMemoryStore`: Fast, zero-config in-memory storage for local dev and testing.

@@ -4,18 +4,47 @@ import {
   ProjectState,
   createProjectState,
   TaskState,
-  createTaskState
+  createTaskState,
+  WorkflowState,
+  createWorkflowState
 } from './index.js';
 import type { CriticalPathClient } from '@critical-path/client';
-import type { Project, Task } from '@critical-path/core';
+import type { Project, Task, Workflow } from '@critical-path/core';
 
 describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
   it('exports client factory and Svelte 5 Runes state factories', () => {
     expect(createCriticalPathClient).toBeDefined();
     expect(createProjectState).toBeDefined();
     expect(createTaskState).toBeDefined();
+    expect(createWorkflowState).toBeDefined();
     expect(ProjectState).toBeDefined();
     expect(TaskState).toBeDefined();
+    expect(WorkflowState).toBeDefined();
+  });
+
+  describe('WorkflowState', () => {
+    it('fetches and creates workflows', async () => {
+      const mockWf: Workflow = {
+        id: 'wf_1',
+        name: 'Svelte Workflow',
+        isDefault: true,
+        defaultStatusKey: 'todo',
+        statuses: [{ key: 'todo', label: 'To Do', completionState: 'not_done', executionState: 'inactive' }],
+        transitions: [],
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      };
+
+      const mockClient = {
+        getWorkflows: vi.fn().mockResolvedValue([mockWf]),
+        createWorkflow: vi.fn().mockResolvedValue(mockWf)
+      } as unknown as CriticalPathClient;
+
+      const wfState = createWorkflowState(mockClient);
+      await wfState.fetch();
+
+      expect(wfState.data).toEqual([mockWf]);
+    });
   });
 
   describe('ProjectState', () => {

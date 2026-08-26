@@ -6,6 +6,9 @@
 
 ```mermaid
 erDiagram
+    WORKFLOW ||--o{ PROJECT : defines
+    WORKFLOW ||--o{ WORKFLOW_TRANSITION : contains
+
     PROJECT ||--o{ TASK : contains
     PROJECT ||--o{ TASK_CONTAINER : contains
     PROJECT ||--o{ ITERATION : contains
@@ -30,12 +33,26 @@ erDiagram
     TASK ||--o{ TIME_ENTRY : tracks
     TASK ||--o{ TASK_DEPENDENCY : dependent_on
 
+    WORKFLOW {
+        string id PK
+        string name
+        string description
+        string defaultStatusKey
+        boolean isDefault
+        StatusDefinition_array statuses
+        WorkflowTransition_array transitions
+        TaskTypeDefinition_array taskTypes
+        datetime createdAt
+        datetime updatedAt
+    }
+
     PROJECT {
         string id PK
         string key
         string name
         string description
         string ownerId FK
+        string workflowId FK
         string_array members
         string_array teamIds FK
         StatusDefinition_array statusDefinitions
@@ -86,6 +103,7 @@ erDiagram
         string description
         string status
         string priority
+        string taskType "task | bug | feature | epic | subtask | custom"
         string assigneeId FK
         string reporterId FK
         string reviewerId FK

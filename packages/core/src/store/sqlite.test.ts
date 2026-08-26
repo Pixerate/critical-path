@@ -75,4 +75,32 @@ describe('SQLiteStore', () => {
     const entries = await store.getTimeEntries('task_1');
     expect(entries).toHaveLength(1);
   });
+
+  it('should create, retrieve, update, and delete workflows', async () => {
+    const workflow = await store.createWorkflow({
+      name: 'SQLite Workflow',
+      isDefault: true,
+      defaultStatusKey: 'todo',
+      statuses: [{ key: 'todo', label: 'To Do', completionState: 'not_done', executionState: 'inactive' }],
+      transitions: []
+    });
+
+    expect(workflow.id).toMatch(/^wf_/);
+    expect(workflow.name).toBe('SQLite Workflow');
+
+    const fetched = await store.getWorkflow(workflow.id);
+    expect(fetched?.isDefault).toBe(true);
+
+    const updated = await store.updateWorkflow(workflow.id, { name: 'Updated SQLite Workflow' });
+    expect(updated?.name).toBe('Updated SQLite Workflow');
+
+    const all = await store.getWorkflows();
+    expect(all).toHaveLength(1);
+
+    const deleted = await store.deleteWorkflow(workflow.id);
+    expect(deleted).toBe(true);
+
+    const remaining = await store.getWorkflows();
+    expect(remaining).toHaveLength(0);
+  });
 });

@@ -70,6 +70,7 @@ export interface Task {
   description?: string;
   status: 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled';
   priority: 'urgent' | 'high' | 'medium' | 'low' | 'none';
+  taskType?: 'task' | 'bug' | 'feature' | 'epic' | 'subtask' | (string & {});
   assigneeId?: string;
   reporterId?: string;
   sprintId?: string;
@@ -79,6 +80,36 @@ export interface Task {
   tags?: string[];
   customFields?: Record<string, unknown>;
   parentId?: string;      // Subtask parent
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### Workflow
+```ts
+export interface WorkflowTransition {
+  id?: string;
+  name?: string;
+  fromStatusKey: string | '*';
+  toStatusKey: string;
+}
+
+export interface TaskTypeDefinition {
+  key: string;
+  label: string;
+  description?: string;
+  icon?: string;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description?: string;
+  statuses: StatusDefinition[];
+  transitions: WorkflowTransition[];
+  taskTypes?: TaskTypeDefinition[];
+  defaultStatusKey: string;
+  isDefault?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,12 +127,20 @@ All endpoints return JSON responses.
 - `GET /api/critical-path/projects/:id` - Get project by ID.
 - `DELETE /api/critical-path/projects/:id` - Delete project.
 
+### Workflows
+- `GET /api/critical-path/workflows` - List all workflows.
+- `POST /api/critical-path/workflows` - Create workflow.
+- `GET /api/critical-path/workflows/:id` - Get workflow by ID.
+- `PATCH /api/critical-path/workflows/:id` - Update workflow.
+- `DELETE /api/critical-path/workflows/:id` - Delete workflow.
+
 ### Tasks
 - `GET /api/critical-path/tasks?projectId=:id` - List tasks (optionally filtered by `projectId`).
 - `POST /api/critical-path/tasks` - Create task.
 - `GET /api/critical-path/tasks/:id` - Get task by ID.
-- `PATCH /api/critical-path/tasks/:id` - Update task fields or status.
+- `PATCH /api/critical-path/tasks/:id` - Update task (enforces workflow transition rules; returns HTTP 400 on illegal transitions).
 - `DELETE /api/critical-path/tasks/:id` - Delete task.
+- `GET /api/critical-path/tasks/:id/transitions` - Get allowed next statuses for task.
 
 ### Activity & Comments
 - `GET /api/critical-path/activities?projectId=:id&taskId=:id` - Fetch audit stream.

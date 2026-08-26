@@ -97,7 +97,8 @@ graph TD
 ## ✨ Key Features
 
 - 🎯 **Headless & Frontend-Agnostic**: Pure API-first architecture designed for Next.js (App Router), SvelteKit, Express, Fastify, and edge runtimes.
-- 📋 **Comprehensive PM Work Items**: Full CRUD for Projects, Tasks, Sprints/Cycles, Task Dependencies, Subtasks, Priorities, and Estimates.
+- ⚡ **Custom Workflows & Status Transitions**: Define customizable status lifecycle rules, transition constraints, allowed next status enforcement, task type definitions, and workflow webhooks (`workflow.created`, `workflow.updated`, `workflow.deleted`).
+- 📋 **Comprehensive PM Work Items**: Full CRUD for Projects, Workflows, Tasks, Sprints/Cycles, Task Dependencies, Subtasks, Priorities, and Estimates.
 - 🔌 **Extensible Plugin Engine**: Lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`), custom field type registries, and custom route middlewares.
 - ⚙️ **Dynamic Custom Fields**: Attach structured custom fields (text, select, user, date, number, boolean) to projects and tasks on the fly.
 - 🔔 **Webhooks & Audit Streams**: Real-time event notifications (`task.created`, `task.status_changed`) and immutable activity logs.

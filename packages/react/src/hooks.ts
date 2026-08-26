@@ -1,6 +1,97 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Project, Task, TaskStatus } from '@critical-path/core';
+import type { Project, Task, TaskStatus, Workflow } from '@critical-path/core';
 import { useCriticalPathClient } from './provider.js';
+
+export function useWorkflows() {
+  const client = useCriticalPathClient();
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchWorkflows = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await client.getWorkflows();
+      setWorkflows(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [client]);
+
+  useEffect(() => {
+    fetchWorkflows();
+  }, [fetchWorkflows]);
+
+  const createWorkflow = async (input: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const created = await client.createWorkflow(input);
+      setWorkflows((prev) => [...prev, created]);
+      return created;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const updateWorkflow = async (id: string, updates: Partial<Workflow>) => {
+    try {
+      const updated = await client.updateWorkflow(id, updates);
+      setWorkflows((prev) => prev.map((w) => (w.id === id ? updated : w)));
+      return updated;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const deleteWorkflow = async (id: string) => {
+    try {
+      await client.deleteWorkflow(id);
+      setWorkflows((prev) => prev.filter((w) => w.id !== id));
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  return { workflows, loading, error, refresh: fetchWorkflows, createWorkflow, updateWorkflow, deleteWorkflow };
+}
+
+export function useTaskTransitions(taskId?: string) {
+  const client = useCriticalPathClient();
+  const [allowedTransitions, setAllowedTransitions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchTransitions = useCallback(async () => {
+    if (!taskId) {
+      setAllowedTransitions([]);
+      return;
+    }
+    try {
+      setLoading(true);
+      const data = await client.getAllowedTaskTransitions(taskId);
+      setAllowedTransitions(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, taskId]);
+
+  useEffect(() => {
+    fetchTransitions();
+  }, [fetchTransitions]);
+
+  return { allowedTransitions, loading, error, refresh: fetchTransitions };
+}
 
 export function useProjects() {
   const client = useCriticalPathClient();

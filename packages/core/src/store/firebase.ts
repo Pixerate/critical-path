@@ -9,7 +9,8 @@ import type {
   TimeEntry,
   Activity,
   Webhook,
-  TaskDependency
+  TaskDependency,
+  Workflow
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
 
@@ -150,6 +151,46 @@ export class FirebaseStore implements StorageAdapter {
     const existing = await this.getProject(id);
     if (!existing) return false;
     await this.db.collection('projects').doc(id).delete();
+    return true;
+  }
+
+  // --- Workflows ---
+  async getWorkflows(): Promise<Workflow[]> {
+    const snap = await this.db.collection('workflows').get();
+    return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+  }
+
+  async getWorkflow(id: string): Promise<Workflow | null> {
+    const snap = await this.db.collection('workflows').doc(id).get();
+    if (!snap.exists) return null;
+    return { ...snap.data(), id: snap.id };
+  }
+
+  async createWorkflow(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow> {
+    const docRef = this.db.collection('workflows').doc();
+    const now = new Date().toISOString();
+    const newWf: Workflow = { ...workflow, id: docRef.id, createdAt: now, updatedAt: now };
+    await docRef.set(newWf);
+    return newWf;
+  }
+
+  async updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow | null> {
+    const existing = await this.getWorkflow(id);
+    if (!existing) return null;
+
+    const updated: Workflow = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    await this.db.collection('workflows').doc(id).set(updated, { merge: true });
+    return updated;
+  }
+
+  async deleteWorkflow(id: string): Promise<boolean> {
+    const existing = await this.getWorkflow(id);
+    if (!existing) return false;
+    await this.db.collection('workflows').doc(id).delete();
     return true;
   }
 

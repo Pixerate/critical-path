@@ -7,7 +7,8 @@ import type {
   Iteration,
   Activity,
   Comment,
-  TimeEntry
+  TimeEntry,
+  Workflow
 } from '@critical-path/core';
 
 export interface ClientOptions {
@@ -50,6 +51,40 @@ export class CriticalPathClient {
     }
 
     return response.json();
+  }
+
+  // Workflows
+  async getWorkflows(): Promise<Workflow[]> {
+    const res = await this.request<{ workflows: Workflow[] }>('/workflows');
+    return res.workflows;
+  }
+
+  async getWorkflow(id: string): Promise<Workflow> {
+    const res = await this.request<{ workflow: Workflow }>(`/workflows/${id}`);
+    return res.workflow;
+  }
+
+  async createWorkflow(data: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow> {
+    const res = await this.request<{ workflow: Workflow }>('/workflows', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.workflow;
+  }
+
+  async updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow> {
+    const res = await this.request<{ workflow: Workflow }>(`/workflows/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+    return res.workflow;
+  }
+
+  async deleteWorkflow(id: string): Promise<boolean> {
+    const res = await this.request<{ success: boolean }>(`/workflows/${id}`, {
+      method: 'DELETE'
+    });
+    return res.success;
   }
 
   // Projects
@@ -109,6 +144,11 @@ export class CriticalPathClient {
   async getTaskDependencies(taskId: string): Promise<TaskDependencyGraph> {
     const res = await this.request<{ graph: TaskDependencyGraph }>(`/tasks/${encodeURIComponent(taskId)}/dependencies`);
     return res.graph;
+  }
+
+  async getAllowedTaskTransitions(taskId: string): Promise<string[]> {
+    const res = await this.request<{ allowedNextStatuses: string[] }>(`/tasks/${encodeURIComponent(taskId)}/transitions`);
+    return res.allowedNextStatuses;
   }
 
   // Teams

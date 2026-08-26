@@ -10,7 +10,8 @@ import type {
   TimeEntry,
   Activity,
   Webhook,
-  TaskDependency
+  TaskDependency,
+  Workflow
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
 
@@ -48,9 +49,24 @@ export class SQLiteStore implements StorageAdapter {
         ownerId TEXT,
         members TEXT,
         teamIds TEXT,
+        workflowId TEXT,
+        taskTypes TEXT,
         statusDefinitions TEXT,
         priorityDefinitions TEXT,
         customFieldDefinitions TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS workflows (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        statuses TEXT NOT NULL,
+        transitions TEXT NOT NULL,
+        taskTypes TEXT,
+        defaultStatusKey TEXT,
+        isDefault INTEGER,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       );
@@ -84,6 +100,7 @@ export class SQLiteStore implements StorageAdapter {
         description TEXT,
         status TEXT NOT NULL,
         priority TEXT NOT NULL,
+        taskType TEXT,
         assigneeId TEXT,
         reporterId TEXT,
         reviewerId TEXT,
@@ -188,8 +205,8 @@ export class SQLiteStore implements StorageAdapter {
     const newProj: Project = { ...project, key, id, createdAt: now, updatedAt: now };
 
     const stmt = this.db.prepare(`
-      INSERT INTO projects (id, key, name, description, ownerId, members, teamIds, statusDefinitions, priorityDefinitions, customFieldDefinitions, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO projects (id, key, name, description, ownerId, members, teamIds, workflowId, taskTypes, statusDefinitions, priorityDefinitions, customFieldDefinitions, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newProj.id,
@@ -199,6 +216,8 @@ export class SQLiteStore implements StorageAdapter {
       newProj.ownerId || null,
       JSON.stringify(newProj.members || []),
       JSON.stringify(newProj.teamIds || []),
+      newProj.workflowId || null,
+      newProj.taskTypes ? JSON.stringify(newProj.taskTypes) : null,
       JSON.stringify(newProj.statusDefinitions || []),
       JSON.stringify(newProj.priorityDefinitions || []),
       JSON.stringify(newProj.customFieldDefinitions || []),
@@ -220,7 +239,7 @@ export class SQLiteStore implements StorageAdapter {
 
     const stmt = this.db.prepare(`
       UPDATE projects
-      SET key = ?, name = ?, description = ?, ownerId = ?, members = ?, teamIds = ?, statusDefinitions = ?, priorityDefinitions = ?, customFieldDefinitions = ?, updatedAt = ?
+      SET key = ?, name = ?, description = ?, ownerId = ?, members = ?, teamIds = ?, workflowId = ?, taskTypes = ?, statusDefinitions = ?, priorityDefinitions = ?, customFieldDefinitions = ?, updatedAt = ?
       WHERE id = ?
     `);
     stmt.run(
@@ -230,6 +249,8 @@ export class SQLiteStore implements StorageAdapter {
       updated.ownerId || null,
       JSON.stringify(updated.members || []),
       JSON.stringify(updated.teamIds || []),
+      updated.workflowId || null,
+      updated.taskTypes ? JSON.stringify(updated.taskTypes) : null,
       JSON.stringify(updated.statusDefinitions || []),
       JSON.stringify(updated.priorityDefinitions || []),
       JSON.stringify(updated.customFieldDefinitions || []),
@@ -237,6 +258,77 @@ export class SQLiteStore implements StorageAdapter {
       id
     );
     return updated;
+  }
+
+  // --- Workflows ---
+  async getWorkflows(): Promise<Workflow[]> {
+    const stmt = this.db.prepare('SELECT * FROM workflows');
+    const rows = stmt.all() as any[];
+    return rows.map((r) => this.mapWorkflow(r));
+  }
+
+  async getWorkflow(id: string): Promise<Workflow | null> {
+    const stmt = this.db.prepare('SELECT * FROM workflows WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row ? this.mapWorkflow(row) : null;
+  }
+
+  async createWorkflow(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow> {
+    const id = `wf_${Math.random().toString(36).substring(2, 9)}`;
+    const now = new Date().toISOString();
+    const newWf: Workflow = { ...workflow, id, createdAt: now, updatedAt: now };
+
+    const stmt = this.db.prepare(`
+      INSERT INTO workflows (id, name, description, statuses, transitions, taskTypes, defaultStatusKey, isDefault, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      newWf.id,
+      newWf.name,
+      newWf.description || null,
+      JSON.stringify(newWf.statuses || []),
+      JSON.stringify(newWf.transitions || []),
+      newWf.taskTypes ? JSON.stringify(newWf.taskTypes) : null,
+      newWf.defaultStatusKey || null,
+      newWf.isDefault ? 1 : 0,
+      newWf.createdAt,
+      newWf.updatedAt
+    );
+    return newWf;
+  }
+
+  async updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow | null> {
+    const existing = await this.getWorkflow(id);
+    if (!existing) return null;
+
+    const updated: Workflow = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+
+    const stmt = this.db.prepare(`
+      UPDATE workflows SET name = ?, description = ?, statuses = ?, transitions = ?, taskTypes = ?, defaultStatusKey = ?, isDefault = ?, updatedAt = ?
+      WHERE id = ?
+    `);
+    stmt.run(
+      updated.name,
+      updated.description || null,
+      JSON.stringify(updated.statuses || []),
+      JSON.stringify(updated.transitions || []),
+      updated.taskTypes ? JSON.stringify(updated.taskTypes) : null,
+      updated.defaultStatusKey || null,
+      updated.isDefault ? 1 : 0,
+      updated.updatedAt,
+      id
+    );
+    return updated;
+  }
+
+  async deleteWorkflow(id: string): Promise<boolean> {
+    const stmt = this.db.prepare('DELETE FROM workflows WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
   }
 
   async deleteProject(id: string): Promise<boolean> {
@@ -394,12 +486,12 @@ export class SQLiteStore implements StorageAdapter {
 
     const stmt = this.db.prepare(`
       INSERT INTO tasks (
-        id, projectId, title, description, status, priority, assigneeId, reporterId,
+        id, projectId, title, description, status, priority, taskType, assigneeId, reporterId,
         reviewerId, iterationId, teamId, containerId, plannedStartDate, actualStartDate, actualEndDate,
         dueDate, estimatedHours, loggedHours, actualHours, billableHours,
         estimatedDurationMinutes, actualDurationMinutes, billableDurationMinutes, progress,
         tags, customFields, parentId, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newTask.id,
@@ -408,6 +500,7 @@ export class SQLiteStore implements StorageAdapter {
       newTask.description || null,
       newTask.status,
       newTask.priority,
+      newTask.taskType || null,
       newTask.assigneeId || null,
       newTask.reporterId || null,
       newTask.reviewerId || null,
@@ -447,7 +540,7 @@ export class SQLiteStore implements StorageAdapter {
 
     const stmt = this.db.prepare(`
       UPDATE tasks SET
-        projectId = ?, title = ?, description = ?, status = ?, priority = ?,
+        projectId = ?, title = ?, description = ?, status = ?, priority = ?, taskType = ?,
         assigneeId = ?, reporterId = ?, reviewerId = ?, iterationId = ?, teamId = ?, containerId = ?,
         plannedStartDate = ?, actualStartDate = ?, actualEndDate = ?, dueDate = ?,
         estimatedHours = ?, loggedHours = ?, actualHours = ?, billableHours = ?,
@@ -461,6 +554,7 @@ export class SQLiteStore implements StorageAdapter {
       updated.description || null,
       updated.status,
       updated.priority,
+      updated.taskType || null,
       updated.assigneeId || null,
       updated.reporterId || null,
       updated.reviewerId || null,
@@ -706,11 +800,23 @@ export class SQLiteStore implements StorageAdapter {
   private mapProject(row: any): Project {
     return {
       ...row,
+      workflowId: row.workflowId || undefined,
+      taskTypes: row.taskTypes ? JSON.parse(row.taskTypes) : undefined,
       members: row.members ? JSON.parse(row.members) : [],
       teamIds: row.teamIds ? JSON.parse(row.teamIds) : [],
       statusDefinitions: row.statusDefinitions ? JSON.parse(row.statusDefinitions) : [],
       priorityDefinitions: row.priorityDefinitions ? JSON.parse(row.priorityDefinitions) : [],
       customFieldDefinitions: row.customFieldDefinitions ? JSON.parse(row.customFieldDefinitions) : []
+    };
+  }
+
+  private mapWorkflow(row: any): Workflow {
+    return {
+      ...row,
+      statuses: row.statuses ? JSON.parse(row.statuses) : [],
+      transitions: row.transitions ? JSON.parse(row.transitions) : [],
+      taskTypes: row.taskTypes ? JSON.parse(row.taskTypes) : undefined,
+      isDefault: row.isDefault !== null && row.isDefault !== undefined ? Boolean(row.isDefault) : undefined
     };
   }
 
@@ -724,6 +830,7 @@ export class SQLiteStore implements StorageAdapter {
   private mapTask(row: any): Task {
     return {
       ...row,
+      taskType: row.taskType || undefined,
       tags: row.tags ? JSON.parse(row.tags) : [],
       customFields: row.customFields ? JSON.parse(row.customFields) : {}
     };

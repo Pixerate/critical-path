@@ -11,7 +11,8 @@ import type {
   TimeEntry,
   Activity,
   Webhook,
-  TaskDependency
+  TaskDependency,
+  Workflow
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
 
@@ -22,6 +23,13 @@ export interface StorageAdapter {
   createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project>;
   updateProject(id: string, updates: Partial<Project>): Promise<Project | null>;
   deleteProject(id: string): Promise<boolean>;
+
+  // Workflows
+  getWorkflows(): Promise<Workflow[]>;
+  getWorkflow(id: string): Promise<Workflow | null>;
+  createWorkflow(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow>;
+  updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow | null>;
+  deleteWorkflow(id: string): Promise<boolean>;
 
   // Tasks
   getTasks(projectId?: string): Promise<Task[]>;
@@ -72,6 +80,7 @@ export interface StorageAdapter {
 
 export class InMemoryStore implements StorageAdapter {
   private projects = new Map<string, Project>();
+  private workflows = new Map<string, Workflow>();
   private tasks = new Map<string, Task>();
   private teams = new Map<string, Team>();
   private containers = new Map<string, TaskContainer>();
@@ -119,6 +128,44 @@ export class InMemoryStore implements StorageAdapter {
 
   async deleteProject(id: string): Promise<boolean> {
     return this.projects.delete(id);
+  }
+
+  // Workflows
+  async getWorkflows(): Promise<Workflow[]> {
+    return Array.from(this.workflows.values());
+  }
+
+  async getWorkflow(id: string): Promise<Workflow | null> {
+    return this.workflows.get(id) || null;
+  }
+
+  async createWorkflow(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow> {
+    const id = `wf_${Math.random().toString(36).substring(2, 9)}`;
+    const now = new Date().toISOString();
+    const newWorkflow: Workflow = {
+      ...workflow,
+      id,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.workflows.set(id, newWorkflow);
+    return newWorkflow;
+  }
+
+  async updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow | null> {
+    const existing = this.workflows.get(id);
+    if (!existing) return null;
+    const updated: Workflow = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    this.workflows.set(id, updated);
+    return updated;
+  }
+
+  async deleteWorkflow(id: string): Promise<boolean> {
+    return this.workflows.delete(id);
   }
 
   async getTasks(projectId?: string): Promise<Task[]> {

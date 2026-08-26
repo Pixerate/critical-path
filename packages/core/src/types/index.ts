@@ -46,6 +46,35 @@ export interface CustomFieldDefinition {
   defaultValue?: unknown;
 }
 
+export interface WorkflowTransition {
+  id?: string;
+  name?: string;
+  fromStatusKey: string | '*';
+  toStatusKey: string;
+}
+
+export interface TaskTypeDefinition {
+  key: string;
+  label: string;
+  description?: string;
+  icon?: string;
+  defaultStatusKey?: string;
+  workflowId?: string;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description?: string;
+  statuses: StatusDefinition[];
+  transitions: WorkflowTransition[];
+  taskTypes?: TaskTypeDefinition[];
+  defaultStatusKey?: string;
+  isDefault?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Project {
   id: string;
   key?: string; // e.g. "CP" or "PROJ"
@@ -54,6 +83,9 @@ export interface Project {
   ownerId?: string;
   members?: string[]; // user IDs
   teamIds?: string[]; // team IDs
+  workflowId?: string;
+  workflow?: Workflow;
+  taskTypes?: TaskTypeDefinition[];
   statusDefinitions?: StatusDefinition[];
   priorityDefinitions?: Array<{ key: string; label: string; level?: number }>;
   customFieldDefinitions?: CustomFieldDefinition[];
@@ -95,6 +127,7 @@ export interface Task {
   description?: string;
   status: TaskStatus;
   priority: Priority;
+  taskType?: string; // e.g. "bug", "feature", "task", "epic"
   assigneeId?: string;
   reporterId?: string;
   reviewerId?: string;
@@ -184,7 +217,10 @@ export type WebhookEvent =
   | 'iteration.started'
   | 'iteration.completed'
   | 'team.created'
-  | 'container.created';
+  | 'container.created'
+  | 'workflow.created'
+  | 'workflow.updated'
+  | 'workflow.deleted';
 
 export interface PluginHooks {
   beforeTaskCreate?: (task: Partial<Task>) => Promise<Partial<Task>> | Partial<Task>;
@@ -216,5 +252,6 @@ export interface CriticalPathConfig {
     iterations?: Iteration[];
     teams?: Team[];
     containers?: TaskContainer[];
+    workflows?: Workflow[];
   };
 }

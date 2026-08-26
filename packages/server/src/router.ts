@@ -21,6 +21,38 @@ export class CriticalPathRouter {
     const segments = subpath.split('/').filter(Boolean);
 
     try {
+      // Workflows API
+      if (segments[0] === 'workflows') {
+        const workflowId = segments[1];
+        if (!workflowId) {
+          if (method === 'GET') {
+            const workflows = await this.engine.getWorkflows();
+            return this.jsonResponse({ workflows });
+          }
+          if (method === 'POST') {
+            const body = await request.json();
+            const workflow = await this.engine.createWorkflow(body);
+            return this.jsonResponse({ workflow }, 201);
+          }
+        } else {
+          if (method === 'GET') {
+            const workflow = await this.engine.getWorkflow(workflowId);
+            if (!workflow) return this.jsonResponse({ error: 'Workflow not found' }, 404);
+            return this.jsonResponse({ workflow });
+          }
+          if (method === 'PATCH' || method === 'PUT') {
+            const body = await request.json();
+            const updated = await this.engine.updateWorkflow(workflowId, body);
+            if (!updated) return this.jsonResponse({ error: 'Workflow not found' }, 404);
+            return this.jsonResponse({ workflow: updated });
+          }
+          if (method === 'DELETE') {
+            const deleted = await this.engine.deleteWorkflow(workflowId);
+            return this.jsonResponse({ success: deleted });
+          }
+        }
+      }
+
       // Projects API
       if (segments[0] === 'projects') {
         const projectId = segments[1];
@@ -47,7 +79,7 @@ export class CriticalPathRouter {
         }
       }
 
-      // Tasks API & Task Sub-resources (Dependencies, Lifecycle State)
+      // Tasks API & Task Sub-resources (Dependencies, Lifecycle State, Transitions)
       if (segments[0] === 'tasks') {
         const taskId = segments[1];
         const subResource = segments[2];
@@ -82,6 +114,11 @@ export class CriticalPathRouter {
             const state = await this.engine.getTaskLifecycleState(taskId);
             if (!state) return this.jsonResponse({ error: 'Task not found' }, 404);
             return this.jsonResponse({ state });
+          }
+        } else if (subResource === 'transitions' || subResource === 'allowed-transitions') {
+          if (method === 'GET') {
+            const allowedNextStatuses = await this.engine.getAllowedTaskTransitions(taskId);
+            return this.jsonResponse({ allowedNextStatuses });
           }
         } else {
           if (method === 'GET') {
@@ -244,6 +281,10 @@ export class CriticalPathRouter {
 
       return this.jsonResponse({ error: `Route not found: ${method} ${pathname}` }, 404);
     } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'name' in err && err.name === 'WorkflowValidationError') {
+        const wfErr = err as unknown as { message: string; fromStatus?: string; toStatus?: string };
+        return this.jsonResponse({ error: wfErr.message, fromStatus: wfErr.fromStatus, toStatus: wfErr.toStatus }, 400);
+      }
       const message = err instanceof Error ? err.message : 'Internal Server Error';
       return this.jsonResponse({ error: message }, 500);
     }

@@ -6,3 +6,4 @@ export function createCriticalPathClient(options: ClientOptions): CriticalPathCl
 
 export * from './project-state.svelte.js';
 export * from './task-state.svelte.js';
+export * from './workflow-state.svelte.js';
