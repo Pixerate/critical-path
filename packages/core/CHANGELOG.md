@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.5.1
+
+### Patch Changes
+
+- 34067fd: Make node:sqlite import browser-safe for web bundlers
+
 ## 0.5.0
 
 ### Minor Changes
