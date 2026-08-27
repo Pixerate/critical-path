@@ -72,6 +72,10 @@ describe('@critical-path/client Tests', () => {
         const body = JSON.parse(init?.body as string);
         return new Response(JSON.stringify({ attachment: { id: 'a2', ...body } }), { status: 201 });
       }
+      if (urlStr.endsWith('/attachments/upload') && method === 'POST') {
+        const body = JSON.parse(init?.body as string);
+        return new Response(JSON.stringify({ attachment: { id: 'a_up', ...body, url: 'https://cdn.example.com/uploaded.png' } }), { status: 201 });
+      }
       if (urlStr.endsWith('/attachments/a1') && method === 'DELETE') {
         return new Response(JSON.stringify({ success: true }), { status: 200 });
       }
@@ -103,7 +107,12 @@ describe('@critical-path/client Tests', () => {
     const createdAtt = await client.createAttachment({ filename: 'file.txt', mimeType: 'text/plain', sizeBytes: 12, url: 'https://example.com/file.txt', uploaderId: 'u1' });
     expect(createdAtt.id).toBe('a2');
 
+    const uploadedAtt = await client.uploadAttachmentFile({ filename: 'uploaded.png', data: 'base64data', uploaderId: 'u1' });
+    expect(uploadedAtt.id).toBe('a_up');
+    expect(uploadedAtt.url).toBe('https://cdn.example.com/uploaded.png');
+
     const deletedAtt = await client.deleteAttachment('a1');
     expect(deletedAtt).toBe(true);
   });
 });
+

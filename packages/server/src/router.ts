@@ -312,6 +312,12 @@ export class CriticalPathRouter {
             const presigned = await this.engine.getPresignedAttachmentUploadUrl(body);
             return this.jsonResponse({ presigned });
           }
+        } else if (attachmentId === 'upload') {
+          if (method === 'POST') {
+            const body = await request.json();
+            const attachment = await this.engine.uploadAttachmentFile(body);
+            return this.jsonResponse({ attachment }, 201);
+          }
         } else if (!attachmentId) {
           if (method === 'GET') {
             const taskId = url.searchParams.get('taskId') || undefined;
@@ -355,9 +361,15 @@ export class CriticalPathRouter {
 
       return this.jsonResponse({ error: `Route not found: ${method} ${pathname}` }, 404);
     } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'name' in err && err.name === 'WorkflowValidationError') {
-        const wfErr = err as unknown as { message: string; fromStatus?: string; toStatus?: string };
-        return this.jsonResponse({ error: wfErr.message, fromStatus: wfErr.fromStatus, toStatus: wfErr.toStatus }, 400);
+      if (err && typeof err === 'object' && 'name' in err) {
+        if (err.name === 'WorkflowValidationError') {
+          const wfErr = err as unknown as { message: string; fromStatus?: string; toStatus?: string };
+          return this.jsonResponse({ error: wfErr.message, fromStatus: wfErr.fromStatus, toStatus: wfErr.toStatus }, 400);
+        }
+        if (err.name === 'AttachmentValidationError') {
+          const attErr = err as unknown as { message: string };
+          return this.jsonResponse({ error: attErr.message }, 400);
+        }
       }
       const message = err instanceof Error ? err.message : 'Internal Server Error';
       return this.jsonResponse({ error: message }, 500);

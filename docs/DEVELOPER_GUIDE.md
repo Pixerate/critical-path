@@ -153,10 +153,15 @@ All endpoints return JSON responses.
 - `DELETE /api/critical-path/tasks/:id` - Delete task.
 - `GET /api/critical-path/tasks/:id/transitions` - Get allowed next statuses for task.
 
-### Activity & Comments
+### Activity, Comments & Attachments
 - `GET /api/critical-path/activities?projectId=:id&taskId=:id` - Fetch audit stream.
 - `GET /api/critical-path/comments?taskId=:id` - Fetch task comments.
 - `POST /api/critical-path/comments` - Post comment to task.
+- `GET /api/critical-path/attachments?taskId=:id` - List attachments.
+- `POST /api/critical-path/attachments` - Register an attachment.
+- `POST /api/critical-path/attachments/upload` - Direct binary file upload via `FileStorageAdapter`.
+- `POST /api/critical-path/attachments/presign` - Request presigned upload URL for direct-to-cloud client uploads.
+- `DELETE /api/critical-path/attachments/:id` - Delete an attachment.
 
 ### Time Tracking
 - `GET /api/critical-path/time-entries?taskId=:id` - Get time logs for task.
@@ -372,6 +377,11 @@ const fileStorage = new FirebaseStorageAdapter({ bucket });
 const engine = new CriticalPathEngine({ fileStorage });
 ```
 
+### 4. Attachment URL Validation & Invariants
+`CriticalPathEngine` validates all attachment URLs on creation (`validateAttachmentUrl`):
+- Accepts valid web URLs (`https://`, `http://`) and storage URIs (`gs://`, `s3://`).
+- Rejects large data URIs (`data:...` > 2048 chars) with an `AttachmentValidationError` (HTTP 400), preventing document stores like Firestore or SQLite from exceeding document size limits.
+
 ---
 
 ## 10. Threaded Comments & Attachments (React & Svelte)
@@ -408,23 +418,38 @@ function TaskDetail({ taskId }: { taskId: string }) {
 
 ### Svelte 5 Runes (`@critical-path/svelte`)
 
+#### Combined Task Activity State (`TaskActivityState`)
+Unifies threaded comments with their inline attachments (`attachment.commentId === comment.id`) alongside standalone attachments:
+
 ```svelte
 <script lang="ts">
-  import { createCommentState, createAttachmentState, createCriticalPathClient } from '@critical-path/svelte';
+  import { onMount } from 'svelte';
+  import { createTaskActivityState, createCriticalPathClient } from '@critical-path/svelte';
 
   const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
-  const commentState = createCommentState(client, 'task_123');
-  const attachmentState = createAttachmentState(client, { taskId: 'task_123' });
+  const activityState = createTaskActivityState(client, 'task_123');
 
-  commentState.fetch();
-  attachmentState.fetch();
+  onMount(() => {
+    activityState.fetch();
+  });
 </script>
 
-{#each commentState.threads as thread}
-  <div>
-    <p>{thread.content}</p>
+{#each activityState.threads as thread}
+  <div class="comment">
+    <p><strong>{thread.authorId}</strong>: {thread.content}</p>
+
+    {#if thread.attachments.length > 0}
+      <ul>
+        {#each thread.attachments as att}
+          <li><a href={att.url} target="_blank">{att.filename}</a></li>
+        {/each}
+      </ul>
+    {/if}
+
     {#each thread.replies as reply}
-      <p style="margin-left: 20px;">↪ {reply.content}</p>
+      <div class="reply" style="margin-left: 20px;">
+        <p>↪ {reply.authorId}: {reply.content}</p>
+      </div>
     {/each}
   </div>
 {/each}

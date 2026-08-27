@@ -170,5 +170,22 @@ describe('@critical-path/server Router Tests', () => {
     });
     const delCmtRes = await router.handleRequest(delCmtReq);
     expect(delCmtRes.status).toBe(200);
+
+    // 8. Rejects large data URIs with 400
+    const invalidAttReq = new Request(`http://localhost:3000/api/critical-path/attachments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: 'huge.pdf',
+        url: `data:application/pdf;base64,${'B'.repeat(3000)}`,
+        taskId: task.id,
+        uploaderId: 'u1'
+      })
+    });
+    const invalidAttRes = await router.handleRequest(invalidAttReq);
+    expect(invalidAttRes.status).toBe(400);
+    const invalidAttData = await invalidAttRes.json();
+    expect(invalidAttData.error).toContain('Attachment URL cannot be a large data URI');
   });
 });
+
