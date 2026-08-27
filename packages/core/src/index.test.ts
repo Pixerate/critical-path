@@ -226,4 +226,36 @@ describe('CriticalPathEngine Core Tests', () => {
     const doneTask = await engine.updateTask(task.id, { status: 'done' });
     expect(doneTask?.status).toBe('done');
   });
+
+  it('validates attachment URLs to prevent massive data URIs', async () => {
+    const engine = new CriticalPathEngine();
+    const proj = await engine.createProject({ key: 'ATT', name: 'Attachment Project' });
+    const task = await engine.createTask({ projectId: proj.id, title: 'Task with attachment', status: 'todo' });
+
+    // Valid HTTPS URL
+    const validAtt = await engine.createAttachment({
+      taskId: task.id,
+      uploaderId: 'user_1',
+      filename: 'spec.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1024,
+      url: 'https://storage.googleapis.com/bucket/spec.pdf'
+    });
+    expect(validAtt.id).toBeDefined();
+    expect(validAtt.url).toBe('https://storage.googleapis.com/bucket/spec.pdf');
+
+    // Invalid large data URI (>2048 chars)
+    const largeDataUri = `data:application/pdf;base64,${'A'.repeat(3000)}`;
+    await expect(
+      engine.createAttachment({
+        taskId: task.id,
+        uploaderId: 'user_1',
+        filename: 'huge.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 3000,
+        url: largeDataUri
+      })
+    ).rejects.toThrow('Attachment URL cannot be a large data URI');
+  });
 });
+

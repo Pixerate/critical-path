@@ -314,6 +314,25 @@ export class CriticalPathClient {
     return res.attachment;
   }
 
+  async uploadAttachmentFile(data: {
+    filename: string;
+    data: string | Uint8Array | ArrayBuffer;
+    mimeType?: string;
+    pathPrefix?: string;
+    taskId?: string;
+    projectId?: string;
+    commentId?: string;
+    uploaderId: string;
+    uploaderType?: 'user' | 'agent' | 'system';
+    metadata?: Record<string, unknown>;
+  }): Promise<Attachment> {
+    const res = await this.request<{ attachment: Attachment }>('/attachments/upload', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.attachment;
+  }
+
   async deleteAttachment(id: string): Promise<boolean> {
     const res = await this.request<{ success: boolean }>(`/attachments/${encodeURIComponent(id)}`, {
       method: 'DELETE'

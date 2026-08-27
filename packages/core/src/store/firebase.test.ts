@@ -77,4 +77,19 @@ describe('FirebaseStore', () => {
     const deleted = await store.deleteWorkflow(workflow.id);
     expect(deleted).toBe(true);
   });
+
+  it('should sanitize undefined properties from documents', async () => {
+    const project = await store.createProject({
+      key: 'UNDEF',
+      name: 'Undefined Test',
+      description: undefined,
+      ownerId: undefined
+    });
+
+    const doc = await store.getProject(project.id);
+    expect(doc).toBeDefined();
+    expect(doc?.name).toBe('Undefined Test');
+    expect('description' in (doc as any)).toBe(false);
+  });
 });
+

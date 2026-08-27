@@ -102,6 +102,22 @@ export interface FirebaseStoreConfig {
   db: FirestoreDBInterface;
 }
 
+export function sanitizeFirestoreData<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeFirestoreData) as unknown as T;
+  }
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, any>)) {
+    if (value !== undefined) {
+      clean[key] = sanitizeFirestoreData(value);
+    }
+  }
+  return clean as T;
+}
+
 export class FirebaseStore implements StorageAdapter {
   private db: FirestoreDBInterface;
 
@@ -131,7 +147,7 @@ export class FirebaseStore implements StorageAdapter {
     const now = new Date().toISOString();
     const key = project.key || generateProjectKey(project.name);
     const newProj: Project = { ...project, key, id: docRef.id, createdAt: now, updatedAt: now };
-    await docRef.set(newProj);
+    await docRef.set(sanitizeFirestoreData(newProj));
     return newProj;
   }
 
@@ -144,7 +160,7 @@ export class FirebaseStore implements StorageAdapter {
       ...updates,
       updatedAt: new Date().toISOString()
     };
-    await this.db.collection('projects').doc(id).set(updated, { merge: true });
+    await this.db.collection('projects').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
     return updated;
   }
 
@@ -171,7 +187,7 @@ export class FirebaseStore implements StorageAdapter {
     const docRef = this.db.collection('workflows').doc();
     const now = new Date().toISOString();
     const newWf: Workflow = { ...workflow, id: docRef.id, createdAt: now, updatedAt: now };
-    await docRef.set(newWf);
+    await docRef.set(sanitizeFirestoreData(newWf));
     return newWf;
   }
 
@@ -184,7 +200,7 @@ export class FirebaseStore implements StorageAdapter {
       ...updates,
       updatedAt: new Date().toISOString()
     };
-    await this.db.collection('workflows').doc(id).set(updated, { merge: true });
+    await this.db.collection('workflows').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
     return updated;
   }
 
@@ -211,7 +227,7 @@ export class FirebaseStore implements StorageAdapter {
     const docRef = this.db.collection('teams').doc();
     const now = new Date().toISOString();
     const newTeam: Team = { ...team, id: docRef.id, createdAt: now, updatedAt: now };
-    await docRef.set(newTeam);
+    await docRef.set(sanitizeFirestoreData(newTeam));
     return newTeam;
   }
 
@@ -220,7 +236,7 @@ export class FirebaseStore implements StorageAdapter {
     if (!existing) return null;
 
     const updated: Team = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-    await this.db.collection('teams').doc(id).set(updated, { merge: true });
+    await this.db.collection('teams').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
     return updated;
   }
 
@@ -247,7 +263,7 @@ export class FirebaseStore implements StorageAdapter {
     const docRef = this.db.collection('containers').doc();
     const now = new Date().toISOString();
     const newContainer: TaskContainer = { ...container, id: docRef.id, createdAt: now, updatedAt: now };
-    await docRef.set(newContainer);
+    await docRef.set(sanitizeFirestoreData(newContainer));
     return newContainer;
   }
 
@@ -256,7 +272,7 @@ export class FirebaseStore implements StorageAdapter {
     if (!existing) return null;
 
     const updated: TaskContainer = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-    await this.db.collection('containers').doc(id).set(updated, { merge: true });
+    await this.db.collection('containers').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
     return updated;
   }
 
@@ -288,7 +304,7 @@ export class FirebaseStore implements StorageAdapter {
     const docRef = this.db.collection('tasks').doc();
     const now = new Date().toISOString();
     const newTask: Task = { ...task, id: docRef.id, createdAt: now, updatedAt: now };
-    await docRef.set(newTask);
+    await docRef.set(sanitizeFirestoreData(newTask));
     return newTask;
   }
 
@@ -301,7 +317,7 @@ export class FirebaseStore implements StorageAdapter {
       ...updates,
       updatedAt: new Date().toISOString()
     };
-    await this.db.collection('tasks').doc(id).set(updated, { merge: true });
+    await this.db.collection('tasks').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
     return updated;
   }
 
@@ -328,7 +344,7 @@ export class FirebaseStore implements StorageAdapter {
     const docRef = this.db.collection('iterations').doc();
     const now = new Date().toISOString();
     const newIteration: Iteration = { ...iteration, id: docRef.id, createdAt: now };
-    await docRef.set(newIteration);
+    await docRef.set(sanitizeFirestoreData(newIteration));
     return newIteration;
   }
 
@@ -337,7 +353,7 @@ export class FirebaseStore implements StorageAdapter {
     if (!snap.exists) return null;
 
     const updated: Iteration = { ...snap.data(), id, ...updates };
-    await this.db.collection('iterations').doc(id).set(updated, { merge: true });
+    await this.db.collection('iterations').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
     return updated;
   }
 
@@ -364,7 +380,7 @@ export class FirebaseStore implements StorageAdapter {
     const docRef = this.db.collection('comments').doc();
     const now = new Date().toISOString();
     const newComment: Comment = { ...comment, id: docRef.id, createdAt: now, updatedAt: now };
-    await docRef.set(newComment);
+    await docRef.set(sanitizeFirestoreData(newComment));
     return newComment;
   }
 
@@ -377,7 +393,7 @@ export class FirebaseStore implements StorageAdapter {
       ...updates,
       updatedAt: new Date().toISOString()
     };
-    await this.db.collection('comments').doc(id).set(updated, { merge: true });
+    await this.db.collection('comments').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
     return updated;
   }
 
@@ -413,7 +429,7 @@ export class FirebaseStore implements StorageAdapter {
     const docRef = this.db.collection('attachments').doc();
     const now = new Date().toISOString();
     const newAtt: Attachment = { ...attachment, id: docRef.id, createdAt: now, updatedAt: now };
-    await docRef.set(newAtt);
+    await docRef.set(sanitizeFirestoreData(newAtt));
     return newAtt;
   }
 
@@ -440,7 +456,7 @@ export class FirebaseStore implements StorageAdapter {
     const docRef = this.db.collection('activities').doc();
     const now = new Date().toISOString();
     const newAct: Activity = { ...activity, id: docRef.id, createdAt: now };
-    await docRef.set(newAct);
+    await docRef.set(sanitizeFirestoreData(newAct));
     return newAct;
   }
 
@@ -454,7 +470,7 @@ export class FirebaseStore implements StorageAdapter {
     const docRef = this.db.collection('time_entries').doc();
     const now = new Date().toISOString();
     const newEntry: TimeEntry = { ...entry, id: docRef.id, loggedAt: now };
-    await docRef.set(newEntry);
+    await docRef.set(sanitizeFirestoreData(newEntry));
     return newEntry;
   }
 
@@ -467,7 +483,7 @@ export class FirebaseStore implements StorageAdapter {
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
     const docRef = this.db.collection('dependencies').doc();
     const newDep: TaskDependency = { ...dep, id: docRef.id };
-    await docRef.set(newDep);
+    await docRef.set(sanitizeFirestoreData(newDep));
     return newDep;
   }
 
@@ -481,7 +497,7 @@ export class FirebaseStore implements StorageAdapter {
     const docRef = this.db.collection('webhooks').doc();
     const now = new Date().toISOString();
     const newWh: Webhook = { ...webhook, id: docRef.id, createdAt: now };
-    await docRef.set(newWh);
+    await docRef.set(sanitizeFirestoreData(newWh));
     return newWh;
   }
 }

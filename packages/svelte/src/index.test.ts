@@ -10,10 +10,12 @@ import {
   CommentState,
   createCommentState,
   AttachmentState,
-  createAttachmentState
+  createAttachmentState,
+  TaskActivityState,
+  createTaskActivityState
 } from './index.js';
 import type { CriticalPathClient } from '@critical-path/client';
-import type { Project, Task, Workflow } from '@critical-path/core';
+import type { Project, Task, Workflow, Comment, Attachment } from '@critical-path/core';
 
 describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
   it('exports client factory and Svelte 5 Runes state factories', () => {
@@ -21,9 +23,15 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
     expect(createProjectState).toBeDefined();
     expect(createTaskState).toBeDefined();
     expect(createWorkflowState).toBeDefined();
+    expect(createCommentState).toBeDefined();
+    expect(createAttachmentState).toBeDefined();
+    expect(createTaskActivityState).toBeDefined();
     expect(ProjectState).toBeDefined();
     expect(TaskState).toBeDefined();
     expect(WorkflowState).toBeDefined();
+    expect(CommentState).toBeDefined();
+    expect(AttachmentState).toBeDefined();
+    expect(TaskActivityState).toBeDefined();
   });
 
   describe('WorkflowState', () => {
@@ -252,4 +260,51 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       expect(attachmentState.data).toEqual([]);
     });
   });
+
+  describe('TaskActivityState', () => {
+    it('fetches comments and attachments and unifies them into threads with attachments', async () => {
+      const mockComment: Comment = {
+        id: 'cmt_1',
+        taskId: 'task_1',
+        content: 'Comment with attachment',
+        authorId: 'u1',
+        authorType: 'user',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      };
+
+      const mockAttachment: Attachment = {
+        id: 'att_1',
+        taskId: 'task_1',
+        commentId: 'cmt_1',
+        filename: 'screenshot.png',
+        mimeType: 'image/png',
+        sizeBytes: 2048,
+        url: 'https://storage.example.com/screenshot.png',
+        uploaderId: 'u1',
+        uploaderType: 'user',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      };
+
+      const mockClient = {
+        getComments: vi.fn().mockResolvedValue([mockComment]),
+        getAttachments: vi.fn().mockResolvedValue([mockAttachment]),
+        addComment: vi.fn().mockResolvedValue(mockComment),
+        createAttachment: vi.fn().mockResolvedValue(mockAttachment),
+        deleteComment: vi.fn().mockResolvedValue(true),
+        deleteAttachment: vi.fn().mockResolvedValue(true)
+      } as unknown as CriticalPathClient;
+
+      const activityState = createTaskActivityState(mockClient, 'task_1');
+      await activityState.fetch();
+
+      expect(activityState.comments).toEqual([mockComment]);
+      expect(activityState.attachments).toEqual([mockAttachment]);
+      expect(activityState.threads).toHaveLength(1);
+      expect(activityState.threads[0].attachments).toEqual([mockAttachment]);
+      expect(activityState.standaloneAttachments).toHaveLength(0);
+    });
+  });
 });
+

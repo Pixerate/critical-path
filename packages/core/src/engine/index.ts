@@ -51,6 +51,7 @@ import {
   AttachmentCreatedEvent,
   AttachmentDeletedEvent
 } from '../domain/events.js';
+import { validateAttachmentUrl, AttachmentValidationError } from '../domain/entities.js';
 import { validateCustomFieldValues } from '../domain/custom-fields.js';
 import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
 
@@ -692,6 +693,7 @@ export class CriticalPathEngine {
   }
 
   async createAttachment(attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
+    validateAttachmentUrl(attachment.url);
     const created = await this.store.createAttachment(attachment);
     const now = new Date().toISOString();
 
