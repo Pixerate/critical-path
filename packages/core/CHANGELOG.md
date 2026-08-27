@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.8.3
+
+### Patch Changes
+
+- 2d5ff04: fix(core): decode base64 strings and data URIs into binary Uint8Array in storage adapters
+
 ## 0.8.2
 
 ### Patch Changes

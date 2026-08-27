@@ -1,5 +1,14 @@
 # @critical-path/react
 
+## 0.3.4
+
+### Patch Changes
+
+- 2d5ff04: fix(core): decode base64 strings and data URIs into binary Uint8Array in storage adapters
+- Updated dependencies [2d5ff04]
+  - @critical-path/core@0.8.3
+  - @critical-path/client@0.4.3
+
 ## 0.3.3
 
 ### Patch Changes
