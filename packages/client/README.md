@@ -41,6 +41,24 @@ const newTask = await client.createTask({
 
 // Update task status
 await client.updateTask(newTask.id, { status: 'in_progress' });
+
+// Add threaded comment
+const comment = await client.addComment({
+  taskId: newTask.id,
+  content: 'Initial implementation ready for review',
+  authorId: 'user_1',
+  authorType: 'user'
+});
+
+// Upload file directly or register storage attachment
+const attachment = await client.uploadAttachmentFile({
+  filename: 'architecture.png',
+  data: fileBuffer,
+  mimeType: 'image/png',
+  taskId: newTask.id,
+  commentId: comment.id,
+  uploaderId: 'user_1'
+});
 ```
 
 ---
