@@ -21,7 +21,7 @@ export interface FirebaseStorageBucketInterface {
 
 export class InMemoryFirebaseStorageMock implements FirebaseStorageBucketInterface {
   name: string;
-  private files = new Map<string, { data: Uint8Array; contentType: string }>();
+  private files = new Map<string, { data: Uint8Array; contentType: string; token?: string }>();
 
   constructor(name: string = 'mock-firebase-bucket') {
     this.name = name;
@@ -44,14 +44,26 @@ export class InMemoryFirebaseStorageMock implements FirebaseStorageBucketInterfa
         }
         files.set(path, {
           data: bytes,
-          contentType: options?.metadata?.contentType || 'application/octet-stream'
+          contentType: options?.metadata?.contentType || 'application/octet-stream',
+          token: options?.metadata?.metadata?.firebaseStorageDownloadTokens
         });
       },
       async delete() {
         files.delete(path);
       },
+      async getMetadata(): Promise<[any]> {
+        const file = files.get(path);
+        return [{
+          contentType: file?.contentType,
+          metadata: {
+            firebaseStorageDownloadTokens: file?.token
+          }
+        }];
+      },
       async getSignedUrl(config: any): Promise<[string]> {
-        return [`https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucketName)}/o/${encodeURIComponent(path)}?alt=media&token=mock-signed-token`];
+        const file = files.get(path);
+        const token = file?.token || 'mock-signed-token';
+        return [`https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucketName)}/o/${encodeURIComponent(path)}?alt=media&token=${token}`];
       },
       publicUrl() {
         return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucketName)}/o/${encodeURIComponent(path)}?alt=media`;
@@ -80,15 +92,12 @@ export class FirebaseStorageAdapter implements FileStorageAdapter {
     this.publicUrlBase = config.publicUrlBase?.replace(/\/+$/, '');
   }
 
-  private getPublicUrl(storageKey: string): string {
+  private getPublicUrl(storageKey: string, token?: string): string {
     if (this.publicUrlBase) {
       return `${this.publicUrlBase}/${encodeURIComponent(storageKey).replace(/%2F/g, '/')}`;
     }
-    const fileRef = this.bucket.file(storageKey);
-    if (typeof fileRef.publicUrl === 'function') {
-      return fileRef.publicUrl();
-    }
-    return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(this.bucketName)}/o/${encodeURIComponent(storageKey)}?alt=media`;
+    const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+    return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(this.bucketName)}/o/${encodeURIComponent(storageKey)}?alt=media${tokenParam}`;
   }
 
   async upload(input: UploadFileInput): Promise<UploadFileResult> {
@@ -112,16 +121,23 @@ export class FirebaseStorageAdapter implements FileStorageAdapter {
 
     const mimeType = input.mimeType || 'application/octet-stream';
     const sizeBytes = bodyData.byteLength;
+    const downloadToken =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
     const fileRef = this.bucket.file(storageKey);
     await fileRef.save(bodyData, {
       metadata: {
-        contentType: mimeType
+        contentType: mimeType,
+        metadata: {
+          firebaseStorageDownloadTokens: downloadToken
+        }
       },
       resumable: false
     });
 
-    const url = this.getPublicUrl(storageKey);
+    const url = this.getPublicUrl(storageKey, downloadToken);
 
     return {
       storageKey,
@@ -142,6 +158,16 @@ export class FirebaseStorageAdapter implements FileStorageAdapter {
   }
 
   async getDownloadUrl(storageKey: string): Promise<string> {
+    const fileRef = this.bucket.file(storageKey);
+    if (typeof (fileRef as any).getMetadata === 'function') {
+      try {
+        const [meta] = await (fileRef as any).getMetadata();
+        const token = meta?.metadata?.firebaseStorageDownloadTokens;
+        return this.getPublicUrl(storageKey, token);
+      } catch {
+        // Fallback to public URL without token
+      }
+    }
     return this.getPublicUrl(storageKey);
   }
 
