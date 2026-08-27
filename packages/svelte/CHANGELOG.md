@@ -1,5 +1,11 @@
 # @critical-path/svelte
 
+## 0.5.4
+
+### Patch Changes
+
+- 9aa53f7: Optimistically remove comments and attachments upon delete with automatic rollback on network failure
+
 ## 0.5.3
 
 ### Patch Changes
