@@ -1,5 +1,17 @@
 # @critical-path/svelte
 
+## 0.5.0
+
+### Minor Changes
+
+- 1811922: Add attachment URL validation against large data URIs, sanitize undefined properties in FirebaseStore, provide direct attachment upload routes & SDK methods, and introduce TaskActivityState for combined comment & attachment threads.
+
+### Patch Changes
+
+- Updated dependencies [1811922]
+  - @critical-path/core@0.8.0
+  - @critical-path/client@0.4.0
+
 ## 0.4.0
 
 ### Minor Changes
