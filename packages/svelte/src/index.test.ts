@@ -259,6 +259,32 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       await attachmentState.deleteAttachment('att_1');
       expect(attachmentState.data).toEqual([]);
     });
+
+    it('rolls back optimistic deletion if deleteAttachment fails', async () => {
+      const mockAttachment = {
+        id: 'att_2',
+        filename: 'notes.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 100,
+        url: 'https://storage.example.com/notes.txt',
+        uploaderId: 'u1',
+        uploaderType: 'user' as const,
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      };
+
+      const mockClient = {
+        getAttachments: vi.fn().mockResolvedValue([mockAttachment]),
+        deleteAttachment: vi.fn().mockRejectedValue(new Error('Network error'))
+      } as unknown as CriticalPathClient;
+
+      const attachmentState = new AttachmentState(mockClient, { taskId: 'task_1' });
+      await attachmentState.fetch();
+
+      expect(attachmentState.data).toHaveLength(1);
+      await expect(attachmentState.deleteAttachment('att_2')).rejects.toThrow('Network error');
+      expect(attachmentState.data).toEqual([mockAttachment]);
+    });
   });
 
   describe('TaskActivityState', () => {
@@ -304,6 +330,10 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       expect(activityState.threads).toHaveLength(1);
       expect(activityState.threads[0].attachments).toEqual([mockAttachment]);
       expect(activityState.standaloneAttachments).toHaveLength(0);
+
+      await activityState.deleteAttachment('att_1');
+      expect(activityState.attachments).toEqual([]);
+      expect(activityState.threads[0].attachments).toEqual([]);
     });
   });
 });

@@ -43,10 +43,12 @@ export class AttachmentState {
   }
 
   async deleteAttachment(id: string) {
+    const previous = this.data;
+    this.data = this.data.filter((a) => a.id !== id);
     try {
       await this.client.deleteAttachment(id);
-      this.data = this.data.filter((a) => a.id !== id);
     } catch (err) {
+      this.data = previous;
       const errorObj = err instanceof Error ? err : new Error(String(err));
       this.error = errorObj;
       throw errorObj;

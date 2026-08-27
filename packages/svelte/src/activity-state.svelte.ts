@@ -129,10 +129,12 @@ export class TaskActivityState {
   }
 
   async deleteComment(id: string) {
+    const previous = this.comments;
+    this.comments = this.comments.filter((c) => c.id !== id);
     try {
       await this.client.deleteComment(id);
-      this.comments = this.comments.filter((c) => c.id !== id);
     } catch (err) {
+      this.comments = previous;
       const errorObj = err instanceof Error ? err : new Error(String(err));
       this.error = errorObj;
       throw errorObj;
@@ -140,10 +142,12 @@ export class TaskActivityState {
   }
 
   async deleteAttachment(id: string) {
+    const previous = this.attachments;
+    this.attachments = this.attachments.filter((a) => a.id !== id);
     try {
       await this.client.deleteAttachment(id);
-      this.attachments = this.attachments.filter((a) => a.id !== id);
     } catch (err) {
+      this.attachments = previous;
       const errorObj = err instanceof Error ? err : new Error(String(err));
       this.error = errorObj;
       throw errorObj;

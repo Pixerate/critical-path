@@ -79,10 +79,12 @@ export class CommentState {
   }
 
   async deleteComment(id: string) {
+    const previous = this.data;
+    this.data = this.data.filter((c) => c.id !== id);
     try {
       await this.client.deleteComment(id);
-      this.data = this.data.filter((c) => c.id !== id);
     } catch (err) {
+      this.data = previous;
       const errorObj = err instanceof Error ? err : new Error(String(err));
       this.error = errorObj;
       throw errorObj;
