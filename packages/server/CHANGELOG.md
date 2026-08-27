@@ -1,5 +1,13 @@
 # @critical-path/server
 
+## 0.4.1
+
+### Patch Changes
+
+- 315425c: fix(core): generate Firebase Storage download tokens and construct valid public URLs
+- Updated dependencies [315425c]
+  - @critical-path/core@0.8.1
+
 ## 0.4.0
 
 ### Minor Changes

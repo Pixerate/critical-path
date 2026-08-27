@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.8.1
+
+### Patch Changes
+
+- 315425c: fix(core): generate Firebase Storage download tokens and construct valid public URLs
+
 ## 0.8.0
 
 ### Minor Changes

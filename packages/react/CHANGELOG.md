@@ -1,5 +1,14 @@
 # @critical-path/react
 
+## 0.3.2
+
+### Patch Changes
+
+- 315425c: fix(core): generate Firebase Storage download tokens and construct valid public URLs
+- Updated dependencies [315425c]
+  - @critical-path/core@0.8.1
+  - @critical-path/client@0.4.1
+
 ## 0.3.1
 
 ### Patch Changes
