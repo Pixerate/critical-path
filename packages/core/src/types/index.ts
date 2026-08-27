@@ -212,6 +212,7 @@ export interface UploadFileInput {
   data: Uint8Array | ArrayBuffer | Buffer | Blob | string;
   mimeType?: string;
   pathPrefix?: string;
+  encoding?: 'base64' | 'utf-8' | 'binary';
 }
 
 export interface UploadFileResult {

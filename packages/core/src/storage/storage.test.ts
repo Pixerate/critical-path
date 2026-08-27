@@ -142,5 +142,35 @@ describe('Storage Adapters', () => {
       const remainingAttachments = await engine.getAttachments({ taskId: task.id });
       expect(remainingAttachments.length).toBe(0);
     });
+
+    it('decodes base64 strings and data URIs into binary Uint8Array data', async () => {
+      const fileStore = new InMemoryFileStore();
+      const rawText = 'Hello Critical Path Storage';
+      const base64Text = Buffer.from(rawText).toString('base64');
+
+      const resBase64 = await fileStore.upload({
+        filename: 'test.png',
+        data: base64Text,
+        mimeType: 'image/png',
+        encoding: 'base64'
+      });
+
+      const stored = fileStore.getFile(resBase64.storageKey);
+      expect(stored).toBeDefined();
+      expect(stored?.sizeBytes).toBe(Buffer.from(rawText).length);
+      expect(new TextDecoder().decode(stored?.data)).toBe(rawText);
+
+      // Data URI
+      const dataUri = `data:image/png;base64,${base64Text}`;
+      const resDataUri = await fileStore.upload({
+        filename: 'datauri.png',
+        data: dataUri,
+        mimeType: 'image/png'
+      });
+      const storedUri = fileStore.getFile(resDataUri.storageKey);
+      expect(storedUri).toBeDefined();
+      expect(storedUri?.sizeBytes).toBe(Buffer.from(rawText).length);
+      expect(new TextDecoder().decode(storedUri?.data)).toBe(rawText);
+    });
   });
 });

@@ -1,5 +1,13 @@
 # @critical-path/server
 
+## 0.4.2
+
+### Patch Changes
+
+- fix(core): decode base64 strings and data URIs into binary Uint8Array in storage adapters
+- Updated dependencies
+  - @critical-path/core@0.8.2
+
 ## 0.4.1
 
 ### Patch Changes

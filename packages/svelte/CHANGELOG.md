@@ -1,5 +1,14 @@
 # @critical-path/svelte
 
+## 0.5.2
+
+### Patch Changes
+
+- fix(core): decode base64 strings and data URIs into binary Uint8Array in storage adapters
+- Updated dependencies
+  - @critical-path/core@0.8.2
+  - @critical-path/client@0.4.2
+
 ## 0.5.1
 
 ### Patch Changes

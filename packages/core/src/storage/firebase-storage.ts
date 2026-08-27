@@ -5,6 +5,7 @@ import type {
   PresignedUrlOptions,
   PresignedUploadResult
 } from '../types/index.js';
+import { normalizeUploadData } from './file-storage.js';
 
 export interface FirebaseStorageBucketInterface {
   name?: string;
@@ -106,19 +107,7 @@ export class FirebaseStorageAdapter implements FileStorageAdapter {
     const sanitizedFilename = input.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
     const storageKey = `${prefix}${Date.now()}_${randomId}_${sanitizedFilename}`;
 
-    let bodyData: Uint8Array;
-    if (typeof input.data === 'string') {
-      bodyData = new TextEncoder().encode(input.data);
-    } else if (input.data instanceof Uint8Array) {
-      bodyData = input.data;
-    } else if (input.data instanceof ArrayBuffer) {
-      bodyData = new Uint8Array(input.data);
-    } else if (typeof Buffer !== 'undefined' && Buffer.isBuffer(input.data)) {
-      bodyData = new Uint8Array(input.data);
-    } else {
-      bodyData = new Uint8Array();
-    }
-
+    const bodyData = normalizeUploadData(input.data, input.encoding, input.mimeType);
     const mimeType = input.mimeType || 'application/octet-stream';
     const sizeBytes = bodyData.byteLength;
     const downloadToken =
