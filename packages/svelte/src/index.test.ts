@@ -131,7 +131,7 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       const mockClient = {
         getTasks: vi.fn().mockResolvedValue([mockTask]),
         createTask: vi.fn().mockResolvedValue(mockTask),
-        updateTask: vi.fn().mockResolvedValue(updatedTask),
+        updateTask: vi.fn().mockImplementation((taskId: string, updates: Partial<Task>) => Promise.resolve({ ...mockTask, ...updates })),
         deleteTask: vi.fn().mockResolvedValue(undefined)
       } as unknown as CriticalPathClient;
 
@@ -143,6 +143,12 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       // Update status
       await taskState.updateTaskStatus('task_1', 'in_progress');
       expect(taskState.data[0].status).toBe('in_progress');
+
+      // Update task generic updates (e.g. todos)
+      await taskState.updateTask('task_1', {
+        todos: [{ id: 'todo_1', title: 'Checklist item', completed: true }]
+      });
+      expect(taskState.data[0].todos).toEqual([{ id: 'todo_1', title: 'Checklist item', completed: true }]);
 
       // Delete task
       await taskState.deleteTask('task_1');
