@@ -1,5 +1,17 @@
 # @critical-path/svelte
 
+## 0.6.0
+
+### Minor Changes
+
+- e983557: Add first-class optional todo list (checklist) support to Task model and TaskEntity with helper methods (addTodo, toggleTodo, removeTodo) and updateTask helper in @critical-path/svelte.
+
+### Patch Changes
+
+- Updated dependencies [e983557]
+  - @critical-path/core@0.9.0
+  - @critical-path/client@0.4.4
+
 ## 0.5.4
 
 ### Patch Changes
