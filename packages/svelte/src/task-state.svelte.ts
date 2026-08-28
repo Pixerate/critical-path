@@ -51,6 +51,47 @@ export class TaskState {
     }
   }
 
+  async updateTask(taskId: string, updates: Partial<Task>) {
+    const idx = this.data.findIndex((t) => t.id === taskId);
+    if (idx === -1) {
+      return this.client.updateTask(taskId, updates);
+    }
+
+    const previousTask = this.data[idx];
+    const optimisticTask: Task = {
+      ...previousTask,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+
+    // Optimistically update local task
+    const newData = [...this.data];
+    newData[idx] = optimisticTask;
+    this.data = newData;
+
+    try {
+      const updated = await this.client.updateTask(taskId, updates);
+      const currentIdx = this.data.findIndex((t) => t.id === taskId);
+      if (currentIdx !== -1) {
+        const confirmedData = [...this.data];
+        confirmedData[currentIdx] = updated;
+        this.data = confirmedData;
+      }
+      return updated;
+    } catch (err) {
+      // Rollback to previous task on error
+      const rollbackIdx = this.data.findIndex((t) => t.id === taskId);
+      if (rollbackIdx !== -1) {
+        const rollbackData = [...this.data];
+        rollbackData[rollbackIdx] = previousTask;
+        this.data = rollbackData;
+      }
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      this.error = errorObj;
+      throw errorObj;
+    }
+  }
+
   async updateTaskStatus(taskId: string, status: TaskStatus) {
     const idx = this.data.findIndex((t) => t.id === taskId);
     if (idx === -1) {

@@ -5,6 +5,7 @@ import type {
   TimeEntry,
   Priority,
   TaskStatus,
+  TaskTodoItem,
   CustomFieldDefinition,
   CreateTaskInput,
   CreateProjectInput
@@ -79,6 +80,7 @@ export class TaskEntity extends BaseEntity {
   public billableDurationMinutes?: number;
   public progress?: number;
   public tags?: string[];
+  public todos?: TaskTodoItem[];
   public customFields?: Record<string, unknown>;
   public parentId?: string;
 
@@ -110,6 +112,7 @@ export class TaskEntity extends BaseEntity {
     this.billableDurationMinutes = data.billableDurationMinutes;
     this.progress = data.progress ?? 0;
     this.tags = data.tags ? [...data.tags] : [];
+    this.todos = data.todos ? data.todos.map((t) => ({ ...t })) : [];
     this.customFields = data.customFields ? { ...data.customFields } : {};
     this.parentId = data.parentId;
   }
@@ -135,6 +138,7 @@ export class TaskEntity extends BaseEntity {
       loggedHours: input.loggedHours ?? 0,
       progress: input.progress ?? 0,
       tags: input.tags ?? [],
+      todos: input.todos ?? [],
       customFields: input.customFields ?? {}
     });
 
@@ -239,6 +243,83 @@ export class TaskEntity extends BaseEntity {
     return timeEntry;
   }
 
+  public addTodo(title: string, id?: string): TaskTodoItem {
+    const previous = this.toPlain();
+    const item: TaskTodoItem = {
+      id: id || `todo_${Math.random().toString(36).substring(2, 9)}`,
+      title,
+      completed: false,
+      createdAt: new Date().toISOString()
+    };
+    if (!this.todos) {
+      this.todos = [];
+    }
+    this.todos.push(item);
+    this.markUpdated();
+
+    const event: TaskUpdatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'task.updated',
+      aggregateId: this.id,
+      aggregateType: 'Task',
+      occurredAt: new Date().toISOString(),
+      payload: {
+        task: this.toPlain(),
+        previous
+      }
+    };
+    this.raiseEvent(event);
+
+    return item;
+  }
+
+  public toggleTodo(todoId: string, completed?: boolean): this {
+    if (!this.todos) return this;
+    const item = this.todos.find((t) => t.id === todoId);
+    if (item) {
+      const previous = this.toPlain();
+      item.completed = completed !== undefined ? completed : !item.completed;
+      item.completedAt = item.completed ? new Date().toISOString() : undefined;
+      this.markUpdated();
+
+      const event: TaskUpdatedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'task.updated',
+        aggregateId: this.id,
+        aggregateType: 'Task',
+        occurredAt: new Date().toISOString(),
+        payload: {
+          task: this.toPlain(),
+          previous
+        }
+      };
+      this.raiseEvent(event);
+    }
+    return this;
+  }
+
+  public removeTodo(todoId: string): this {
+    if (!this.todos) return this;
+    const previous = this.toPlain();
+    this.todos = this.todos.filter((t) => t.id !== todoId);
+    this.markUpdated();
+
+    const event: TaskUpdatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'task.updated',
+      aggregateId: this.id,
+      aggregateType: 'Task',
+      occurredAt: new Date().toISOString(),
+      payload: {
+        task: this.toPlain(),
+        previous
+      }
+    };
+    this.raiseEvent(event);
+
+    return this;
+  }
+
   public update(updates: Partial<Task>, customFieldDefs?: CustomFieldDefinition[]): this {
     const previous = this.toPlain();
 
@@ -297,6 +378,7 @@ export class TaskEntity extends BaseEntity {
       billableDurationMinutes: this.billableDurationMinutes,
       progress: this.progress,
       tags: this.tags ? [...this.tags] : [],
+      todos: this.todos ? this.todos.map((t) => ({ ...t })) : [],
       customFields: this.customFields ? { ...this.customFields } : {},
       parentId: this.parentId,
       createdAt: this.createdAt,

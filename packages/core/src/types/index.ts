@@ -119,6 +119,14 @@ export interface TaskDependencyGraph {
   dependencies: TaskDependency[];
 }
 
+export interface TaskTodoItem {
+  id: string;
+  title: string;
+  completed: boolean;
+  createdAt?: string;
+  completedAt?: string;
+}
+
 export interface Task {
   id: string;
   projectId: string;
@@ -149,6 +157,7 @@ export interface Task {
   // Progress (0 to 100 percentage)
   progress?: number;
   tags?: string[];
+  todos?: TaskTodoItem[];
   customFields?: Record<string, unknown>;
   parentId?: string; // Subtask support
   createdAt: string;

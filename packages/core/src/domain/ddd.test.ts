@@ -283,6 +283,52 @@ describe('Domain-Driven Design (DDD) Enhancements Suite', () => {
       expect(task.progress).toBe(100);
     });
 
+    it('manages task todo items (add, toggle, remove) and preserves them in toPlain', () => {
+      const task = TaskEntity.create({
+        projectId: 'proj_1',
+        title: 'Task with Todos',
+        status: 'todo',
+        priority: 'medium'
+      });
+
+      expect(task.todos).toEqual([]);
+      task.clearEvents();
+
+      // Add a todo
+      const item1 = task.addTodo('Write unit tests');
+      expect(item1.id).toBeDefined();
+      expect(item1.title).toBe('Write unit tests');
+      expect(item1.completed).toBe(false);
+      expect(task.todos?.length).toBe(1);
+      expect(task.getUncommittedEvents().length).toBe(1);
+      expect(task.getUncommittedEvents()[0].name).toBe('task.updated');
+      task.clearEvents();
+
+      // Add second todo
+      const item2 = task.addTodo('Run storybook build');
+      expect(task.todos?.length).toBe(2);
+
+      // Toggle first todo
+      task.toggleTodo(item1.id, true);
+      expect(task.todos?.[0].completed).toBe(true);
+      expect(task.todos?.[0].completedAt).toBeDefined();
+
+      // Toggle back
+      task.toggleTodo(item1.id);
+      expect(task.todos?.[0].completed).toBe(false);
+      expect(task.todos?.[0].completedAt).toBeUndefined();
+
+      // Remove second todo
+      task.removeTodo(item2.id);
+      expect(task.todos?.length).toBe(1);
+      expect(task.todos?.[0].id).toBe(item1.id);
+
+      // Verify toPlain serialization
+      const plain = task.toPlain();
+      expect(plain.todos).toEqual(task.todos);
+      expect(plain.todos).not.toBe(task.todos); // should be cloned
+    });
+
     it('creates ProjectEntity and handles key generation and custom field validation', () => {
       const project = ProjectEntity.create({
         name: 'Critical Path Core',
