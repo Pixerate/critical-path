@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.10.0
+
+### Minor Changes
+
+- e9003d3: Add emoji reactions support for comment conversations with domain events, deduplication, REST endpoints, client SDK, and React/Svelte state integrations.
+
 ## 0.9.0
 
 ### Minor Changes
