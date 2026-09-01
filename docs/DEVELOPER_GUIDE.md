@@ -157,6 +157,10 @@ All endpoints return JSON responses.
 - `GET /api/critical-path/activities?projectId=:id&taskId=:id` - Fetch audit stream.
 - `GET /api/critical-path/comments?taskId=:id` - Fetch task comments.
 - `POST /api/critical-path/comments` - Post comment to task.
+- `PATCH /api/critical-path/comments/:id` - Update comment content.
+- `DELETE /api/critical-path/comments/:id` - Delete comment.
+- `POST /api/critical-path/comments/:id/reactions` - Add emoji reaction `{ emoji, userId }`.
+- `DELETE /api/critical-path/comments/:id/reactions` - Remove emoji reaction (`{ emoji, userId }` in body or query).
 - `GET /api/critical-path/attachments?taskId=:id` - List attachments.
 - `POST /api/critical-path/attachments` - Register an attachment.
 - `POST /api/critical-path/attachments/upload` - Direct binary file upload via `FileStorageAdapter`.
@@ -384,7 +388,7 @@ const engine = new CriticalPathEngine({ fileStorage });
 
 ---
 
-## 10. Threaded Comments & Attachments (React & Svelte)
+## 10. Threaded Comments, Emoji Reactions & Attachments (React & Svelte)
 
 ### React Hooks (`@critical-path/react`)
 
@@ -392,7 +396,7 @@ const engine = new CriticalPathEngine({ fileStorage });
 import { useComments, useAttachments } from '@critical-path/react';
 
 function TaskDetail({ taskId }: { taskId: string }) {
-  const { comments, threads, addComment, updateComment, deleteComment } = useComments(taskId);
+  const { comments, threads, addComment, updateComment, deleteComment, addReaction, removeReaction } = useComments(taskId);
   const { attachments, createAttachment, deleteAttachment } = useAttachments({ taskId });
 
   return (
@@ -401,6 +405,11 @@ function TaskDetail({ taskId }: { taskId: string }) {
       {threads.map(thread => (
         <div key={thread.id}>
           <p><strong>{thread.authorId}</strong> ({thread.authorType}): {thread.content}</p>
+          <div className="reactions">
+            <button onClick={() => addReaction(thread.id, '👍', 'user_1')}>👍</button>
+            <button onClick={() => addReaction(thread.id, '❤️', 'user_1')}>❤️</button>
+            <span>{thread.reactions?.length || 0} reactions</span>
+          </div>
           {thread.replies.map(reply => (
             <p key={reply.id} style={{ marginLeft: 20 }}>↪ {reply.content}</p>
           ))}
@@ -419,7 +428,7 @@ function TaskDetail({ taskId }: { taskId: string }) {
 ### Svelte 5 Runes (`@critical-path/svelte`)
 
 #### Combined Task Activity State (`TaskActivityState`)
-Unifies threaded comments with their inline attachments (`attachment.commentId === comment.id`) alongside standalone attachments:
+Unifies threaded comments with their inline attachments (`attachment.commentId === comment.id`), emoji reactions, alongside standalone attachments:
 
 ```svelte
 <script lang="ts">
@@ -437,6 +446,12 @@ Unifies threaded comments with their inline attachments (`attachment.commentId =
 {#each activityState.threads as thread}
   <div class="comment">
     <p><strong>{thread.authorId}</strong>: {thread.content}</p>
+
+    <!-- Emoji Reactions -->
+    <div class="reactions">
+      <button on:click={() => activityState.addReaction(thread.id, '👍', 'user_1')}>👍</button>
+      <span>{thread.reactions?.length || 0} reactions</span>
+    </div>
 
     {#if thread.attachments.length > 0}
       <ul>

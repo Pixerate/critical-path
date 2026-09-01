@@ -257,5 +257,58 @@ describe('CriticalPathEngine Core Tests', () => {
       })
     ).rejects.toThrow('Attachment URL cannot be a large data URI');
   });
+
+  it('supports adding and removing emoji reactions on comments with events and deduplication', async () => {
+    const engine = new CriticalPathEngine();
+    const proj = await engine.createProject({ key: 'CMT', name: 'Comment Project' });
+    const task = await engine.createTask({ projectId: proj.id, title: 'Comment Task', status: 'todo' });
+
+    const comment = await engine.addComment({
+      taskId: task.id,
+      authorId: 'user_1',
+      content: 'Great progress!'
+    });
+
+    const receivedEvents: string[] = [];
+    engine.events.subscribe('*', (event) => {
+      receivedEvents.push(event.name);
+    });
+
+    // Add reaction 👍
+    const withReaction = await engine.addCommentReaction(comment.id, {
+      emoji: '👍',
+      userId: 'user_2'
+    });
+    expect(withReaction?.reactions).toHaveLength(1);
+    expect(withReaction?.reactions?.[0]).toMatchObject({
+      emoji: '👍',
+      userId: 'user_2'
+    });
+    expect(withReaction?.reactions?.[0].createdAt).toBeDefined();
+    expect(receivedEvents).toContain('comment.reaction.added');
+
+    // Add duplicate reaction from same user (should deduplicate)
+    const duplicateReaction = await engine.addCommentReaction(comment.id, {
+      emoji: '👍',
+      userId: 'user_2'
+    });
+    expect(duplicateReaction?.reactions).toHaveLength(1);
+
+    // Add different reaction from another user
+    const secondReaction = await engine.addCommentReaction(comment.id, {
+      emoji: '🚀',
+      userId: 'user_3'
+    });
+    expect(secondReaction?.reactions).toHaveLength(2);
+
+    // Remove reaction 👍
+    const afterRemoval = await engine.removeCommentReaction(comment.id, {
+      emoji: '👍',
+      userId: 'user_2'
+    });
+    expect(afterRemoval?.reactions).toHaveLength(1);
+    expect(afterRemoval?.reactions?.[0].emoji).toBe('🚀');
+    expect(receivedEvents).toContain('comment.reaction.removed');
+  });
 });
 

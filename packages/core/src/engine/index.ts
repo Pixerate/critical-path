@@ -48,6 +48,8 @@ import {
   CommentAddedEvent,
   CommentUpdatedEvent,
   CommentDeletedEvent,
+  CommentReactionAddedEvent,
+  CommentReactionRemovedEvent,
   AttachmentCreatedEvent,
   AttachmentDeletedEvent
 } from '../domain/events.js';
@@ -681,6 +683,82 @@ export class CriticalPathEngine {
       this.dispatchWebhook('comment.deleted', { commentId: id, taskId: existing.taskId });
     }
     return deleted;
+  }
+
+  async addCommentReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
+    const existing = await this.store.getComment(commentId);
+    if (!existing) return null;
+
+    let updated: Comment | null;
+    if (this.store.addReaction) {
+      updated = await this.store.addReaction(commentId, reaction);
+    } else {
+      const reactions = existing.reactions ? [...existing.reactions] : [];
+      const alreadyExists = reactions.some((r) => r.emoji === reaction.emoji && r.userId === reaction.userId);
+      if (!alreadyExists) {
+        reactions.push({
+          emoji: reaction.emoji,
+          userId: reaction.userId,
+          createdAt: new Date().toISOString()
+        });
+      }
+      updated = await this.store.updateComment(commentId, { reactions });
+    }
+
+    if (!updated) return null;
+
+    const now = new Date().toISOString();
+    const event: CommentReactionAddedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'comment.reaction.added',
+      aggregateId: commentId,
+      aggregateType: 'Comment',
+      occurredAt: now,
+      payload: {
+        commentId,
+        reaction: {
+          emoji: reaction.emoji,
+          userId: reaction.userId,
+          createdAt: now
+        },
+        comment: updated
+      }
+    };
+    await this.events.publish(event);
+
+    this.dispatchWebhook('comment.reaction.added', { comment: updated, reaction });
+    return updated;
+  }
+
+  async removeCommentReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
+    const existing = await this.store.getComment(commentId);
+    if (!existing) return null;
+
+    let updated: Comment | null;
+    if (this.store.removeReaction) {
+      updated = await this.store.removeReaction(commentId, reaction);
+    } else {
+      const reactions = (existing.reactions || []).filter(
+        (r) => !(r.emoji === reaction.emoji && r.userId === reaction.userId)
+      );
+      updated = await this.store.updateComment(commentId, { reactions });
+    }
+
+    if (!updated) return null;
+
+    const now = new Date().toISOString();
+    const event: CommentReactionRemovedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'comment.reaction.removed',
+      aggregateId: commentId,
+      aggregateType: 'Comment',
+      occurredAt: now,
+      payload: { commentId, reaction, comment: updated }
+    };
+    await this.events.publish(event);
+
+    this.dispatchWebhook('comment.reaction.removed', { comment: updated, reaction });
+    return updated;
   }
 
   // --- Attachments ---

@@ -71,6 +71,8 @@ export interface CommentRepository {
   addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment>;
   updateComment(id: string, updates: Partial<Comment>): Promise<Comment | null>;
   deleteComment(id: string): Promise<boolean>;
+  addReaction?(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null>;
+  removeReaction?(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null>;
 }
 
 export interface AttachmentRepository {
@@ -367,6 +369,42 @@ export class InMemoryStore implements StorageAdapter {
 
   async deleteComment(id: string): Promise<boolean> {
     return this.comments.delete(id);
+  }
+
+  async addReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
+    const existing = this.comments.get(commentId);
+    if (!existing) return null;
+    const reactions = existing.reactions ? [...existing.reactions] : [];
+    const alreadyExists = reactions.some((r) => r.emoji === reaction.emoji && r.userId === reaction.userId);
+    if (!alreadyExists) {
+      reactions.push({
+        emoji: reaction.emoji,
+        userId: reaction.userId,
+        createdAt: new Date().toISOString()
+      });
+    }
+    const updated: Comment = {
+      ...existing,
+      reactions,
+      updatedAt: new Date().toISOString()
+    };
+    this.comments.set(commentId, updated);
+    return updated;
+  }
+
+  async removeReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
+    const existing = this.comments.get(commentId);
+    if (!existing) return null;
+    const reactions = (existing.reactions || []).filter(
+      (r) => !(r.emoji === reaction.emoji && r.userId === reaction.userId)
+    );
+    const updated: Comment = {
+      ...existing,
+      reactions,
+      updatedAt: new Date().toISOString()
+    };
+    this.comments.set(commentId, updated);
+    return updated;
   }
 
   // Attachments

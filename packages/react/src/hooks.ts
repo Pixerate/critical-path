@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { Project, Task, TaskStatus, Workflow, Comment, Attachment } from '@critical-path/core';
+import type { Project, Task, TaskStatus, Workflow, Comment, CommentReaction, Attachment } from '@critical-path/core';
 import { useCriticalPathClient } from './provider.js';
 
 export function useWorkflows() {
@@ -337,6 +337,46 @@ export function useComments(taskId: string) {
     }
   };
 
+  const addReaction = async (
+    commentId: string,
+    reactionOrEmoji: { emoji: string; userId: string } | string,
+    maybeUserId?: string
+  ) => {
+    try {
+      const payload =
+        typeof reactionOrEmoji === 'string'
+          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
+          : reactionOrEmoji;
+      const updated = await client.addCommentReaction(commentId, payload);
+      setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)));
+      return updated;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const removeReaction = async (
+    commentId: string,
+    reactionOrEmoji: { emoji: string; userId: string } | string,
+    maybeUserId?: string
+  ) => {
+    try {
+      const payload =
+        typeof reactionOrEmoji === 'string'
+          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
+          : reactionOrEmoji;
+      const updated = await client.removeCommentReaction(commentId, payload);
+      setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)));
+      return updated;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
   // Build tree of threaded comments
   const threads = useMemo(() => {
     const map = new Map<string, ThreadedComment>();
@@ -368,7 +408,9 @@ export function useComments(taskId: string) {
     refresh: fetchComments,
     addComment,
     updateComment,
-    deleteComment
+    deleteComment,
+    addReaction,
+    removeReaction
   };
 }
 

@@ -8,6 +8,7 @@ import type {
   TaskDependency,
   TimeEntry,
   Comment,
+  CommentReaction,
   Attachment
 } from '../types/index.js';
 
@@ -62,6 +63,16 @@ export interface CommentUpdatedEvent extends DomainEvent<{ comment: Comment; pre
 
 export interface CommentDeletedEvent extends DomainEvent<{ commentId: string; taskId: string }> {
   readonly name: 'comment.deleted';
+  readonly aggregateType: 'Comment';
+}
+
+export interface CommentReactionAddedEvent extends DomainEvent<{ commentId: string; reaction: CommentReaction; comment: Comment }> {
+  readonly name: 'comment.reaction.added';
+  readonly aggregateType: 'Comment';
+}
+
+export interface CommentReactionRemovedEvent extends DomainEvent<{ commentId: string; reaction: { emoji: string; userId: string }; comment: Comment }> {
+  readonly name: 'comment.reaction.removed';
   readonly aggregateType: 'Comment';
 }
 
@@ -134,6 +145,8 @@ export type CriticalPathDomainEvent =
   | CommentAddedEvent
   | CommentUpdatedEvent
   | CommentDeletedEvent
+  | CommentReactionAddedEvent
+  | CommentReactionRemovedEvent
   | AttachmentCreatedEvent
   | AttachmentDeletedEvent
   | TaskDependencyAddedEvent

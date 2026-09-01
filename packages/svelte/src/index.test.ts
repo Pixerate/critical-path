@@ -216,12 +216,15 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
         updatedAt: '2026-01-01'
       };
       const updatedComment = { ...mockComment, content: 'Updated comment' };
+      const reactedComment = { ...mockComment, reactions: [{ emoji: '🔥', userId: 'u2', createdAt: '2026-01-01' }] };
 
       const mockClient = {
         getComments: vi.fn().mockResolvedValue([mockComment]),
         addComment: vi.fn().mockResolvedValue(mockComment),
         updateComment: vi.fn().mockResolvedValue(updatedComment),
-        deleteComment: vi.fn().mockResolvedValue(true)
+        deleteComment: vi.fn().mockResolvedValue(true),
+        addCommentReaction: vi.fn().mockResolvedValue(reactedComment),
+        removeCommentReaction: vi.fn().mockResolvedValue(mockComment)
       } as unknown as CriticalPathClient;
 
       const commentState = new CommentState(mockClient, 'task_1');
@@ -231,6 +234,13 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
 
       await commentState.updateComment('cmt_1', { content: 'Updated comment' });
       expect(commentState.data[0].content).toBe('Updated comment');
+
+      await commentState.addReaction('cmt_1', '🔥', 'u2');
+      expect(commentState.data[0].reactions).toHaveLength(1);
+      expect(commentState.data[0].reactions?.[0].emoji).toBe('🔥');
+
+      await commentState.removeReaction('cmt_1', '🔥', 'u2');
+      expect(commentState.data[0].reactions).toBeUndefined();
 
       await commentState.deleteComment('cmt_1');
       expect(commentState.data).toEqual([]);

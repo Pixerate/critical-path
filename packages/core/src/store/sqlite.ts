@@ -154,6 +154,7 @@ export class SQLiteStore implements StorageAdapter {
         authorType TEXT,
         parentId TEXT,
         content TEXT NOT NULL,
+        reactions TEXT,
         metadata TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
@@ -212,6 +213,12 @@ export class SQLiteStore implements StorageAdapter {
         createdAt TEXT NOT NULL
       );
     `);
+
+    try {
+      this.db.exec('ALTER TABLE comments ADD COLUMN reactions TEXT');
+    } catch {
+      // Column may already exist
+    }
   }
 
   // --- Projects ---
@@ -682,23 +689,32 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   // --- Comments ---
+  private mapComment(row: any): Comment {
+    return {
+      id: row.id,
+      taskId: row.taskId,
+      authorId: row.authorId,
+      authorType: row.authorType,
+      parentId: row.parentId || undefined,
+      content: row.content,
+      reactions: row.reactions ? JSON.parse(row.reactions) : undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+  }
+
   async getComments(taskId: string): Promise<Comment[]> {
     const stmt = this.db.prepare('SELECT * FROM comments WHERE taskId = ? ORDER BY createdAt ASC');
     const rows = stmt.all(taskId) as any[];
-    return rows.map((r) => ({
-      ...r,
-      metadata: r.metadata ? JSON.parse(r.metadata) : undefined
-    }));
+    return rows.map((r) => this.mapComment(r));
   }
 
   async getComment(id: string): Promise<Comment | null> {
     const stmt = this.db.prepare('SELECT * FROM comments WHERE id = ?');
     const row = stmt.get(id) as any;
     if (!row) return null;
-    return {
-      ...row,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined
-    };
+    return this.mapComment(row);
   }
 
   async addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
@@ -707,8 +723,8 @@ export class SQLiteStore implements StorageAdapter {
     const newComment: Comment = { ...comment, id, createdAt: now, updatedAt: now };
 
     const stmt = this.db.prepare(`
-      INSERT INTO comments (id, taskId, authorId, authorType, parentId, content, metadata, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO comments (id, taskId, authorId, authorType, parentId, content, reactions, metadata, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newComment.id,
@@ -717,6 +733,7 @@ export class SQLiteStore implements StorageAdapter {
       newComment.authorType || 'user',
       newComment.parentId || null,
       newComment.content,
+      newComment.reactions ? JSON.stringify(newComment.reactions) : null,
       newComment.metadata ? JSON.stringify(newComment.metadata) : null,
       newComment.createdAt,
       newComment.updatedAt
@@ -740,6 +757,7 @@ export class SQLiteStore implements StorageAdapter {
         authorType = ?,
         parentId = ?,
         content = ?,
+        reactions = ?,
         metadata = ?,
         updatedAt = ?
       WHERE id = ?
@@ -749,6 +767,7 @@ export class SQLiteStore implements StorageAdapter {
       updated.authorType || 'user',
       updated.parentId || null,
       updated.content,
+      updated.reactions ? JSON.stringify(updated.reactions) : null,
       updated.metadata ? JSON.stringify(updated.metadata) : null,
       updated.updatedAt,
       id
@@ -760,6 +779,30 @@ export class SQLiteStore implements StorageAdapter {
     const stmt = this.db.prepare('DELETE FROM comments WHERE id = ?');
     const result = stmt.run(id);
     return (result.changes ?? 0) > 0;
+  }
+
+  async addReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
+    const existing = await this.getComment(commentId);
+    if (!existing) return null;
+    const reactions = existing.reactions ? [...existing.reactions] : [];
+    const alreadyExists = reactions.some((r) => r.emoji === reaction.emoji && r.userId === reaction.userId);
+    if (!alreadyExists) {
+      reactions.push({
+        emoji: reaction.emoji,
+        userId: reaction.userId,
+        createdAt: new Date().toISOString()
+      });
+    }
+    return this.updateComment(commentId, { reactions });
+  }
+
+  async removeReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
+    const existing = await this.getComment(commentId);
+    if (!existing) return null;
+    const reactions = (existing.reactions || []).filter(
+      (r) => !(r.emoji === reaction.emoji && r.userId === reaction.userId)
+    );
+    return this.updateComment(commentId, { reactions });
   }
 
   // --- Attachments ---

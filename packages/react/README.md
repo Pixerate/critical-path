@@ -60,6 +60,31 @@ export function Board({ projectId }: { projectId: string }) {
     </div>
   );
 }
+### 3. Manage Task Comments & Reactions
+
+```tsx
+'use client';
+
+import { useComments } from '@critical-path/react';
+
+export function TaskDiscussion({ taskId }: { taskId: string }) {
+  const { comments, threads, addComment, addReaction, removeReaction } = useComments(taskId);
+
+  return (
+    <div className="discussion">
+      {comments.map((comment) => (
+        <div key={comment.id} className="comment">
+          <p>{comment.content}</p>
+          <div className="reactions flex gap-2">
+            <button onClick={() => addReaction(comment.id, '👍', 'user_1')}>👍</button>
+            <button onClick={() => addReaction(comment.id, '🚀', 'user_1')}>🚀</button>
+            <span>{comment.reactions?.length || 0} reactions</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 ```
 
 ---

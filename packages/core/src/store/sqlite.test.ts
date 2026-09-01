@@ -94,6 +94,17 @@ describe('SQLiteStore', () => {
     const entries = await store.getTimeEntries('task_1');
     expect(entries).toHaveLength(1);
 
+    // Emoji reactions
+    const reactComment = await store.addReaction(comment.id, { emoji: '🔥', userId: 'user_2' });
+    expect(reactComment?.reactions).toHaveLength(1);
+    expect(reactComment?.reactions?.[0].emoji).toBe('🔥');
+
+    const fetchedWithReactions = await store.getComment(comment.id);
+    expect(fetchedWithReactions?.reactions).toHaveLength(1);
+
+    const unreactComment = await store.removeReaction(comment.id, { emoji: '🔥', userId: 'user_2' });
+    expect(unreactComment?.reactions).toHaveLength(0);
+
     const deletedComment = await store.deleteComment(reply.id);
     expect(deletedComment).toBe(true);
     expect(await store.getComments('task_1')).toHaveLength(1);

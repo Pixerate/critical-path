@@ -187,5 +187,44 @@ describe('@critical-path/server Router Tests', () => {
     const invalidAttData = await invalidAttRes.json();
     expect(invalidAttData.error).toContain('Attachment URL cannot be a large data URI');
   });
+
+  it('handles emoji reactions on comments via POST and DELETE /comments/:id/reactions', async () => {
+    const router = new CriticalPathRouter();
+    const proj = await router.engine.createProject({ key: 'RCT', name: 'Reaction Proj' });
+    const task = await router.engine.createTask({ projectId: proj.id, title: 'Reaction Task', status: 'todo' });
+    const comment = await router.engine.addComment({ taskId: task.id, authorId: 'u1', content: 'Nice job!' });
+
+    // 1. Add reaction via POST
+    const addReactReq = new Request(`http://localhost:3000/api/critical-path/comments/${comment.id}/reactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji: '❤️', userId: 'u2' })
+    });
+    const addReactRes = await router.handleRequest(addReactReq);
+    expect(addReactRes.status).toBe(200);
+    const addReactData = await addReactRes.json();
+    expect(addReactData.comment.reactions).toHaveLength(1);
+    expect(addReactData.comment.reactions[0].emoji).toBe('❤️');
+
+    // 2. Add reaction validation error (missing emoji or userId)
+    const badReactReq = new Request(`http://localhost:3000/api/critical-path/comments/${comment.id}/reactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji: '❤️' })
+    });
+    const badReactRes = await router.handleRequest(badReactReq);
+    expect(badReactRes.status).toBe(400);
+
+    // 3. Remove reaction via DELETE
+    const delReactReq = new Request(`http://localhost:3000/api/critical-path/comments/${comment.id}/reactions`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji: '❤️', userId: 'u2' })
+    });
+    const delReactRes = await router.handleRequest(delReactReq);
+    expect(delReactRes.status).toBe(200);
+    const delReactData = await delReactRes.json();
+    expect(delReactData.comment.reactions).toHaveLength(0);
+  });
 });
 

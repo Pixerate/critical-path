@@ -20,8 +20,8 @@
   - `InMemoryFileStore`: Lightweight in-memory binary asset storage with presigned URL simulation.
   - `S3StorageAdapter`: Zero-dependency S3 client adapter compatible with AWS SDK v3, v2, MinIO, and Cloudflare R2.
   - `FirebaseStorageAdapter`: Google Cloud Storage & Firebase Storage bucket adapter.
-- **Threaded Conversations & Multi-Author Discussions**:
-  - Nested replies (`parentId`), multi-author taxonomy (`user`, `agent`, `system`), and real-time domain event streaming (`comment.created`, `comment.updated`, `comment.deleted`).
+- **Threaded Conversations, Discussions & Emoji Reactions**:
+  - Nested replies (`parentId`), multi-author taxonomy (`user`, `agent`, `system`), emoji reactions (`addCommentReaction`, `removeCommentReaction`), and real-time domain event streaming (`comment.created`, `comment.updated`, `comment.deleted`, `comment.reaction.added`, `comment.reaction.removed`).
 
 ---
 

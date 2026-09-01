@@ -404,6 +404,30 @@ export class FirebaseStore implements StorageAdapter {
     return true;
   }
 
+  async addReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
+    const existing = await this.getComment(commentId);
+    if (!existing) return null;
+    const reactions = existing.reactions ? [...existing.reactions] : [];
+    const alreadyExists = reactions.some((r) => r.emoji === reaction.emoji && r.userId === reaction.userId);
+    if (!alreadyExists) {
+      reactions.push({
+        emoji: reaction.emoji,
+        userId: reaction.userId,
+        createdAt: new Date().toISOString()
+      });
+    }
+    return this.updateComment(commentId, { reactions });
+  }
+
+  async removeReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
+    const existing = await this.getComment(commentId);
+    if (!existing) return null;
+    const reactions = (existing.reactions || []).filter(
+      (r) => !(r.emoji === reaction.emoji && r.userId === reaction.userId)
+    );
+    return this.updateComment(commentId, { reactions });
+  }
+
   // --- Attachments ---
   async getAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string }): Promise<Attachment[]> {
     let snap;

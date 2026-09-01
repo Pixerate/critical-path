@@ -62,6 +62,13 @@ describe('@critical-path/client Tests', () => {
         const body = JSON.parse(init?.body as string);
         return new Response(JSON.stringify({ comment: { id: 'c1', content: body.content } }), { status: 200 });
       }
+      if (urlStr.endsWith('/comments/c1/reactions') && method === 'POST') {
+        const body = JSON.parse(init?.body as string);
+        return new Response(JSON.stringify({ comment: { id: 'c1', reactions: [body] } }), { status: 200 });
+      }
+      if (urlStr.endsWith('/comments/c1/reactions') && method === 'DELETE') {
+        return new Response(JSON.stringify({ comment: { id: 'c1', reactions: [] } }), { status: 200 });
+      }
       if (urlStr.endsWith('/comments/c1') && method === 'DELETE') {
         return new Response(JSON.stringify({ success: true }), { status: 200 });
       }
@@ -96,6 +103,13 @@ describe('@critical-path/client Tests', () => {
 
     const updatedComment = await client.updateComment('c1', { content: 'Updated' });
     expect(updatedComment.content).toBe('Updated');
+
+    const reacted = await client.addCommentReaction('c1', { emoji: '🙌', userId: 'u2' });
+    expect(reacted.reactions).toHaveLength(1);
+    expect(reacted.reactions?.[0].emoji).toBe('🙌');
+
+    const unreacted = await client.removeCommentReaction('c1', { emoji: '🙌', userId: 'u2' });
+    expect(unreacted.reactions).toHaveLength(0);
 
     const deletedComment = await client.deleteComment('c1');
     expect(deletedComment).toBe(true);

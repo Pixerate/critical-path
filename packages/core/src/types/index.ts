@@ -185,6 +185,12 @@ export interface Iteration {
 
 export type AuthorType = 'user' | 'agent' | 'system';
 
+export interface CommentReaction {
+  emoji: string;
+  userId: string;
+  createdAt?: string;
+}
+
 export interface Comment {
   id: string;
   taskId: string;
@@ -192,6 +198,7 @@ export interface Comment {
   authorType?: AuthorType;
   parentId?: string; // Threaded reply support
   content: string;
+  reactions?: CommentReaction[];
   metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -291,6 +298,8 @@ export type WebhookEvent =
   | 'comment.created'
   | 'comment.updated'
   | 'comment.deleted'
+  | 'comment.reaction.added'
+  | 'comment.reaction.removed'
   | 'attachment.created'
   | 'attachment.deleted'
   | 'iteration.started'

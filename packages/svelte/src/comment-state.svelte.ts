@@ -90,6 +90,46 @@ export class CommentState {
       throw errorObj;
     }
   }
+
+  async addReaction(
+    commentId: string,
+    reactionOrEmoji: { emoji: string; userId: string } | string,
+    maybeUserId?: string
+  ) {
+    try {
+      const payload =
+        typeof reactionOrEmoji === 'string'
+          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
+          : reactionOrEmoji;
+      const updated = await this.client.addCommentReaction(commentId, payload);
+      this.data = this.data.map((c) => (c.id === commentId ? updated : c));
+      return updated;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      this.error = errorObj;
+      throw errorObj;
+    }
+  }
+
+  async removeReaction(
+    commentId: string,
+    reactionOrEmoji: { emoji: string; userId: string } | string,
+    maybeUserId?: string
+  ) {
+    try {
+      const payload =
+        typeof reactionOrEmoji === 'string'
+          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
+          : reactionOrEmoji;
+      const updated = await this.client.removeCommentReaction(commentId, payload);
+      this.data = this.data.map((c) => (c.id === commentId ? updated : c));
+      return updated;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      this.error = errorObj;
+      throw errorObj;
+    }
+  }
 }
 
 export function createCommentState(client: CriticalPathClient, taskId?: string): CommentState {

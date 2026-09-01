@@ -272,7 +272,34 @@ export class CriticalPathRouter {
       // Comments API
       if (segments[0] === 'comments') {
         const commentId = segments[1];
-        if (!commentId) {
+        const subResource = segments[2];
+        if (commentId && subResource === 'reactions') {
+          if (method === 'POST') {
+            const body = await request.json();
+            if (!body.emoji || !body.userId) {
+              return this.jsonResponse({ error: 'emoji and userId are required' }, 400);
+            }
+            const comment = await this.engine.addCommentReaction(commentId, body);
+            if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
+            return this.jsonResponse({ comment }, 200);
+          }
+          if (method === 'DELETE') {
+            let body: any = {};
+            try {
+              body = await request.json();
+            } catch {
+              // Body may be empty on DELETE, fallback to searchParams
+            }
+            const emoji = body.emoji || url.searchParams.get('emoji');
+            const userId = body.userId || url.searchParams.get('userId');
+            if (!emoji || !userId) {
+              return this.jsonResponse({ error: 'emoji and userId are required' }, 400);
+            }
+            const comment = await this.engine.removeCommentReaction(commentId, { emoji, userId });
+            if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
+            return this.jsonResponse({ comment }, 200);
+          }
+        } else if (!commentId) {
           if (method === 'GET') {
             const taskId = url.searchParams.get('taskId');
             if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);

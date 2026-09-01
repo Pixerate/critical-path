@@ -89,6 +89,13 @@ Combines threaded comments with inline attachments (`attachment.commentId === co
       </div>
     {/if}
 
+    <!-- Emoji Reactions -->
+    <div class="reactions">
+      <button on:click={() => activityState.addReaction(thread.id, '👍', 'user_1')}>👍</button>
+      <button on:click={() => activityState.addReaction(thread.id, '🚀', 'user_1')}>🚀</button>
+      <span>{thread.reactions?.length || 0} reactions</span>
+    </div>
+
     <!-- Threaded replies -->
     {#each thread.replies as reply}
       <div class="reply">

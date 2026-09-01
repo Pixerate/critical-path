@@ -50,6 +50,18 @@ const comment = await client.addComment({
   authorType: 'user'
 });
 
+// Add emoji reaction
+await client.addCommentReaction(comment.id, {
+  emoji: '🚀',
+  userId: 'user_2'
+});
+
+// Remove emoji reaction
+await client.removeCommentReaction(comment.id, {
+  emoji: '🚀',
+  userId: 'user_2'
+});
+
 // Upload file directly or register storage attachment
 const attachment = await client.uploadAttachmentFile({
   filename: 'architecture.png',

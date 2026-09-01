@@ -7,6 +7,7 @@ import type {
   Iteration,
   Activity,
   Comment,
+  CommentReaction,
   Attachment,
   PresignedUrlOptions,
   PresignedUploadResult,
@@ -290,6 +291,22 @@ export class CriticalPathClient {
     return res.success;
   }
 
+  async addCommentReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment> {
+    const res = await this.request<{ comment: Comment }>(`/comments/${encodeURIComponent(commentId)}/reactions`, {
+      method: 'POST',
+      body: JSON.stringify(reaction)
+    });
+    return res.comment;
+  }
+
+  async removeCommentReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment> {
+    const res = await this.request<{ comment: Comment }>(`/comments/${encodeURIComponent(commentId)}/reactions`, {
+      method: 'DELETE',
+      body: JSON.stringify(reaction)
+    });
+    return res.comment;
+  }
+
   // Attachments
   async getAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string }): Promise<Attachment[]> {
     const params = new URLSearchParams();
@@ -362,3 +379,5 @@ export class CriticalPathClient {
     return res.timeEntry;
   }
 }
+
+export type { CommentReaction };
