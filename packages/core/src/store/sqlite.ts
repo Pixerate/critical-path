@@ -154,6 +154,7 @@ export class SQLiteStore implements StorageAdapter {
         authorType TEXT,
         parentId TEXT,
         content TEXT NOT NULL,
+        mentions TEXT,
         reactions TEXT,
         metadata TEXT,
         createdAt TEXT NOT NULL,
@@ -216,6 +217,12 @@ export class SQLiteStore implements StorageAdapter {
 
     try {
       this.db.exec('ALTER TABLE comments ADD COLUMN reactions TEXT');
+    } catch {
+      // Column may already exist
+    }
+
+    try {
+      this.db.exec('ALTER TABLE comments ADD COLUMN mentions TEXT');
     } catch {
       // Column may already exist
     }
@@ -697,6 +704,7 @@ export class SQLiteStore implements StorageAdapter {
       authorType: row.authorType,
       parentId: row.parentId || undefined,
       content: row.content,
+      mentions: row.mentions ? JSON.parse(row.mentions) : undefined,
       reactions: row.reactions ? JSON.parse(row.reactions) : undefined,
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       createdAt: row.createdAt,
@@ -723,8 +731,8 @@ export class SQLiteStore implements StorageAdapter {
     const newComment: Comment = { ...comment, id, createdAt: now, updatedAt: now };
 
     const stmt = this.db.prepare(`
-      INSERT INTO comments (id, taskId, authorId, authorType, parentId, content, reactions, metadata, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO comments (id, taskId, authorId, authorType, parentId, content, mentions, reactions, metadata, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newComment.id,
@@ -733,6 +741,7 @@ export class SQLiteStore implements StorageAdapter {
       newComment.authorType || 'user',
       newComment.parentId || null,
       newComment.content,
+      newComment.mentions ? JSON.stringify(newComment.mentions) : null,
       newComment.reactions ? JSON.stringify(newComment.reactions) : null,
       newComment.metadata ? JSON.stringify(newComment.metadata) : null,
       newComment.createdAt,
@@ -757,6 +766,7 @@ export class SQLiteStore implements StorageAdapter {
         authorType = ?,
         parentId = ?,
         content = ?,
+        mentions = ?,
         reactions = ?,
         metadata = ?,
         updatedAt = ?
@@ -767,6 +777,7 @@ export class SQLiteStore implements StorageAdapter {
       updated.authorType || 'user',
       updated.parentId || null,
       updated.content,
+      updated.mentions ? JSON.stringify(updated.mentions) : null,
       updated.reactions ? JSON.stringify(updated.reactions) : null,
       updated.metadata ? JSON.stringify(updated.metadata) : null,
       updated.updatedAt,

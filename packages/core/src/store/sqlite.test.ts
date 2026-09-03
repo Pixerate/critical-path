@@ -77,11 +77,16 @@ describe('SQLiteStore', () => {
     const comments = await store.getComments('task_1');
     expect(comments).toHaveLength(2);
 
-    const updatedComment = await store.updateComment(comment.id, { content: 'Updated content' });
+    const updatedComment = await store.updateComment(comment.id, {
+      content: 'Updated content',
+      mentions: ['planner', 'coordinator']
+    });
     expect(updatedComment?.content).toBe('Updated content');
+    expect(updatedComment?.mentions).toEqual(['planner', 'coordinator']);
 
     const fetchedComment = await store.getComment(comment.id);
     expect(fetchedComment?.content).toBe('Updated content');
+    expect(fetchedComment?.mentions).toEqual(['planner', 'coordinator']);
 
     const timeEntry = await store.logTime({
       taskId: 'task_1',

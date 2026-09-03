@@ -198,6 +198,7 @@ export interface Comment {
   authorType?: AuthorType;
   parentId?: string; // Threaded reply support
   content: string;
+  mentions?: string[];
   reactions?: CommentReaction[];
   metadata?: Record<string, unknown>;
   createdAt: string;
