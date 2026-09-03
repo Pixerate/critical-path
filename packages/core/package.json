@@ -1,6 +1,6 @@
 {
   "name": "@critical-path/core",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Core headless domain engine, plugin architecture, and data stores for Critical Path",
   "author": "Jack James",
   "license": "MIT",

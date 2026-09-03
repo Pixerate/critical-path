@@ -1,5 +1,22 @@
 # @critical-path/server
 
+## 0.6.0
+
+### Minor Changes
+
+- 55549e9: Support @mentions in comments with extraction and segmentation utilities
+  
+  - Add `mentions?: string[]` to `Comment` interface
+  - Add `extractMentions` and `parseMentionSegments` utilities for mention parsing and UI rendering
+  - Auto-extract and populate mentions during `addComment` and `updateComment` in the engine
+  - Update SQLite comments schema with `mentions` column and migration
+  - Preserve and pass through mentions in server routes, client SDK, and Svelte bindings
+
+### Patch Changes
+
+- Updated dependencies [55549e9]
+  - @critical-path/core@0.11.0
+
 ## 0.5.0
 
 ### Minor Changes

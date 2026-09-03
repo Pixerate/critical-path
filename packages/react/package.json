@@ -1,6 +1,6 @@
 {
   "name": "@critical-path/react",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "React Context Provider and Hooks for Critical Path headless project management framework",
   "author": "Jack James",
   "license": "MIT",
