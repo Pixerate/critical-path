@@ -28,6 +28,7 @@ import {
   WorkflowValidationError,
   DEFAULT_SOFTWARE_WORKFLOW
 } from '../utils/workflow.js';
+import { extractMentions } from '../utils/mentions.js';
 import {
   DomainEventBus,
   TaskCreatedEvent,
@@ -624,7 +625,8 @@ export class CriticalPathEngine {
   }
 
   async addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
-    const created = await this.store.addComment(comment);
+    const mentions = comment.mentions ?? extractMentions(comment.content);
+    const created = await this.store.addComment({ ...comment, mentions });
     const now = new Date().toISOString();
 
     const event: CommentAddedEvent = {
@@ -645,7 +647,10 @@ export class CriticalPathEngine {
     const existing = await this.store.getComment(id);
     if (!existing) return null;
 
-    const updated = await this.store.updateComment(id, updates);
+    const mentions = updates.mentions ?? (updates.content ? extractMentions(updates.content) : undefined);
+    const toUpdate = mentions !== undefined ? { ...updates, mentions } : updates;
+
+    const updated = await this.store.updateComment(id, toUpdate);
     if (!updated) return null;
 
     const now = new Date().toISOString();

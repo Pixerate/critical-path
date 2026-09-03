@@ -310,5 +310,35 @@ describe('CriticalPathEngine Core Tests', () => {
     expect(afterRemoval?.reactions?.[0].emoji).toBe('🚀');
     expect(receivedEvents).toContain('comment.reaction.removed');
   });
+
+  it('supports mentions in comments with auto-extraction and explicit override', async () => {
+    const engine = new CriticalPathEngine();
+    const proj = await engine.createProject({ key: 'MNT', name: 'Mentions Project' });
+    const task = await engine.createTask({ projectId: proj.id, title: 'Mentions Task', status: 'todo' });
+
+    // Auto-extracted mentions
+    const comment1 = await engine.addComment({
+      taskId: task.id,
+      authorId: 'user_1',
+      content: 'Hey @planner and @user_2, please check with @"Supervisor Agent"!'
+    });
+    expect(comment1.mentions).toEqual(['planner', 'user_2', 'Supervisor Agent']);
+
+    // Explicit mentions passed
+    const comment2 = await engine.addComment({
+      taskId: task.id,
+      authorId: 'user_1',
+      content: 'Custom mention assignment',
+      mentions: ['custom_agent_id']
+    });
+    expect(comment2.mentions).toEqual(['custom_agent_id']);
+
+    // Update comment content updates mentions
+    const updated = await engine.updateComment(comment1.id, {
+      content: 'Now calling only @coordinator'
+    });
+    expect(updated?.mentions).toEqual(['coordinator']);
+  });
 });
+
 
