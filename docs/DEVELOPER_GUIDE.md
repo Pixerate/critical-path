@@ -75,6 +75,7 @@ export interface Task {
   priority: 'urgent' | 'high' | 'medium' | 'low' | 'none';
   taskType?: 'task' | 'bug' | 'feature' | 'epic' | 'subtask' | (string & {});
   assigneeId?: string;
+  assignees?: TaskAssignee[];
   reporterId?: string;
   sprintId?: string;
   dueDate?: string;
@@ -85,6 +86,14 @@ export interface Task {
   parentId?: string;      // Subtask parent
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TaskAssignee {
+  id: string;
+  name?: string;
+  role?: string;
+  type?: 'user' | 'agent' | 'team';
+  avatarUrl?: string;
 }
 ```
 

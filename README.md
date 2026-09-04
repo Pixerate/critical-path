@@ -104,6 +104,8 @@ graph TD
 - 📋 **Comprehensive PM Work Items**: Full CRUD for Projects, Workflows, Deliverables, Tasks, Sprints/Cycles, Deliverable Containers (`sequence`, `shot`, `epic`), Task Dependencies, Subtasks, Priorities, and Estimates.
 - 🔌 **Extensible Plugin Engine**: Lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`), custom field type registries, and custom route middlewares.
 - ⚙️ **Dynamic Custom Fields**: Attach structured custom fields (text, select, user, date, number, boolean) to projects and tasks on the fly with strict runtime validation.
+- 👥 **Multi-Assignee & Agent Collaboration**: First-class `TaskAssignee` taxonomy supporting co-assignments across users, autonomous AI agents, and teams with role metadata and custom avatar URLs.
+- 🔄 **Bidirectional Workflow Transitions**: Symmetrical transition helpers (`getAllowedNextStatuses`, `getAllowedPreviousStatuses`) and engine methods for moving tasks backwards and forwards through customized workflow states.
 - 🔔 **Webhooks & Audit Streams**: Real-time event notifications (`task.created`, `task.status_changed`) and immutable activity logs.
 - 💬 **Threaded Conversations & Discussions**: Hierarchical threaded discussions with parent/reply mapping, multi-author taxonomy (`user`, `agent`, `system`), and emoji reactions (`👍`, `🚀`, `❤️`, etc.).
 - 📁 **Attachment Management & Cloud Storage**: Attachment metadata tracking with zero-dependency adapters for **AWS S3** (`S3StorageAdapter`), **Google Cloud / Firebase Storage** (`FirebaseStorageAdapter`), and in-memory (`InMemoryFileStore`).

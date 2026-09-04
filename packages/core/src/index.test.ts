@@ -339,6 +339,39 @@ describe('CriticalPathEngine Core Tests', () => {
     });
     expect(updated?.mentions).toEqual(['coordinator']);
   });
+
+  it('supports multi-assignees and backward status transitions', async () => {
+    const engine = new CriticalPathEngine();
+    const proj = await engine.createProject({ key: 'TRN', name: 'Transitions Project' });
+
+    // Task with multi-assignees
+    const task = await engine.createTask({
+      projectId: proj.id,
+      title: 'Multi-assignee Task',
+      status: 'in_progress',
+      assignees: [
+        { id: 'agent_1', name: 'Agent Alpha', role: 'Planner', type: 'agent' },
+        { id: 'user_1', name: 'Alice Developer', role: 'Developer', type: 'user', avatarUrl: 'https://example.com/alice.png' }
+      ]
+    });
+
+    expect(task.assignees).toHaveLength(2);
+    expect(task.assignees?.[0].type).toBe('agent');
+    expect(task.assignees?.[1].avatarUrl).toBe('https://example.com/alice.png');
+
+    // Backward transitions
+    const previousStatuses = await engine.getAllowedPreviousTaskTransitions(task.id);
+    expect(previousStatuses).toContain('todo');
+
+    // First status (backlog) should have no previous status
+    const backlogTask = await engine.createTask({
+      projectId: proj.id,
+      title: 'Backlog Task',
+      status: 'backlog'
+    });
+    const backlogPrev = await engine.getAllowedPreviousTaskTransitions(backlogTask.id);
+    expect(backlogPrev).toEqual([]);
+  });
 });
 
 

@@ -28,6 +28,7 @@ import { deriveTaskLifecycleState, type TaskLifecycleState, resolveStatusDefinit
 import {
   validateTransition,
   getAllowedNextStatuses,
+  getAllowedPreviousStatuses,
   WorkflowValidationError,
   DEFAULT_SOFTWARE_WORKFLOW
 } from '../utils/workflow.js';
@@ -239,6 +240,13 @@ export class CriticalPathEngine {
     return getAllowedNextStatuses(workflow || undefined, task.status);
   }
 
+  async getAllowedPreviousTaskTransitions(taskId: string): Promise<string[]> {
+    const task = await this.store.getTask(taskId);
+    if (!task) return [];
+    const workflow = await this.resolveProjectWorkflow(task.projectId);
+    return getAllowedPreviousStatuses(workflow || undefined, task.status);
+  }
+
   // --- Projects ---
   async getProjects(): Promise<Project[]> {
     return this.store.getProjects();
@@ -340,6 +348,7 @@ export class CriticalPathEngine {
       priority: processedInput.priority || taskInput.priority || 'medium',
       taskType: processedInput.taskType || taskInput.taskType || 'task',
       assigneeId: processedInput.assigneeId ?? taskInput.assigneeId,
+      assignees: processedInput.assignees ?? taskInput.assignees,
       reporterId: processedInput.reporterId ?? taskInput.reporterId,
       reviewerId: processedInput.reviewerId ?? taskInput.reviewerId,
       iterationId: processedInput.iterationId ?? taskInput.iterationId,

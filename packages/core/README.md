@@ -22,6 +22,10 @@
   - `FirebaseStorageAdapter`: Google Cloud Storage & Firebase Storage bucket adapter.
 - **Threaded Conversations, Discussions & Emoji Reactions**:
   - Nested replies (`parentId`), multi-author taxonomy (`user`, `agent`, `system`), emoji reactions (`addCommentReaction`, `removeCommentReaction`), and real-time domain event streaming (`comment.created`, `comment.updated`, `comment.deleted`, `comment.reaction.added`, `comment.reaction.removed`).
+- **Multi-Assignee Support & Agent Collaboration**:
+  - First-class `TaskAssignee` taxonomy supporting co-assignments across users, autonomous AI agents, and teams with role metadata and custom avatar URLs.
+- **Bidirectional Workflow Transitions**:
+  - Symmetrical transition helpers (`getAllowedNextStatuses`, `getAllowedPreviousStatuses`) and engine methods for moving tasks backwards and forwards through customized workflow states.
 - **Creative Workflows & First-Class Deliverables**:
   - `DeliverableEntity` aggregate with automatic delivery timestamps (`deliveredAt`) and URL registry (`outputUrls`).
   - `DEFAULT_CREATIVE_WORKFLOW` template tailored for creative agencies and content production pipelines.

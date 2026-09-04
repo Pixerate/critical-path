@@ -200,3 +200,42 @@ export function getAllowedNextStatuses(
 
   return Array.from(allowed);
 }
+
+export function getAllowedPreviousStatuses(
+  workflow: Workflow | undefined,
+  currentStatus: string
+): string[] {
+  if (!workflow || !workflow.statuses || workflow.statuses.length === 0) {
+    return [];
+  }
+
+  const allStatusKeys = workflow.statuses.map((s) => s.key);
+  const currentIndex = allStatusKeys.indexOf(currentStatus);
+  if (currentIndex <= 0) {
+    return [];
+  }
+
+  const previousStatusKeys = allStatusKeys.slice(0, currentIndex);
+
+  if (workflow.transitions && workflow.transitions.length > 0) {
+    const matches = workflow.transitions.filter(
+      (t) => t.fromStatusKey === '*' || t.fromStatusKey === currentStatus
+    );
+
+    const allowed = new Set<string>();
+    for (const t of matches) {
+      if (t.toStatusKey === '*') {
+        return previousStatusKeys;
+      }
+      if (previousStatusKeys.includes(t.toStatusKey)) {
+        allowed.add(t.toStatusKey);
+      }
+    }
+
+    if (allowed.size > 0) {
+      return Array.from(allowed);
+    }
+  }
+
+  return [allStatusKeys[currentIndex - 1]];
+}

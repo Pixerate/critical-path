@@ -113,6 +113,7 @@ export class SQLiteStore implements StorageAdapter {
         priority TEXT NOT NULL,
         taskType TEXT,
         assigneeId TEXT,
+        assignees TEXT,
         reporterId TEXT,
         reviewerId TEXT,
         iterationId TEXT,
@@ -244,6 +245,12 @@ export class SQLiteStore implements StorageAdapter {
 
     try {
       this.db.exec('ALTER TABLE comments ADD COLUMN mentions TEXT');
+    } catch {
+      // Column may already exist
+    }
+
+    try {
+      this.db.exec('ALTER TABLE tasks ADD COLUMN assignees TEXT');
     } catch {
       // Column may already exist
     }
@@ -648,12 +655,12 @@ export class SQLiteStore implements StorageAdapter {
 
     const stmt = this.db.prepare(`
       INSERT INTO tasks (
-        id, projectId, title, description, status, priority, taskType, assigneeId, reporterId,
+        id, projectId, title, description, status, priority, taskType, assigneeId, assignees, reporterId,
         reviewerId, iterationId, teamId, containerId, deliverableId, plannedStartDate, actualStartDate, actualEndDate,
         dueDate, estimatedHours, loggedHours, actualHours, billableHours,
         estimatedDurationMinutes, actualDurationMinutes, billableDurationMinutes, progress,
         tags, customFields, parentId, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newTask.id,
@@ -664,6 +671,7 @@ export class SQLiteStore implements StorageAdapter {
       newTask.priority,
       newTask.taskType || null,
       newTask.assigneeId || null,
+      newTask.assignees ? JSON.stringify(newTask.assignees) : null,
       newTask.reporterId || null,
       newTask.reviewerId || null,
       newTask.iterationId || null,
@@ -704,7 +712,7 @@ export class SQLiteStore implements StorageAdapter {
     const stmt = this.db.prepare(`
       UPDATE tasks SET
         projectId = ?, title = ?, description = ?, status = ?, priority = ?, taskType = ?,
-        assigneeId = ?, reporterId = ?, reviewerId = ?, iterationId = ?, teamId = ?, containerId = ?, deliverableId = ?,
+        assigneeId = ?, assignees = ?, reporterId = ?, reviewerId = ?, iterationId = ?, teamId = ?, containerId = ?, deliverableId = ?,
         plannedStartDate = ?, actualStartDate = ?, actualEndDate = ?, dueDate = ?,
         estimatedHours = ?, loggedHours = ?, actualHours = ?, billableHours = ?,
         estimatedDurationMinutes = ?, actualDurationMinutes = ?, billableDurationMinutes = ?, progress = ?,
@@ -719,6 +727,7 @@ export class SQLiteStore implements StorageAdapter {
       updated.priority,
       updated.taskType || null,
       updated.assigneeId || null,
+      updated.assignees ? JSON.stringify(updated.assignees) : null,
       updated.reporterId || null,
       updated.reviewerId || null,
       updated.iterationId || null,
@@ -1182,6 +1191,7 @@ export class SQLiteStore implements StorageAdapter {
       taskType: row.taskType || undefined,
       deliverableId: row.deliverableId || undefined,
       tags: row.tags ? JSON.parse(row.tags) : [],
+      assignees: row.assignees ? JSON.parse(row.assignees) : undefined,
       customFields: row.customFields ? JSON.parse(row.customFields) : {}
     };
   }
