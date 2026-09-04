@@ -1,6 +1,6 @@
 {
   "name": "@critical-path/server",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Web Fetch API compatible server router and adapters for Next.js App Router, SvelteKit, and Express",
   "author": "Jack James",
   "license": "MIT",
