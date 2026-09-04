@@ -28,7 +28,10 @@ describe('@critical-path/client Tests', () => {
         return new Response(JSON.stringify({ workflows: [{ id: 'wf1', name: 'SDK Workflow' }] }), { status: 200 });
       }
       if (urlStr.endsWith('/tasks/t1/transitions')) {
-        return new Response(JSON.stringify({ allowedNextStatuses: ['in_progress', 'canceled'] }), { status: 200 });
+        return new Response(JSON.stringify({
+          allowedNextStatuses: ['in_progress', 'canceled'],
+          allowedPreviousStatuses: ['backlog']
+        }), { status: 200 });
       }
       return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
     };
@@ -44,6 +47,9 @@ describe('@critical-path/client Tests', () => {
 
     const transitions = await client.getAllowedTaskTransitions('t1');
     expect(transitions).toEqual(['in_progress', 'canceled']);
+
+    const previousTransitions = await client.getAllowedPreviousTaskTransitions('t1');
+    expect(previousTransitions).toEqual(['backlog']);
   });
 
   it('handles comments and attachments through client SDK methods', async () => {

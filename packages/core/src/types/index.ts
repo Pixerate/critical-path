@@ -127,6 +127,14 @@ export interface TaskTodoItem {
   completedAt?: string;
 }
 
+export interface TaskAssignee {
+  id: string;
+  name?: string;
+  role?: string;
+  type?: 'user' | 'agent' | 'team';
+  avatarUrl?: string;
+}
+
 export interface Task {
   id: string;
   projectId: string;
@@ -137,6 +145,7 @@ export interface Task {
   priority: Priority;
   taskType?: string; // e.g. "bug", "feature", "task", "epic"
   assigneeId?: string;
+  assignees?: TaskAssignee[];
   reporterId?: string;
   reviewerId?: string;
   iterationId?: string;

@@ -86,6 +86,7 @@ describe('@critical-path/server Router Tests', () => {
     expect(transRes.status).toBe(200);
     const transData = await transRes.json();
     expect(transData.allowedNextStatuses).toEqual(['done']);
+    expect(transData.allowedPreviousStatuses).toBeDefined();
 
     // 4. Invalid status transition -> 400 error
     const invalidPatchReq = new Request(`http://localhost:3000/api/critical-path/tasks/${task.id}`, {

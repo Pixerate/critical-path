@@ -138,7 +138,8 @@ export class CriticalPathRouter {
         } else if (subResource === 'transitions' || subResource === 'allowed-transitions') {
           if (method === 'GET') {
             const allowedNextStatuses = await this.engine.getAllowedTaskTransitions(taskId);
-            return this.jsonResponse({ allowedNextStatuses });
+            const allowedPreviousStatuses = await this.engine.getAllowedPreviousTaskTransitions(taskId);
+            return this.jsonResponse({ allowedNextStatuses, allowedPreviousStatuses });
           }
         } else {
           if (method === 'GET') {

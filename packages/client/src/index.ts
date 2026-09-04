@@ -154,8 +154,13 @@ export class CriticalPathClient {
   }
 
   async getAllowedTaskTransitions(taskId: string): Promise<string[]> {
-    const res = await this.request<{ allowedNextStatuses: string[] }>(`/tasks/${encodeURIComponent(taskId)}/transitions`);
+    const res = await this.request<{ allowedNextStatuses: string[]; allowedPreviousStatuses?: string[] }>(`/tasks/${encodeURIComponent(taskId)}/transitions`);
     return res.allowedNextStatuses;
+  }
+
+  async getAllowedPreviousTaskTransitions(taskId: string): Promise<string[]> {
+    const res = await this.request<{ allowedNextStatuses: string[]; allowedPreviousStatuses?: string[] }>(`/tasks/${encodeURIComponent(taskId)}/transitions`);
+    return res.allowedPreviousStatuses || [];
   }
 
   // Teams
