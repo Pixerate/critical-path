@@ -183,26 +183,32 @@ export function getAllowedNextStatuses(
   }
 
   const allStatusKeys = workflow.statuses.map((s) => s.key);
-  if (!workflow.transitions || workflow.transitions.length === 0) {
-    return allStatusKeys;
+  const currentIndex = allStatusKeys.indexOf(currentStatus);
+  if (currentIndex === -1 || currentIndex >= allStatusKeys.length - 1) {
+    return [];
   }
 
-  const matches = workflow.transitions.filter(
-    (t) => t.fromStatusKey === '*' || t.fromStatusKey === currentStatus
-  );
+  const nextStatusKeys = allStatusKeys.slice(currentIndex + 1);
 
-  if (matches.some((t) => t.toStatusKey === '*')) {
-    return allStatusKeys;
-  }
+  if (workflow.transitions && workflow.transitions.length > 0) {
+    const matches = workflow.transitions.filter(
+      (t) => t.fromStatusKey === '*' || t.fromStatusKey === currentStatus
+    );
 
-  const allowed = new Set<string>();
-  for (const t of matches) {
-    if (allStatusKeys.includes(t.toStatusKey)) {
-      allowed.add(t.toStatusKey);
+    const allowed = new Set<string>();
+    for (const t of matches) {
+      if (t.toStatusKey === '*') {
+        return nextStatusKeys;
+      }
+      if (nextStatusKeys.includes(t.toStatusKey)) {
+        allowed.add(t.toStatusKey);
+      }
     }
+
+    return Array.from(allowed);
   }
 
-  return Array.from(allowed);
+  return [allStatusKeys[currentIndex + 1]];
 }
 
 export function getAllowedPreviousStatuses(

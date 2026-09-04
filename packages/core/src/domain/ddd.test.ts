@@ -10,6 +10,7 @@ import {
   DEFAULT_SIMPLE_WORKFLOW,
   WorkflowValidationError,
   validateTransition,
+  getAllowedNextStatuses,
   getAllowedPreviousStatuses,
   detectDependencyCycle,
   validateCustomFieldValues,
@@ -360,6 +361,10 @@ describe('Domain-Driven Design (DDD) Enhancements Suite', () => {
       // In progress -> todo should be allowed
       expect(validateTransition(DEFAULT_SIMPLE_WORKFLOW, 'in_progress', 'todo')).toBe(true);
       expect(getAllowedPreviousStatuses(DEFAULT_SIMPLE_WORKFLOW, 'in_progress')).toEqual(['todo']);
+      // Forward should only contain downstream statuses ('done'), not backward statuses ('todo')
+      expect(getAllowedNextStatuses(DEFAULT_SIMPLE_WORKFLOW, 'in_progress')).toEqual(['done']);
+      expect(getAllowedNextStatuses(DEFAULT_SIMPLE_WORKFLOW, 'done')).toEqual([]);
+      expect(getAllowedPreviousStatuses(DEFAULT_SIMPLE_WORKFLOW, 'todo')).toEqual([]);
     });
 
     it('disallows moving task backwards in workflows that explicitly do not define backward transitions', () => {
