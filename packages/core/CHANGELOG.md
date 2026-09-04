@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.13.1
+
+### Patch Changes
+
+- a7d17c0: Add backward status transitions to default workflows and align allowed previous statuses with workflow transitions
+
 ## 0.13.0
 
 ### Minor Changes

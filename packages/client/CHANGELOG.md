@@ -1,5 +1,12 @@
 # @critical-path/client
 
+## 0.8.1
+
+### Patch Changes
+
+- Updated dependencies [a7d17c0]
+  - @critical-path/core@0.13.1
+
 ## 0.8.0
 
 ### Minor Changes
