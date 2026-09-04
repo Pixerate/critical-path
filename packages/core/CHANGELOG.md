@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.13.2
+
+### Patch Changes
+
+- 03d269c: Make getAllowedNextStatuses strictly forward and symmetrical with getAllowedPreviousStatuses by constraining to downstream statuses in workflow sequence.
+
 ## 0.13.1
 
 ### Patch Changes
