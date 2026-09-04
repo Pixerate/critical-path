@@ -117,6 +117,44 @@ export const DEFAULT_VFX_WORKFLOW: Workflow = {
   updatedAt: '2026-01-01T00:00:00.000Z'
 };
 
+export const DEFAULT_CREATIVE_WORKFLOW: Workflow = {
+  id: 'wf_creative_default',
+  name: 'Creative Production Workflow',
+  description: 'Production pipeline for creative deliverables from briefing and concepts to internal review, client feedback, and final delivery.',
+  statuses: [
+    { key: 'briefing', label: 'Briefing & Scoping', completionState: 'not_done', executionState: 'inactive' },
+    { key: 'concept', label: 'Concept & Storyboarding', completionState: 'not_done', executionState: 'active' },
+    { key: 'in_production', label: 'In Production', completionState: 'not_done', executionState: 'active' },
+    { key: 'internal_review', label: 'Internal Review', completionState: 'not_done', executionState: 'active' },
+    { key: 'client_review', label: 'Client Review', completionState: 'not_done', executionState: 'active' },
+    { key: 'revision_requested', label: 'Revision Requested', completionState: 'not_done', executionState: 'active' },
+    { key: 'approved', label: 'Approved', completionState: 'done', executionState: 'inactive' },
+    { key: 'delivered', label: 'Delivered', completionState: 'done', executionState: 'inactive' },
+    DEFAULT_STATUS_DEFINITIONS.canceled
+  ],
+  transitions: [
+    { name: 'Start Concepts', fromStatusKey: 'briefing', toStatusKey: 'concept' },
+    { name: 'Approve Concept for Production', fromStatusKey: 'concept', toStatusKey: 'in_production' },
+    { name: 'Submit for Internal Review', fromStatusKey: 'in_production', toStatusKey: 'internal_review' },
+    { name: 'Submit for Client Review', fromStatusKey: 'internal_review', toStatusKey: 'client_review' },
+    { name: 'Request Revisions (Internal)', fromStatusKey: 'internal_review', toStatusKey: 'revision_requested' },
+    { name: 'Request Revisions (Client)', fromStatusKey: 'client_review', toStatusKey: 'revision_requested' },
+    { name: 'Address Revisions', fromStatusKey: 'revision_requested', toStatusKey: 'in_production' },
+    { name: 'Approve Work', fromStatusKey: 'client_review', toStatusKey: 'approved' },
+    { name: 'Deliver Final Assets', fromStatusKey: 'approved', toStatusKey: 'delivered' },
+    { name: 'Cancel', fromStatusKey: '*', toStatusKey: 'canceled' }
+  ],
+  taskTypes: [
+    { key: 'deliverable', label: 'Deliverable', description: 'Finished asset, cutdown, or packaged export', icon: 'package' },
+    { key: 'creative_task', label: 'Creative Task', description: 'Production task (e.g. Design, Copy, Editing, Color)', icon: 'pen-tool' },
+    { key: 'review', label: 'Review Gate', description: 'Internal or external client sign-off', icon: 'check-circle' }
+  ],
+  defaultStatusKey: 'briefing',
+  isDefault: false,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z'
+};
+
 export function validateTransition(
   workflow: Workflow | undefined,
   fromStatus: string,

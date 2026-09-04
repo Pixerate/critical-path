@@ -12,7 +12,10 @@ import type {
   PresignedUrlOptions,
   PresignedUploadResult,
   TimeEntry,
-  Workflow
+  Workflow,
+  Deliverable,
+  DeliverableSummary,
+  CreateDeliverableInput
 } from '@critical-path/core';
 
 export interface ClientOptions {
@@ -213,6 +216,45 @@ export class CriticalPathClient {
 
   async deleteContainer(id: string): Promise<boolean> {
     const res = await this.request<{ success: boolean }>(`/containers/${id}`, {
+      method: 'DELETE'
+    });
+    return res.success;
+  }
+
+  // Deliverables
+  async getDeliverables(projectId: string): Promise<Deliverable[]> {
+    const res = await this.request<{ deliverables: Deliverable[] }>(`/deliverables?projectId=${encodeURIComponent(projectId)}`);
+    return res.deliverables;
+  }
+
+  async getDeliverable(id: string): Promise<Deliverable> {
+    const res = await this.request<{ deliverable: Deliverable }>(`/deliverables/${id}`);
+    return res.deliverable;
+  }
+
+  async getDeliverableSummary(id: string): Promise<DeliverableSummary> {
+    const res = await this.request<{ summary: DeliverableSummary }>(`/deliverables/${id}/summary`);
+    return res.summary;
+  }
+
+  async createDeliverable(data: CreateDeliverableInput): Promise<Deliverable> {
+    const res = await this.request<{ deliverable: Deliverable }>('/deliverables', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.deliverable;
+  }
+
+  async updateDeliverable(id: string, updates: Partial<Deliverable>): Promise<Deliverable> {
+    const res = await this.request<{ deliverable: Deliverable }>(`/deliverables/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+    return res.deliverable;
+  }
+
+  async deleteDeliverable(id: string): Promise<boolean> {
+    const res = await this.request<{ success: boolean }>(`/deliverables/${id}`, {
       method: 'DELETE'
     });
     return res.success;

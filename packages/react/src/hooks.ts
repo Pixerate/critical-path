@@ -1,5 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { Project, Task, TaskStatus, Workflow, Comment, CommentReaction, Attachment } from '@critical-path/core';
+import type {
+  Project,
+  Task,
+  TaskStatus,
+  Workflow,
+  Comment,
+  CommentReaction,
+  Attachment,
+  Deliverable,
+  DeliverableSummary,
+  CreateDeliverableInput
+} from '@critical-path/core';
 import { useCriticalPathClient } from './provider.js';
 
 export function useWorkflows() {
@@ -462,7 +473,7 @@ export function useAttachments(filter?: { taskId?: string; projectId?: string; c
     }
   };
 
-  return {
+    return {
     attachments,
     loading,
     error,
@@ -471,3 +482,114 @@ export function useAttachments(filter?: { taskId?: string; projectId?: string; c
     deleteAttachment
   };
 }
+
+export function useDeliverables(projectId?: string) {
+  const client = useCriticalPathClient();
+  const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchDeliverables = useCallback(async () => {
+    if (!projectId) {
+      setDeliverables([]);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const data = await client.getDeliverables(projectId);
+      setDeliverables(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, projectId]);
+
+  useEffect(() => {
+    fetchDeliverables();
+  }, [fetchDeliverables]);
+
+  const createDeliverable = async (input: CreateDeliverableInput) => {
+    try {
+      const created = await client.createDeliverable(input);
+      setDeliverables((prev) => [...prev, created]);
+      return created;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const updateDeliverable = async (id: string, updates: Partial<Deliverable>) => {
+    try {
+      const updated = await client.updateDeliverable(id, updates);
+      setDeliverables((prev) => prev.map((d) => (d.id === id ? updated : d)));
+      return updated;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const deleteDeliverable = async (id: string) => {
+    try {
+      await client.deleteDeliverable(id);
+      setDeliverables((prev) => prev.filter((d) => d.id !== id));
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  return {
+    deliverables,
+    loading,
+    error,
+    refresh: fetchDeliverables,
+    createDeliverable,
+    updateDeliverable,
+    deleteDeliverable
+  };
+}
+
+export function useDeliverableSummary(deliverableId?: string) {
+  const client = useCriticalPathClient();
+  const [summary, setSummary] = useState<DeliverableSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchSummary = useCallback(async () => {
+    if (!deliverableId) {
+      setSummary(null);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const data = await client.getDeliverableSummary(deliverableId);
+      setSummary(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, deliverableId]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  return {
+    summary,
+    loading,
+    error,
+    refresh: fetchSummary
+  };
+}
+

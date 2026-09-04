@@ -13,7 +13,9 @@ import type {
   Activity,
   Webhook,
   TaskDependency,
-  Workflow
+  Workflow,
+  Deliverable,
+  CreateDeliverableInput
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
 
@@ -102,12 +104,21 @@ export interface WebhookRepository {
   addWebhook(webhook: Omit<Webhook, 'id' | 'createdAt'>): Promise<Webhook>;
 }
 
+export interface DeliverableRepository {
+  getDeliverables(projectId: string): Promise<Deliverable[]>;
+  getDeliverable(id: string): Promise<Deliverable | null>;
+  createDeliverable(deliverable: CreateDeliverableInput): Promise<Deliverable>;
+  updateDeliverable(id: string, updates: Partial<Deliverable>): Promise<Deliverable | null>;
+  deleteDeliverable(id: string): Promise<boolean>;
+}
+
 export interface StorageAdapter
   extends ProjectRepository,
     WorkflowRepository,
     TaskRepository,
     TeamRepository,
     ContainerRepository,
+    DeliverableRepository,
     IterationRepository,
     CommentRepository,
     AttachmentRepository,
@@ -122,6 +133,7 @@ export class InMemoryStore implements StorageAdapter {
   private tasks = new Map<string, Task>();
   private teams = new Map<string, Team>();
   private containers = new Map<string, TaskContainer>();
+  private deliverables = new Map<string, Deliverable>();
   private iterations = new Map<string, Iteration>();
   private comments = new Map<string, Comment>();
   private attachments = new Map<string, Attachment>();
@@ -304,6 +316,47 @@ export class InMemoryStore implements StorageAdapter {
 
   async deleteContainer(id: string): Promise<boolean> {
     return this.containers.delete(id);
+  }
+
+  // Deliverables
+  async getDeliverables(projectId: string): Promise<Deliverable[]> {
+    return Array.from(this.deliverables.values()).filter((d) => d.projectId === projectId);
+  }
+
+  async getDeliverable(id: string): Promise<Deliverable | null> {
+    return this.deliverables.get(id) || null;
+  }
+
+  async createDeliverable(deliverable: CreateDeliverableInput): Promise<Deliverable> {
+    const id = (deliverable as any).id || `deliv_${Math.random().toString(36).substring(2, 9)}`;
+    const now = new Date().toISOString();
+    const newDeliverable: Deliverable = {
+      ...deliverable,
+      id,
+      status: deliverable.status || 'planned',
+      outputUrls: deliverable.outputUrls ? [...deliverable.outputUrls] : [],
+      customFields: deliverable.customFields ? { ...deliverable.customFields } : {},
+      createdAt: now,
+      updatedAt: now
+    };
+    this.deliverables.set(id, newDeliverable);
+    return newDeliverable;
+  }
+
+  async updateDeliverable(id: string, updates: Partial<Deliverable>): Promise<Deliverable | null> {
+    const existing = this.deliverables.get(id);
+    if (!existing) return null;
+    const updated: Deliverable = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    this.deliverables.set(id, updated);
+    return updated;
+  }
+
+  async deleteDeliverable(id: string): Promise<boolean> {
+    return this.deliverables.delete(id);
   }
 
   // Iterations

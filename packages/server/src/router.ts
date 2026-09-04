@@ -225,6 +225,46 @@ export class CriticalPathRouter {
         }
       }
 
+      // Deliverables API
+      if (segments[0] === 'deliverables') {
+        const deliverableId = segments[1];
+        if (!deliverableId) {
+          if (method === 'GET') {
+            const projectId = url.searchParams.get('projectId');
+            if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
+            const deliverables = await this.engine.getDeliverables(projectId);
+            return this.jsonResponse({ deliverables });
+          }
+          if (method === 'POST') {
+            const body = await request.json();
+            const deliverable = await this.engine.createDeliverable(body);
+            return this.jsonResponse({ deliverable }, 201);
+          }
+        } else if (segments[2] === 'summary') {
+          if (method === 'GET') {
+            const summary = await this.engine.getDeliverableSummary(deliverableId);
+            if (!summary) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
+            return this.jsonResponse({ summary });
+          }
+        } else {
+          if (method === 'GET') {
+            const deliverable = await this.engine.getDeliverable(deliverableId);
+            if (!deliverable) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
+            return this.jsonResponse({ deliverable });
+          }
+          if (method === 'PATCH' || method === 'PUT') {
+            const body = await request.json();
+            const updated = await this.engine.updateDeliverable(deliverableId, body);
+            if (!updated) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
+            return this.jsonResponse({ deliverable: updated });
+          }
+          if (method === 'DELETE') {
+            const deleted = await this.engine.deleteDeliverable(deliverableId);
+            return this.jsonResponse({ success: deleted });
+          }
+        }
+      }
+
       // Iterations API
       if (segments[0] === 'iterations') {
         const iterationId = segments[1];

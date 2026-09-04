@@ -17,7 +17,10 @@ import type {
   WebhookEvent,
   Workflow,
   CreateTaskInput,
-  CreateProjectInput
+  CreateProjectInput,
+  Deliverable,
+  DeliverableSummary,
+  CreateDeliverableInput
 } from '../types/index.js';
 import { StorageAdapter, InMemoryStore } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
@@ -44,6 +47,10 @@ import {
   IterationCompletedEvent,
   TeamCreatedEvent,
   ContainerCreatedEvent,
+  DeliverableCreatedEvent,
+  DeliverableUpdatedEvent,
+  DeliverableStatusChangedEvent,
+  DeliverableDeletedEvent,
   TaskDependencyAddedEvent,
   TimeLoggedEvent,
   CommentAddedEvent,
@@ -63,6 +70,7 @@ export class CriticalPathEngine {
   public readonly fileStorage?: FileStorageAdapter;
   public readonly plugins: PluginRegistry;
   public readonly events: DomainEventBus;
+  public readonly ready: Promise<void> = Promise.resolve();
 
   constructor(config: CriticalPathConfig = {}) {
     this.store = typeof config.store === 'object' && config.store !== null
@@ -80,7 +88,7 @@ export class CriticalPathEngine {
     }
 
     if (config.initialData) {
-      this.seedInitialData(config.initialData);
+      this.ready = this.seedInitialData(config.initialData);
     }
   }
 
@@ -103,6 +111,11 @@ export class CriticalPathEngine {
     if (data.containers) {
       for (const c of data.containers) {
         await this.store.createContainer(c);
+      }
+    }
+    if (data.deliverables) {
+      for (const d of data.deliverables) {
+        await this.store.createDeliverable(d);
       }
     }
     if (data.iterations) {
@@ -332,6 +345,7 @@ export class CriticalPathEngine {
       iterationId: processedInput.iterationId ?? taskInput.iterationId,
       teamId: processedInput.teamId ?? taskInput.teamId,
       containerId: processedInput.containerId ?? taskInput.containerId,
+      deliverableId: processedInput.deliverableId ?? taskInput.deliverableId,
       plannedStartDate: processedInput.plannedStartDate ?? taskInput.plannedStartDate,
       actualStartDate,
       actualEndDate,
@@ -935,6 +949,178 @@ export class CriticalPathEngine {
 
   async deleteContainer(id: string): Promise<boolean> {
     return this.store.deleteContainer(id);
+  }
+
+  // --- Deliverables ---
+  async getDeliverables(projectId: string): Promise<Deliverable[]> {
+    return this.store.getDeliverables(projectId);
+  }
+
+  async getDeliverable(id: string): Promise<Deliverable | null> {
+    return this.store.getDeliverable(id);
+  }
+
+  async createDeliverable(input: CreateDeliverableInput): Promise<Deliverable> {
+    const project = await this.store.getProject(input.projectId);
+    if (project?.customFieldDefinitions && input.customFields) {
+      validateCustomFieldValues(project.customFieldDefinitions, input.customFields);
+    }
+
+    const created = await this.store.createDeliverable({
+      ...input,
+      status: input.status || 'planned',
+      outputUrls: input.outputUrls ?? [],
+      customFields: input.customFields ?? {}
+    });
+    const now = new Date().toISOString();
+
+    const event: DeliverableCreatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'deliverable.created',
+      aggregateId: created.id,
+      aggregateType: 'Deliverable',
+      occurredAt: now,
+      payload: { deliverable: created }
+    };
+    await this.events.publish(event);
+
+    await this.store.logActivity({
+      projectId: created.projectId,
+      actorId: 'system',
+      action: 'deliverable.created',
+      details: { title: created.title, format: created.format }
+    });
+    this.dispatchWebhook('deliverable.created', { deliverable: created });
+    return created;
+  }
+
+  async updateDeliverable(id: string, updates: Partial<Deliverable>): Promise<Deliverable | null> {
+    const existing = await this.store.getDeliverable(id);
+    if (!existing) return null;
+
+    if (updates.status && updates.status === 'delivered' && !existing.deliveredAt && !updates.deliveredAt) {
+      updates.deliveredAt = new Date().toISOString();
+    }
+
+    const updated = await this.store.updateDeliverable(id, updates);
+    if (updated) {
+      const now = new Date().toISOString();
+
+      if (updates.status && updates.status !== existing.status) {
+        const statusEvent: DeliverableStatusChangedEvent = {
+          id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+          name: 'deliverable.status_changed',
+          aggregateId: updated.id,
+          aggregateType: 'Deliverable',
+          occurredAt: now,
+          payload: {
+            deliverable: updated,
+            previousStatus: existing.status,
+            newStatus: updated.status
+          }
+        };
+        await this.events.publish(statusEvent);
+        this.dispatchWebhook('deliverable.status_changed', {
+          deliverable: updated,
+          previousStatus: existing.status,
+          newStatus: updated.status
+        });
+      }
+
+      const updateEvent: DeliverableUpdatedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'deliverable.updated',
+        aggregateId: updated.id,
+        aggregateType: 'Deliverable',
+        occurredAt: now,
+        payload: { deliverable: updated, previous: existing }
+      };
+      await this.events.publish(updateEvent);
+
+      await this.store.logActivity({
+        projectId: updated.projectId,
+        actorId: 'system',
+        action: 'deliverable.updated',
+        details: { title: updated.title, status: updated.status }
+      });
+      this.dispatchWebhook('deliverable.updated', { deliverable: updated });
+    }
+    return updated;
+  }
+
+  async deleteDeliverable(id: string): Promise<boolean> {
+    const existing = await this.store.getDeliverable(id);
+    if (!existing) return false;
+
+    const deleted = await this.store.deleteDeliverable(id);
+    if (deleted) {
+      const now = new Date().toISOString();
+      const event: DeliverableDeletedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'deliverable.deleted',
+        aggregateId: id,
+        aggregateType: 'Deliverable',
+        occurredAt: now,
+        payload: { deliverableId: id, projectId: existing.projectId }
+      };
+      await this.events.publish(event);
+
+      await this.store.logActivity({
+        projectId: existing.projectId,
+        actorId: 'system',
+        action: 'deliverable.deleted',
+        details: { title: existing.title }
+      });
+      this.dispatchWebhook('deliverable.deleted', { deliverableId: id, projectId: existing.projectId });
+    }
+    return deleted;
+  }
+
+  async getDeliverableSummary(deliverableId: string): Promise<DeliverableSummary | null> {
+    const deliverable = await this.store.getDeliverable(deliverableId);
+    if (!deliverable) return null;
+
+    const project = await this.store.getProject(deliverable.projectId);
+    const workflow = await this.resolveProjectWorkflow(deliverable.projectId);
+    const allTasks = await this.store.getTasks(deliverable.projectId);
+    const tasks = allTasks.filter((t) => t.deliverableId === deliverableId);
+
+    const totalTasks = tasks.length;
+    let completedTasks = 0;
+    let activeTasks = 0;
+    let estimatedHours = 0;
+    let loggedHours = 0;
+    let totalProgress = 0;
+
+    for (const task of tasks) {
+      const statusDef = resolveStatusDefinition(task.status, project?.statusDefinitions || workflow?.statuses);
+      if (statusDef.completionState === 'done') {
+        completedTasks++;
+      } else if (statusDef.executionState === 'active') {
+        activeTasks++;
+      }
+
+      if (task.estimatedHours) estimatedHours += task.estimatedHours;
+      if (task.loggedHours) loggedHours += task.loggedHours;
+
+      if (typeof task.progress === 'number') {
+        totalProgress += task.progress;
+      } else {
+        totalProgress += statusDef.completionState === 'done' ? 100 : 0;
+      }
+    }
+
+    const progressPercentage = totalTasks > 0 ? Math.round(totalProgress / totalTasks) : 0;
+
+    return {
+      deliverable,
+      totalTasks,
+      completedTasks,
+      activeTasks,
+      progressPercentage,
+      estimatedHours,
+      loggedHours
+    };
   }
 
   // --- Iterations ---

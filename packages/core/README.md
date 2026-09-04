@@ -22,6 +22,10 @@
   - `FirebaseStorageAdapter`: Google Cloud Storage & Firebase Storage bucket adapter.
 - **Threaded Conversations, Discussions & Emoji Reactions**:
   - Nested replies (`parentId`), multi-author taxonomy (`user`, `agent`, `system`), emoji reactions (`addCommentReaction`, `removeCommentReaction`), and real-time domain event streaming (`comment.created`, `comment.updated`, `comment.deleted`, `comment.reaction.added`, `comment.reaction.removed`).
+- **Creative Workflows & First-Class Deliverables**:
+  - `DeliverableEntity` aggregate with automatic delivery timestamps (`deliveredAt`) and URL registry (`outputUrls`).
+  - `DEFAULT_CREATIVE_WORKFLOW` template tailored for creative agencies and content production pipelines.
+  - Rollup calculations via `getDeliverableSummary()` delivering progress percentages, completed tasks, and total estimated/logged hours across assigned tasks.
 
 ---
 
@@ -86,6 +90,37 @@ try {
     console.error(`Blocked cyclic dependency! Cycle path: ${error.cyclePath.join(' -> ')}`);
   }
 }
+```
+
+### 4. Tracking Creative Deliverables & Rollup Metrics
+
+```ts
+import { CriticalPathEngine, DEFAULT_CREATIVE_WORKFLOW } from '@critical-path/core';
+
+const engine = new CriticalPathEngine();
+
+// 1. Create deliverable
+const deliverable = await engine.createDeliverable({
+  projectId: 'proj_1',
+  title: 'Brand Hero Video 30s',
+  format: 'ProRes 422HQ',
+  specs: { resolution: '3840x2160', fps: 24 }
+});
+
+// 2. Attach tasks to deliverable
+await engine.createTask({
+  projectId: 'proj_1',
+  deliverableId: deliverable.id,
+  title: 'Storyboard & Animatic',
+  status: 'approved',
+  estimatedHours: 12,
+  loggedHours: 12,
+  progress: 100
+});
+
+// 3. Rollup metrics
+const summary = await engine.getDeliverableSummary(deliverable.id);
+console.log(`Progress: ${summary?.progressPercentage}%, Total tasks: ${summary?.totalTasks}`);
 ```
 
 ---

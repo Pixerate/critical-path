@@ -12,10 +12,12 @@ import {
   AttachmentState,
   createAttachmentState,
   TaskActivityState,
-  createTaskActivityState
+  createTaskActivityState,
+  DeliverableState,
+  createDeliverableState
 } from './index.js';
 import type { CriticalPathClient } from '@critical-path/client';
-import type { Project, Task, Workflow, Comment, Attachment } from '@critical-path/core';
+import type { Project, Task, Workflow, Comment, Attachment, Deliverable, DeliverableSummary } from '@critical-path/core';
 
 describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
   it('exports client factory and Svelte 5 Runes state factories', () => {
@@ -26,12 +28,14 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
     expect(createCommentState).toBeDefined();
     expect(createAttachmentState).toBeDefined();
     expect(createTaskActivityState).toBeDefined();
+    expect(createDeliverableState).toBeDefined();
     expect(ProjectState).toBeDefined();
     expect(TaskState).toBeDefined();
     expect(WorkflowState).toBeDefined();
     expect(CommentState).toBeDefined();
     expect(AttachmentState).toBeDefined();
     expect(TaskActivityState).toBeDefined();
+    expect(DeliverableState).toBeDefined();
   });
 
   describe('WorkflowState', () => {
@@ -350,6 +354,58 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       await activityState.deleteAttachment('att_1');
       expect(activityState.attachments).toEqual([]);
       expect(activityState.threads[0].attachments).toEqual([]);
+    });
+  });
+
+  describe('DeliverableState', () => {
+    it('fetches, creates, updates, and deletes deliverables and gets summary', async () => {
+      const mockDeliverable: Deliverable = {
+        id: 'deliv_1',
+        projectId: 'proj_1',
+        title: 'Commercial Cut 30s',
+        status: 'planned',
+        outputUrls: [],
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      };
+
+      const mockSummary: DeliverableSummary = {
+        deliverable: mockDeliverable,
+        totalTasks: 2,
+        completedTasks: 1,
+        activeTasks: 1,
+        progressPercentage: 50,
+        estimatedHours: 10,
+        loggedHours: 5
+      };
+
+      const mockClient = {
+        getDeliverables: vi.fn().mockResolvedValue([mockDeliverable]),
+        createDeliverable: vi.fn().mockResolvedValue(mockDeliverable),
+        updateDeliverable: vi.fn().mockResolvedValue({ ...mockDeliverable, status: 'delivered' }),
+        deleteDeliverable: vi.fn().mockResolvedValue(true),
+        getDeliverableSummary: vi.fn().mockResolvedValue(mockSummary)
+      } as unknown as CriticalPathClient;
+
+      const state = createDeliverableState(mockClient, 'proj_1');
+      await state.fetch();
+      expect(state.data).toEqual([mockDeliverable]);
+
+      const created = await state.createDeliverable({
+        projectId: 'proj_1',
+        title: 'Commercial Cut 30s'
+      });
+      expect(created).toEqual(mockDeliverable);
+
+      const updated = await state.updateDeliverable('deliv_1', { status: 'delivered' });
+      expect(updated.status).toBe('delivered');
+
+      const summary = await state.getSummary('deliv_1');
+      expect(summary.totalTasks).toBe(2);
+      expect(summary.progressPercentage).toBe(50);
+
+      await state.deleteDeliverable('deliv_1');
+      expect(state.data).toEqual([]);
     });
   });
 });

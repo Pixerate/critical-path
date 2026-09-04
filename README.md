@@ -99,8 +99,9 @@ graph TD
 - 🎯 **Headless & Frontend-Agnostic**: Pure API-first architecture designed for Next.js (App Router), SvelteKit, Express, Fastify, and edge runtimes.
 - 🏛️ **Domain-Driven Design (DDD)**: Rich Domain Aggregates (`TaskEntity`, `ProjectEntity`), DAG dependency cycle prevention (`detectDependencyCycle`), custom field Value Object validation, and interface-segregated repositories.
 - 📡 **Typed Domain Event Bus**: In-memory pub/sub broker (`DomainEventBus`) emitting typed domain events (`task.created`, `task.status_changed`, `time.logged`, `dependency.added`) on all mutations.
-- ⚡ **Built-in & Custom Industry Workflows**: Pre-configured workflow templates for Software Development (`DEFAULT_SOFTWARE_WORKFLOW`), VFX Production (`DEFAULT_VFX_WORKFLOW`), and Simple Tasks (`DEFAULT_SIMPLE_WORKFLOW`), or build fully custom status transition pipelines.
-- 📋 **Comprehensive PM Work Items**: Full CRUD for Projects, Workflows, Tasks, Sprints/Cycles, Deliverable Containers (`sequence`, `shot`, `epic`), Task Dependencies, Subtasks, Priorities, and Estimates.
+- ⚡ **Built-in & Custom Industry Workflows**: Pre-configured workflow templates for Creative Agencies & Content Teams (`DEFAULT_CREATIVE_WORKFLOW`), Software Development (`DEFAULT_SOFTWARE_WORKFLOW`), VFX Production (`DEFAULT_VFX_WORKFLOW`), and Simple Tasks (`DEFAULT_SIMPLE_WORKFLOW`), or build fully custom status transition pipelines.
+- 🎨 **Creative Workflows & First-Class Deliverables**: Dedicated `Deliverable` entity (`planned`, `in_progress`, `in_review`, `approved`, `delivered`, `canceled`) with format specs, output URLs, multi-task assignment (`deliverableId`), and engine rollup summaries (`getDeliverableSummary` computing task counts, completion states, percentage progress, and hours).
+- 📋 **Comprehensive PM Work Items**: Full CRUD for Projects, Workflows, Deliverables, Tasks, Sprints/Cycles, Deliverable Containers (`sequence`, `shot`, `epic`), Task Dependencies, Subtasks, Priorities, and Estimates.
 - 🔌 **Extensible Plugin Engine**: Lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`), custom field type registries, and custom route middlewares.
 - ⚙️ **Dynamic Custom Fields**: Attach structured custom fields (text, select, user, date, number, boolean) to projects and tasks on the fly with strict runtime validation.
 - 🔔 **Webhooks & Audit Streams**: Real-time event notifications (`task.created`, `task.status_changed`) and immutable activity logs.
@@ -128,6 +129,7 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 - [x] **Work Item Tracking**: Task CRUD with priorities, due dates, estimates, and tags
 - [x] **Multiple Views**: Interactive Kanban board (`useKanban`) and structured task list views
 - [x] **Sprint & Cycle Management**: Sprint creation, task assignment, and cycle tracking
+- [x] **Deliverables & Creative Assets**: First-class `Deliverable` entity with specs, output URLs, rollup progress, and creative presets
 - [x] **Dependencies & Relationships**: Parent-child task hierarchies (`parentId`) and task linking
 
 ### Collaboration Features

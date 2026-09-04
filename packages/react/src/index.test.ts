@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { CriticalPathProvider, useCriticalPathClient, useComments, useAttachments } from './index.js';
+import {
+  CriticalPathProvider,
+  useCriticalPathClient,
+  useComments,
+  useAttachments,
+  useDeliverables,
+  useDeliverableSummary
+} from './index.js';
 
 describe('@critical-path/react Exports Test', () => {
   it('exports Provider and Hooks', () => {
@@ -7,5 +14,7 @@ describe('@critical-path/react Exports Test', () => {
     expect(useCriticalPathClient).toBeDefined();
     expect(useComments).toBeDefined();
     expect(useAttachments).toBeDefined();
+    expect(useDeliverables).toBeDefined();
+    expect(useDeliverableSummary).toBeDefined();
   });
 });

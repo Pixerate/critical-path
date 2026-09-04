@@ -11,7 +11,9 @@ import type {
   Activity,
   Webhook,
   TaskDependency,
-  Workflow
+  Workflow,
+  Deliverable,
+  CreateDeliverableInput
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
 
@@ -280,6 +282,50 @@ export class FirebaseStore implements StorageAdapter {
     const existing = await this.getContainer(id);
     if (!existing) return false;
     await this.db.collection('containers').doc(id).delete();
+    return true;
+  }
+
+  // --- Deliverables ---
+  async getDeliverables(projectId: string): Promise<Deliverable[]> {
+    const snap = await this.db.collection('deliverables').where('projectId', '==', projectId).get();
+    return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+  }
+
+  async getDeliverable(id: string): Promise<Deliverable | null> {
+    const snap = await this.db.collection('deliverables').doc(id).get();
+    if (!snap.exists) return null;
+    return { ...snap.data(), id: snap.id };
+  }
+
+  async createDeliverable(deliverable: CreateDeliverableInput): Promise<Deliverable> {
+    const docRef = this.db.collection('deliverables').doc();
+    const now = new Date().toISOString();
+    const newDeliverable: Deliverable = {
+      ...deliverable,
+      id: docRef.id,
+      status: deliverable.status || 'planned',
+      outputUrls: deliverable.outputUrls ? [...deliverable.outputUrls] : [],
+      customFields: deliverable.customFields ? { ...deliverable.customFields } : {},
+      createdAt: now,
+      updatedAt: now
+    };
+    await docRef.set(sanitizeFirestoreData(newDeliverable));
+    return newDeliverable;
+  }
+
+  async updateDeliverable(id: string, updates: Partial<Deliverable>): Promise<Deliverable | null> {
+    const existing = await this.getDeliverable(id);
+    if (!existing) return null;
+
+    const updated: Deliverable = { ...existing, ...updates, updatedAt: new Date().toISOString() };
+    await this.db.collection('deliverables').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
+    return updated;
+  }
+
+  async deleteDeliverable(id: string): Promise<boolean> {
+    const existing = await this.getDeliverable(id);
+    if (!existing) return false;
+    await this.db.collection('deliverables').doc(id).delete();
     return true;
   }
 

@@ -118,13 +118,47 @@ export interface Workflow {
 }
 ```
 
+### Deliverable
+```ts
+export type DeliverableStatus = 'planned' | 'in_progress' | 'in_review' | 'approved' | 'delivered' | 'canceled';
+
+export interface Deliverable {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  status: DeliverableStatus;
+  dueDate?: string;
+  deliveredAt?: string;
+  leadId?: string;
+  reviewerId?: string;
+  format?: string;
+  specs?: Record<string, unknown>;
+  outputUrls?: string[];
+  customFields?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeliverableSummary {
+  deliverable: Deliverable;
+  totalTasks: number;
+  completedTasks: number;
+  activeTasks: number;
+  progressPercentage: number;
+  estimatedHours: number;
+  loggedHours: number;
+}
+```
+
 ### Built-in Industry Workflow Presets
 
 Critical Path exports pre-built workflows for common domain models:
 
-1. **`DEFAULT_SOFTWARE_WORKFLOW`**: Standard software engineering SDLC (Backlog -> To Do -> In Progress -> In Review -> Done).
-2. **`DEFAULT_VFX_WORKFLOW`**: Visual Effects production pipeline (Bidding & Draft -> Awarded -> In Production -> Internal Review -> Client Review -> Revision Requested -> Approved Final).
-3. **`DEFAULT_SIMPLE_WORKFLOW`**: Lightweight task workflow (To Do -> In Progress -> Done).
+1. **`DEFAULT_CREATIVE_WORKFLOW`**: Creative Agency & Content Production pipeline (Briefing -> Concept -> In Production -> Internal Review -> Client Review -> Revision Requested -> Approved -> Delivered).
+2. **`DEFAULT_SOFTWARE_WORKFLOW`**: Standard software engineering SDLC (Backlog -> To Do -> In Progress -> In Review -> Done).
+3. **`DEFAULT_VFX_WORKFLOW`**: Visual Effects production pipeline (Bidding & Draft -> Awarded -> In Production -> Internal Review -> Client Review -> Revision Requested -> Approved Final).
+4. **`DEFAULT_SIMPLE_WORKFLOW`**: Lightweight task workflow (To Do -> In Progress -> Done).
 
 ---
 
@@ -137,6 +171,14 @@ All endpoints return JSON responses.
 - `POST /api/critical-path/projects` - Create project.
 - `GET /api/critical-path/projects/:id` - Get project by ID.
 - `DELETE /api/critical-path/projects/:id` - Delete project.
+
+### Deliverables
+- `GET /api/critical-path/deliverables?projectId=:id` - List deliverables for project.
+- `POST /api/critical-path/deliverables` - Create deliverable.
+- `GET /api/critical-path/deliverables/:id` - Get deliverable by ID.
+- `GET /api/critical-path/deliverables/:id/summary` - Get deliverable summary with task rollup metrics.
+- `PATCH /api/critical-path/deliverables/:id` - Update deliverable.
+- `DELETE /api/critical-path/deliverables/:id` - Delete deliverable.
 
 ### Workflows
 - `GET /api/critical-path/workflows` - List all workflows.
@@ -239,21 +281,53 @@ function KanbanView() {
 }
 ```
 
-### Svelte Stores (`@critical-path/svelte`)
+```
+
+#### Tracking Deliverables & Rollup Progress in React
+```tsx
+import { useDeliverables, useDeliverableSummary } from '@critical-path/react';
+
+function DeliverableTracker({ projectId }: { projectId: string }) {
+  const { deliverables, loading, createDeliverable } = useDeliverables(projectId);
+  return (
+    <div>
+      {deliverables.map((deliv) => (
+        <DeliverableCard key={deliv.id} deliverableId={deliv.id} title={deliv.title} />
+      ))}
+    </div>
+  );
+}
+
+function DeliverableCard({ deliverableId, title }: { deliverableId: string; title: string }) {
+  const { summary } = useDeliverableSummary(deliverableId);
+  return (
+    <div className="card">
+      <h4>{title}</h4>
+      <p>Progress: {summary?.progressPercentage}% ({summary?.completedTasks}/{summary?.totalTasks} tasks)</p>
+    </div>
+  );
+}
+```
+
+### Svelte Runes (`@critical-path/svelte`)
 
 ```svelte
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { createCriticalPathClient, createTaskStore } from '@critical-path/svelte';
+  import { createCriticalPathClient, createTaskState, createDeliverableState } from '@critical-path/svelte';
 
   const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
-  const taskStore = createTaskStore(client, 'proj_1');
+  const taskState = createTaskState(client, 'proj_1');
+  const deliverableState = createDeliverableState(client, 'proj_1');
 
-  onMount(() => taskStore.fetch());
+  onMount(() => {
+    taskState.fetch();
+    deliverableState.fetch();
+  });
 </script>
 
 <ul>
-  {#each $taskStore.data as task}
+  {#each taskState.data as task}
     <li><strong>{task.title}</strong> - {task.status}</li>
   {/each}
 </ul>

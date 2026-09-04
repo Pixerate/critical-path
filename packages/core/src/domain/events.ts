@@ -9,14 +9,15 @@ import type {
   TimeEntry,
   Comment,
   CommentReaction,
-  Attachment
+  Attachment,
+  Deliverable
 } from '../types/index.js';
 
 export interface DomainEvent<TPayload = Record<string, unknown>> {
   readonly id: string;
   readonly name: string;
   readonly aggregateId: string;
-  readonly aggregateType: 'Task' | 'Project' | 'Workflow' | 'Iteration' | 'Team' | 'Container' | 'Dependency' | 'Comment' | 'Attachment';
+  readonly aggregateType: 'Task' | 'Project' | 'Workflow' | 'Iteration' | 'Team' | 'Container' | 'Dependency' | 'Comment' | 'Attachment' | 'Deliverable';
   readonly occurredAt: string;
   readonly payload: TPayload;
 }
@@ -136,6 +137,26 @@ export interface ContainerCreatedEvent extends DomainEvent<{ container: TaskCont
   readonly aggregateType: 'Container';
 }
 
+export interface DeliverableCreatedEvent extends DomainEvent<{ deliverable: Deliverable }> {
+  readonly name: 'deliverable.created';
+  readonly aggregateType: 'Deliverable';
+}
+
+export interface DeliverableUpdatedEvent extends DomainEvent<{ deliverable: Deliverable; previous: Deliverable }> {
+  readonly name: 'deliverable.updated';
+  readonly aggregateType: 'Deliverable';
+}
+
+export interface DeliverableStatusChangedEvent extends DomainEvent<{ deliverable: Deliverable; previousStatus: string; newStatus: string }> {
+  readonly name: 'deliverable.status_changed';
+  readonly aggregateType: 'Deliverable';
+}
+
+export interface DeliverableDeletedEvent extends DomainEvent<{ deliverableId: string; projectId: string }> {
+  readonly name: 'deliverable.deleted';
+  readonly aggregateType: 'Deliverable';
+}
+
 export type CriticalPathDomainEvent =
   | TaskCreatedEvent
   | TaskUpdatedEvent
@@ -158,7 +179,11 @@ export type CriticalPathDomainEvent =
   | IterationStartedEvent
   | IterationCompletedEvent
   | TeamCreatedEvent
-  | ContainerCreatedEvent;
+  | ContainerCreatedEvent
+  | DeliverableCreatedEvent
+  | DeliverableUpdatedEvent
+  | DeliverableStatusChangedEvent
+  | DeliverableDeletedEvent;
 
 export type DomainEventHandler<T extends DomainEvent = DomainEvent> = (event: T) => Promise<void> | void;
 

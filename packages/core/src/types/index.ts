@@ -142,6 +142,7 @@ export interface Task {
   iterationId?: string;
   teamId?: string;
   containerId?: string;
+  deliverableId?: string; // Direct link to parent deliverable
   plannedStartDate?: string;
   actualStartDate?: string;
   actualEndDate?: string;
@@ -167,6 +168,50 @@ export interface Task {
 export type CreateTaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'priority'> & {
   status?: TaskStatus;
   priority?: Priority;
+};
+
+export type DeliverableStatus =
+  | 'draft'
+  | 'planned'
+  | 'in_production'
+  | 'internal_review'
+  | 'client_review'
+  | 'revision_requested'
+  | 'approved'
+  | 'delivered'
+  | 'canceled'
+  | (string & {});
+
+export interface Deliverable {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  status: DeliverableStatus;
+  format?: string; // e.g., '16:9 4K ProRes', 'Figma', 'PDF'
+  specs?: Record<string, unknown>; // Technical specifications (resolution, frame rate, etc.)
+  leadId?: string; // Creative director or lead creator
+  reviewerId?: string; // Approver or client reviewer
+  dueDate?: string;
+  deliveredAt?: string;
+  outputUrls?: string[]; // Links to final rendered assets, exports, or storage keys
+  customFields?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeliverableSummary {
+  deliverable: Deliverable;
+  totalTasks: number;
+  completedTasks: number;
+  activeTasks: number;
+  progressPercentage: number;
+  estimatedHours: number;
+  loggedHours: number;
+}
+
+export type CreateDeliverableInput = Omit<Deliverable, 'id' | 'createdAt' | 'updatedAt' | 'status'> & {
+  status?: DeliverableStatus;
 };
 
 export type CreateProjectInput = Omit<Project, 'id' | 'createdAt' | 'updatedAt'>;
@@ -309,7 +354,11 @@ export type WebhookEvent =
   | 'container.created'
   | 'workflow.created'
   | 'workflow.updated'
-  | 'workflow.deleted';
+  | 'workflow.deleted'
+  | 'deliverable.created'
+  | 'deliverable.updated'
+  | 'deliverable.deleted'
+  | 'deliverable.status_changed';
 
 export interface PluginHooks {
   beforeTaskCreate?: (task: Partial<Task>) => Promise<Partial<Task>> | Partial<Task>;
@@ -343,5 +392,6 @@ export interface CriticalPathConfig {
     teams?: Team[];
     containers?: TaskContainer[];
     workflows?: Workflow[];
+    deliverables?: Deliverable[];
   };
 }

@@ -226,5 +226,73 @@ describe('@critical-path/server Router Tests', () => {
     const delReactData = await delReactRes.json();
     expect(delReactData.comment.reactions).toHaveLength(0);
   });
+
+  it('handles deliverables CRUD and summary rollups over HTTP', async () => {
+    const router = new CriticalPathRouter();
+    const proj = await router.engine.createProject({ key: 'DEL', name: 'Deliverable Proj' });
+
+    // 1. Create Deliverable via POST
+    const createReq = new Request('http://localhost:3000/api/critical-path/deliverables', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectId: proj.id,
+        title: 'Brand Video 30s',
+        format: 'ProRes 422'
+      })
+    });
+    const createRes = await router.handleRequest(createReq);
+    expect(createRes.status).toBe(201);
+    const createData = await createRes.json();
+    expect(createData.deliverable.title).toBe('Brand Video 30s');
+    const deliverableId = createData.deliverable.id;
+
+    // 2. Create task tied to deliverable
+    await router.engine.createTask({
+      projectId: proj.id,
+      title: 'Animation Pass 1',
+      status: 'done',
+      estimatedHours: 10,
+      loggedHours: 10,
+      deliverableId
+    });
+
+    // 3. Get Deliverables by projectId
+    const getListReq = new Request(`http://localhost:3000/api/critical-path/deliverables?projectId=${proj.id}`);
+    const getListRes = await router.handleRequest(getListReq);
+    expect(getListRes.status).toBe(200);
+    const getListData = await getListRes.json();
+    expect(getListData.deliverables).toHaveLength(1);
+
+    // 4. Get Deliverable Summary
+    const summaryReq = new Request(`http://localhost:3000/api/critical-path/deliverables/${deliverableId}/summary`);
+    const summaryRes = await router.handleRequest(summaryReq);
+    expect(summaryRes.status).toBe(200);
+    const summaryData = await summaryRes.json();
+    expect(summaryData.summary.totalTasks).toBe(1);
+    expect(summaryData.summary.completedTasks).toBe(1);
+    expect(summaryData.summary.estimatedHours).toBe(10);
+
+    // 5. Update Deliverable via PATCH
+    const patchReq = new Request(`http://localhost:3000/api/critical-path/deliverables/${deliverableId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'delivered' })
+    });
+    const patchRes = await router.handleRequest(patchReq);
+    expect(patchRes.status).toBe(200);
+    const patchData = await patchRes.json();
+    expect(patchData.deliverable.status).toBe('delivered');
+    expect(patchData.deliverable.deliveredAt).toBeDefined();
+
+    // 6. Delete Deliverable via DELETE
+    const delReq = new Request(`http://localhost:3000/api/critical-path/deliverables/${deliverableId}`, {
+      method: 'DELETE'
+    });
+    const delRes = await router.handleRequest(delReq);
+    expect(delRes.status).toBe(200);
+    const delData = await delRes.json();
+    expect(delData.success).toBe(true);
+  });
 });
 

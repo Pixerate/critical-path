@@ -12,7 +12,9 @@ import type {
   Activity,
   Webhook,
   TaskDependency,
-  Workflow
+  Workflow,
+  Deliverable,
+  CreateDeliverableInput
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
 
@@ -116,6 +118,7 @@ export class SQLiteStore implements StorageAdapter {
         iterationId TEXT,
         teamId TEXT,
         containerId TEXT,
+        deliverableId TEXT,
         plannedStartDate TEXT,
         actualStartDate TEXT,
         actualEndDate TEXT,
@@ -131,6 +134,24 @@ export class SQLiteStore implements StorageAdapter {
         tags TEXT,
         customFields TEXT,
         parentId TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS deliverables (
+        id TEXT PRIMARY KEY,
+        projectId TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL,
+        format TEXT,
+        specs TEXT,
+        leadId TEXT,
+        reviewerId TEXT,
+        dueDate TEXT,
+        deliveredAt TEXT,
+        outputUrls TEXT,
+        customFields TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       );
@@ -223,6 +244,12 @@ export class SQLiteStore implements StorageAdapter {
 
     try {
       this.db.exec('ALTER TABLE comments ADD COLUMN mentions TEXT');
+    } catch {
+      // Column may already exist
+    }
+
+    try {
+      this.db.exec('ALTER TABLE tasks ADD COLUMN deliverableId TEXT');
     } catch {
       // Column may already exist
     }
@@ -503,6 +530,98 @@ export class SQLiteStore implements StorageAdapter {
     return (result.changes ?? 0) > 0;
   }
 
+  // --- Deliverables ---
+  async getDeliverables(projectId: string): Promise<Deliverable[]> {
+    const stmt = this.db.prepare('SELECT * FROM deliverables WHERE projectId = ?');
+    const rows = stmt.all(projectId) as any[];
+    return rows.map((r) => this.mapDeliverable(r));
+  }
+
+  async getDeliverable(id: string): Promise<Deliverable | null> {
+    const stmt = this.db.prepare('SELECT * FROM deliverables WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row ? this.mapDeliverable(row) : null;
+  }
+
+  async createDeliverable(deliverable: CreateDeliverableInput): Promise<Deliverable> {
+    const id = `deliv_${Math.random().toString(36).substring(2, 9)}`;
+    const now = new Date().toISOString();
+    const newDeliverable: Deliverable = {
+      ...deliverable,
+      id,
+      status: deliverable.status || 'planned',
+      outputUrls: deliverable.outputUrls ? [...deliverable.outputUrls] : [],
+      customFields: deliverable.customFields ? { ...deliverable.customFields } : {},
+      createdAt: now,
+      updatedAt: now
+    };
+
+    const stmt = this.db.prepare(`
+      INSERT INTO deliverables (
+        id, projectId, title, description, status, format, specs, leadId, reviewerId,
+        dueDate, deliveredAt, outputUrls, customFields, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      newDeliverable.id,
+      newDeliverable.projectId,
+      newDeliverable.title,
+      newDeliverable.description || null,
+      newDeliverable.status,
+      newDeliverable.format || null,
+      newDeliverable.specs ? JSON.stringify(newDeliverable.specs) : null,
+      newDeliverable.leadId || null,
+      newDeliverable.reviewerId || null,
+      newDeliverable.dueDate || null,
+      newDeliverable.deliveredAt || null,
+      JSON.stringify(newDeliverable.outputUrls || []),
+      JSON.stringify(newDeliverable.customFields || {}),
+      newDeliverable.createdAt,
+      newDeliverable.updatedAt
+    );
+    return newDeliverable;
+  }
+
+  async updateDeliverable(id: string, updates: Partial<Deliverable>): Promise<Deliverable | null> {
+    const existing = await this.getDeliverable(id);
+    if (!existing) return null;
+
+    const updated: Deliverable = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+
+    const stmt = this.db.prepare(`
+      UPDATE deliverables SET
+        title = ?, description = ?, status = ?, format = ?, specs = ?, leadId = ?, reviewerId = ?,
+        dueDate = ?, deliveredAt = ?, outputUrls = ?, customFields = ?, updatedAt = ?
+      WHERE id = ?
+    `);
+    stmt.run(
+      updated.title,
+      updated.description || null,
+      updated.status,
+      updated.format || null,
+      updated.specs ? JSON.stringify(updated.specs) : null,
+      updated.leadId || null,
+      updated.reviewerId || null,
+      updated.dueDate || null,
+      updated.deliveredAt || null,
+      JSON.stringify(updated.outputUrls || []),
+      JSON.stringify(updated.customFields || {}),
+      updated.updatedAt,
+      id
+    );
+    return updated;
+  }
+
+  async deleteDeliverable(id: string): Promise<boolean> {
+    const stmt = this.db.prepare('DELETE FROM deliverables WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  }
+
   // --- Tasks ---
   async getTasks(projectId?: string): Promise<Task[]> {
     let rows: any[];
@@ -530,11 +649,11 @@ export class SQLiteStore implements StorageAdapter {
     const stmt = this.db.prepare(`
       INSERT INTO tasks (
         id, projectId, title, description, status, priority, taskType, assigneeId, reporterId,
-        reviewerId, iterationId, teamId, containerId, plannedStartDate, actualStartDate, actualEndDate,
+        reviewerId, iterationId, teamId, containerId, deliverableId, plannedStartDate, actualStartDate, actualEndDate,
         dueDate, estimatedHours, loggedHours, actualHours, billableHours,
         estimatedDurationMinutes, actualDurationMinutes, billableDurationMinutes, progress,
         tags, customFields, parentId, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newTask.id,
@@ -550,6 +669,7 @@ export class SQLiteStore implements StorageAdapter {
       newTask.iterationId || null,
       newTask.teamId || null,
       newTask.containerId || null,
+      newTask.deliverableId || null,
       newTask.plannedStartDate || null,
       newTask.actualStartDate || null,
       newTask.actualEndDate || null,
@@ -584,7 +704,7 @@ export class SQLiteStore implements StorageAdapter {
     const stmt = this.db.prepare(`
       UPDATE tasks SET
         projectId = ?, title = ?, description = ?, status = ?, priority = ?, taskType = ?,
-        assigneeId = ?, reporterId = ?, reviewerId = ?, iterationId = ?, teamId = ?, containerId = ?,
+        assigneeId = ?, reporterId = ?, reviewerId = ?, iterationId = ?, teamId = ?, containerId = ?, deliverableId = ?,
         plannedStartDate = ?, actualStartDate = ?, actualEndDate = ?, dueDate = ?,
         estimatedHours = ?, loggedHours = ?, actualHours = ?, billableHours = ?,
         estimatedDurationMinutes = ?, actualDurationMinutes = ?, billableDurationMinutes = ?, progress = ?,
@@ -604,6 +724,7 @@ export class SQLiteStore implements StorageAdapter {
       updated.iterationId || null,
       updated.teamId || null,
       updated.containerId || null,
+      updated.deliverableId || null,
       updated.plannedStartDate || null,
       updated.actualStartDate || null,
       updated.actualEndDate || null,
@@ -1059,7 +1180,17 @@ export class SQLiteStore implements StorageAdapter {
     return {
       ...row,
       taskType: row.taskType || undefined,
+      deliverableId: row.deliverableId || undefined,
       tags: row.tags ? JSON.parse(row.tags) : [],
+      customFields: row.customFields ? JSON.parse(row.customFields) : {}
+    };
+  }
+
+  private mapDeliverable(row: any): Deliverable {
+    return {
+      ...row,
+      specs: row.specs ? JSON.parse(row.specs) : undefined,
+      outputUrls: row.outputUrls ? JSON.parse(row.outputUrls) : [],
       customFields: row.customFields ? JSON.parse(row.customFields) : {}
     };
   }

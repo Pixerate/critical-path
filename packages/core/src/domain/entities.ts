@@ -8,7 +8,10 @@ import type {
   TaskTodoItem,
   CustomFieldDefinition,
   CreateTaskInput,
-  CreateProjectInput
+  CreateProjectInput,
+  Deliverable,
+  DeliverableStatus,
+  CreateDeliverableInput
 } from '../types/index.js';
 import type {
   DomainEvent,
@@ -16,7 +19,10 @@ import type {
   TaskStatusChangedEvent,
   TaskUpdatedEvent,
   TimeLoggedEvent,
-  ProjectCreatedEvent
+  ProjectCreatedEvent,
+  DeliverableCreatedEvent,
+  DeliverableUpdatedEvent,
+  DeliverableStatusChangedEvent
 } from './events.js';
 import { validateTransition, WorkflowValidationError } from '../utils/workflow.js';
 import { resolveStatusDefinition } from '../utils/status.js';
@@ -67,6 +73,7 @@ export class TaskEntity extends BaseEntity {
   public iterationId?: string;
   public teamId?: string;
   public containerId?: string;
+  public deliverableId?: string;
   public plannedStartDate?: string;
   public actualStartDate?: string;
   public actualEndDate?: string;
@@ -99,6 +106,7 @@ export class TaskEntity extends BaseEntity {
     this.iterationId = data.iterationId;
     this.teamId = data.teamId;
     this.containerId = data.containerId;
+    this.deliverableId = data.deliverableId;
     this.plannedStartDate = data.plannedStartDate;
     this.actualStartDate = data.actualStartDate;
     this.actualEndDate = data.actualEndDate;
@@ -365,6 +373,7 @@ export class TaskEntity extends BaseEntity {
       iterationId: this.iterationId,
       teamId: this.teamId,
       containerId: this.containerId,
+      deliverableId: this.deliverableId,
       plannedStartDate: this.plannedStartDate,
       actualStartDate: this.actualStartDate,
       actualEndDate: this.actualEndDate,
@@ -465,6 +474,180 @@ export class ProjectEntity extends BaseEntity {
       statusDefinitions: this.statusDefinitions,
       priorityDefinitions: this.priorityDefinitions,
       customFieldDefinitions: this.customFieldDefinitions ? [...this.customFieldDefinitions] : [],
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt
+    };
+  }
+}
+
+export class DeliverableEntity extends BaseEntity {
+  public projectId: string;
+  public title: string;
+  public description?: string;
+  public status: DeliverableStatus;
+  public format?: string;
+  public specs?: Record<string, unknown>;
+  public leadId?: string;
+  public reviewerId?: string;
+  public dueDate?: string;
+  public deliveredAt?: string;
+  public outputUrls?: string[];
+  public customFields?: Record<string, unknown>;
+
+  constructor(data: Deliverable) {
+    super(data.id, data.createdAt, data.updatedAt);
+    this.projectId = data.projectId;
+    this.title = data.title;
+    this.description = data.description;
+    this.status = data.status;
+    this.format = data.format;
+    this.specs = data.specs ? { ...data.specs } : undefined;
+    this.leadId = data.leadId;
+    this.reviewerId = data.reviewerId;
+    this.dueDate = data.dueDate;
+    this.deliveredAt = data.deliveredAt;
+    this.outputUrls = data.outputUrls ? [...data.outputUrls] : [];
+    this.customFields = data.customFields ? { ...data.customFields } : {};
+  }
+
+  public static create(
+    input: CreateDeliverableInput,
+    options?: { id?: string; customFieldDefs?: CustomFieldDefinition[] }
+  ): DeliverableEntity {
+    const id = options?.id || `deliv_${Math.random().toString(36).substring(2, 9)}`;
+    const now = new Date().toISOString();
+
+    if (options?.customFieldDefs) {
+      validateCustomFieldValues(options.customFieldDefs, input.customFields);
+    }
+
+    const deliverable = new DeliverableEntity({
+      ...input,
+      id,
+      createdAt: now,
+      updatedAt: now,
+      status: input.status || 'planned',
+      outputUrls: input.outputUrls ?? [],
+      customFields: input.customFields ?? {}
+    });
+
+    const createdEvent: DeliverableCreatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'deliverable.created',
+      aggregateId: deliverable.id,
+      aggregateType: 'Deliverable',
+      occurredAt: now,
+      payload: { deliverable: deliverable.toPlain() }
+    };
+    deliverable.raiseEvent(createdEvent);
+
+    return deliverable;
+  }
+
+  public transitionTo(newStatus: DeliverableStatus): this {
+    if (this.status === newStatus) return this;
+
+    const previousStatus = this.status;
+    this.status = newStatus;
+    const now = new Date().toISOString();
+
+    if (newStatus === 'delivered' && !this.deliveredAt) {
+      this.deliveredAt = now;
+    }
+
+    this.markUpdated();
+
+    const event: DeliverableStatusChangedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'deliverable.status_changed',
+      aggregateId: this.id,
+      aggregateType: 'Deliverable',
+      occurredAt: now,
+      payload: {
+        deliverable: this.toPlain(),
+        previousStatus,
+        newStatus
+      }
+    };
+    this.raiseEvent(event);
+
+    return this;
+  }
+
+  public addOutputUrl(url: string): this {
+    if (!this.outputUrls) {
+      this.outputUrls = [];
+    }
+    if (!this.outputUrls.includes(url)) {
+      const previous = this.toPlain();
+      this.outputUrls.push(url);
+      this.markUpdated();
+
+      const event: DeliverableUpdatedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'deliverable.updated',
+        aggregateId: this.id,
+        aggregateType: 'Deliverable',
+        occurredAt: new Date().toISOString(),
+        payload: {
+          deliverable: this.toPlain(),
+          previous
+        }
+      };
+      this.raiseEvent(event);
+    }
+    return this;
+  }
+
+  public update(updates: Partial<Deliverable>, customFieldDefs?: CustomFieldDefinition[]): this {
+    const previous = this.toPlain();
+
+    if (updates.customFields && customFieldDefs) {
+      validateCustomFieldValues(customFieldDefs, {
+        ...this.customFields,
+        ...updates.customFields
+      });
+    }
+
+    if (updates.status && updates.status !== this.status) {
+      this.transitionTo(updates.status);
+      delete updates.status;
+    }
+
+    Object.assign(this, updates);
+    this.markUpdated();
+
+    const event: DeliverableUpdatedEvent = {
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      name: 'deliverable.updated',
+      aggregateId: this.id,
+      aggregateType: 'Deliverable',
+      occurredAt: new Date().toISOString(),
+      payload: {
+        deliverable: this.toPlain(),
+        previous
+      }
+    };
+    this.raiseEvent(event);
+
+    return this;
+  }
+
+  public toPlain(): Deliverable {
+    return {
+      id: this.id,
+      projectId: this.projectId,
+      title: this.title,
+      description: this.description,
+      status: this.status,
+      format: this.format,
+      specs: this.specs ? { ...this.specs } : undefined,
+      leadId: this.leadId,
+      reviewerId: this.reviewerId,
+      dueDate: this.dueDate,
+      deliveredAt: this.deliveredAt,
+      outputUrls: this.outputUrls ? [...this.outputUrls] : [],
+      customFields: this.customFields ? { ...this.customFields } : {},
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     };

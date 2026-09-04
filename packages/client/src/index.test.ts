@@ -128,5 +128,84 @@ describe('@critical-path/client Tests', () => {
     const deletedAtt = await client.deleteAttachment('a1');
     expect(deletedAtt).toBe(true);
   });
+
+  it('handles deliverables CRUD and summary rollups via client SDK', async () => {
+    const mockDeliverable = {
+      id: 'd1',
+      projectId: 'p1',
+      title: 'Hero Cut 30s',
+      status: 'planned' as const,
+      format: 'ProRes 422',
+      outputUrls: [],
+      createdAt: '2026-09-04T00:00:00Z',
+      updatedAt: '2026-09-04T00:00:00Z'
+    };
+
+    const mockSummary = {
+      deliverable: mockDeliverable,
+      totalTasks: 4,
+      completedTasks: 2,
+      activeTasks: 2,
+      progressPercentage: 50,
+      estimatedHours: 20,
+      loggedHours: 12
+    };
+
+    const mockFetch = async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      const method = init?.method?.toUpperCase() || 'GET';
+
+      if (urlStr.includes('/deliverables?projectId=p1') && method === 'GET') {
+        return new Response(JSON.stringify({ deliverables: [mockDeliverable] }), { status: 200 });
+      }
+      if (urlStr.endsWith('/deliverables/d1/summary') && method === 'GET') {
+        return new Response(JSON.stringify({ summary: mockSummary }), { status: 200 });
+      }
+      if (urlStr.endsWith('/deliverables/d1') && method === 'GET') {
+        return new Response(JSON.stringify({ deliverable: mockDeliverable }), { status: 200 });
+      }
+      if (urlStr.endsWith('/deliverables') && method === 'POST') {
+        const body = JSON.parse(init?.body as string);
+        return new Response(JSON.stringify({ deliverable: { id: 'd2', ...body } }), { status: 201 });
+      }
+      if (urlStr.endsWith('/deliverables/d1') && method === 'PATCH') {
+        const body = JSON.parse(init?.body as string);
+        return new Response(JSON.stringify({ deliverable: { ...mockDeliverable, ...body } }), { status: 200 });
+      }
+      if (urlStr.endsWith('/deliverables/d1') && method === 'DELETE') {
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+    };
+
+    const client = new CriticalPathClient({
+      baseUrl: 'http://localhost:3000/api/critical-path',
+      fetch: mockFetch as typeof fetch
+    });
+
+    const list = await client.getDeliverables('p1');
+    expect(list).toHaveLength(1);
+    expect(list[0].title).toBe('Hero Cut 30s');
+
+    const single = await client.getDeliverable('d1');
+    expect(single.id).toBe('d1');
+
+    const summary = await client.getDeliverableSummary('d1');
+    expect(summary.totalTasks).toBe(4);
+    expect(summary.progressPercentage).toBe(50);
+
+    const created = await client.createDeliverable({
+      projectId: 'p1',
+      title: 'Hero Cut 15s',
+      format: 'ProRes 422'
+    });
+    expect(created.id).toBe('d2');
+
+    const updated = await client.updateDeliverable('d1', { status: 'delivered' });
+    expect(updated.status).toBe('delivered');
+
+    const deleted = await client.deleteDeliverable('d1');
+    expect(deleted).toBe(true);
+  });
 });
 
