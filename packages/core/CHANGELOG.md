@@ -1,5 +1,15 @@
 # @critical-path/core
 
+## 0.13.0
+
+### Minor Changes
+
+- a4a464b: Support multi-assignees and backward workflow status transitions:
+  - Add `TaskAssignee` interface (`id`, `name`, `role`, `type: 'user' | 'agent' | 'team'`, `avatarUrl`) and `assignees?: TaskAssignee[]` to `Task` entity and SQLite storage adapter.
+  - Add `getAllowedPreviousStatuses(workflow, currentStatus)` utility and `CriticalPathEngine.getAllowedPreviousTaskTransitions(taskId)` for calculating valid backward transitions.
+  - Expose `allowedPreviousStatuses` in server endpoint `GET /tasks/:taskId/transitions`.
+  - Add `getAllowedPreviousTaskTransitions(taskId)` to `CriticalPathClient` SDK.
+
 ## 0.12.0
 
 ### Minor Changes
