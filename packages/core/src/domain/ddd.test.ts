@@ -7,6 +7,10 @@ import {
   CircularDependencyError,
   CustomFieldValidationError,
   DEFAULT_SOFTWARE_WORKFLOW,
+  DEFAULT_SIMPLE_WORKFLOW,
+  WorkflowValidationError,
+  validateTransition,
+  getAllowedPreviousStatuses,
   detectDependencyCycle,
   validateCustomFieldValues,
   type CustomFieldDefinition,
@@ -350,4 +354,62 @@ describe('Domain-Driven Design (DDD) Enhancements Suite', () => {
       }).not.toThrow();
     });
   });
+
+  describe('Workflow Backward Status Transitions', () => {
+    it('allows moving task backwards to previous statuses in simple workflow', () => {
+      // In progress -> todo should be allowed
+      expect(validateTransition(DEFAULT_SIMPLE_WORKFLOW, 'in_progress', 'todo')).toBe(true);
+      expect(getAllowedPreviousStatuses(DEFAULT_SIMPLE_WORKFLOW, 'in_progress')).toEqual(['todo']);
+    });
+
+    it('disallows moving task backwards in workflows that explicitly do not define backward transitions', () => {
+      // Legacy or custom workflow without explicit backward transitions
+      const legacyWorkflow = {
+        ...DEFAULT_SIMPLE_WORKFLOW,
+        id: 'wf_simple_org_legacy',
+        transitions: [
+          { name: 'Start', fromStatusKey: 'todo', toStatusKey: 'in_progress' },
+          { name: 'Complete', fromStatusKey: 'in_progress', toStatusKey: 'done' }
+        ]
+      };
+
+      // Since transitions are explicit and do not permit it, should be false and empty
+      expect(validateTransition(legacyWorkflow, 'in_progress', 'todo')).toBe(false);
+      expect(getAllowedPreviousStatuses(legacyWorkflow, 'in_progress')).toEqual([]);
+    });
+
+    it('allows moving task backwards in DEFAULT_SOFTWARE_WORKFLOW', () => {
+      expect(validateTransition(DEFAULT_SOFTWARE_WORKFLOW, 'in_progress', 'todo')).toBe(true);
+      expect(validateTransition(DEFAULT_SOFTWARE_WORKFLOW, 'todo', 'backlog')).toBe(true);
+      expect(getAllowedPreviousStatuses(DEFAULT_SOFTWARE_WORKFLOW, 'in_progress')).toContain('todo');
+      expect(getAllowedPreviousStatuses(DEFAULT_SOFTWARE_WORKFLOW, 'todo')).toContain('backlog');
+    });
+
+    it('allows TaskEntity to transitionTo previous status without throwing WorkflowValidationError', () => {
+      const task = TaskEntity.create({
+        projectId: 'proj_1',
+        title: 'Review implementation',
+        status: 'in_progress'
+      });
+
+      expect(task.status).toBe('in_progress');
+      expect(() => {
+        task.transitionTo('todo', DEFAULT_SIMPLE_WORKFLOW);
+      }).not.toThrow();
+      expect(task.status).toBe('todo');
+    });
+
+    it('throws WorkflowValidationError for illegal non-backward transitions', () => {
+      const task = TaskEntity.create({
+        projectId: 'proj_1',
+        title: 'Review implementation',
+        status: 'todo'
+      });
+
+      expect(() => {
+        task.transitionTo('canceled', DEFAULT_SIMPLE_WORKFLOW);
+      }).toThrow(WorkflowValidationError);
+    });
+  });
 });
+

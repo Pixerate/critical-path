@@ -42,7 +42,9 @@ export const DEFAULT_SOFTWARE_WORKFLOW: Workflow = {
   ],
   transitions: [
     { name: 'Start Work', fromStatusKey: 'backlog', toStatusKey: 'todo' },
+    { name: 'Return to Backlog', fromStatusKey: 'todo', toStatusKey: 'backlog' },
     { name: 'Start Implementation', fromStatusKey: 'todo', toStatusKey: 'in_progress' },
+    { name: 'Return to To Do', fromStatusKey: 'in_progress', toStatusKey: 'todo' },
     { name: 'Complete Task', fromStatusKey: 'todo', toStatusKey: 'done' },
     { name: 'Submit for Review', fromStatusKey: 'in_progress', toStatusKey: 'in_review' },
     { name: 'Complete Implementation', fromStatusKey: 'in_progress', toStatusKey: 'done' },
@@ -70,9 +72,11 @@ export const DEFAULT_SIMPLE_WORKFLOW: Workflow = {
   ],
   transitions: [
     { name: 'Start', fromStatusKey: 'todo', toStatusKey: 'in_progress' },
+    { name: 'Return to To Do', fromStatusKey: 'in_progress', toStatusKey: 'todo' },
     { name: 'Complete', fromStatusKey: 'todo', toStatusKey: 'done' },
     { name: 'Complete', fromStatusKey: 'in_progress', toStatusKey: 'done' },
-    { name: 'Reopen', fromStatusKey: 'done', toStatusKey: 'todo' }
+    { name: 'Reopen', fromStatusKey: 'done', toStatusKey: 'todo' },
+    { name: 'Return to In Progress', fromStatusKey: 'done', toStatusKey: 'in_progress' }
   ],
   taskTypes: DEFAULT_TASK_TYPES.filter((t) => ['task', 'subtask'].includes(t.key)),
   defaultStatusKey: 'todo',
@@ -232,9 +236,7 @@ export function getAllowedPreviousStatuses(
       }
     }
 
-    if (allowed.size > 0) {
-      return Array.from(allowed);
-    }
+    return Array.from(allowed);
   }
 
   return [allStatusKeys[currentIndex - 1]];
