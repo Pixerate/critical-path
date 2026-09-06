@@ -790,8 +790,12 @@ export class CriticalPathEngine {
   }
 
   // --- Attachments ---
-  async getAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string }): Promise<Attachment[]> {
-    return this.store.getAttachments(filter);
+  async getAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string; artifactType?: string }): Promise<Attachment[]> {
+    const attachments = await this.store.getAttachments(filter);
+    if (filter?.artifactType) {
+      return attachments.filter(a => a.artifactType === filter.artifactType);
+    }
+    return attachments;
   }
 
   async getAttachment(id: string): Promise<Attachment | null> {
@@ -854,6 +858,7 @@ export class CriticalPathEngine {
       commentId?: string;
       uploaderId: string;
       uploaderType?: 'user' | 'agent' | 'system';
+      artifactType?: 'plan' | 'spec' | 'deliverable' | 'review' | 'general';
       metadata?: Record<string, unknown>;
     }
   ): Promise<Attachment> {
@@ -879,8 +884,42 @@ export class CriticalPathEngine {
       sizeBytes: uploadResult.sizeBytes,
       url: uploadResult.url,
       storageKey: uploadResult.storageKey,
+      artifactType: input.artifactType,
       metadata: input.metadata
     });
+  }
+
+  async readAttachmentText(id: string): Promise<string> {
+    const attachment = await this.getAttachment(id);
+    if (!attachment) {
+      throw new Error(`Attachment with id "${id}" not found.`);
+    }
+
+    if (attachment.storageKey && this.fileStorage && typeof this.fileStorage.download === 'function') {
+      const bytes = await this.fileStorage.download(attachment.storageKey);
+      return new TextDecoder().decode(bytes);
+    }
+
+    if (attachment.url) {
+      if (attachment.url.startsWith('data:')) {
+        const commaIndex = attachment.url.indexOf(',');
+        const encoded = commaIndex !== -1 ? attachment.url.substring(commaIndex + 1) : attachment.url;
+        if (typeof Buffer !== 'undefined') {
+          return Buffer.from(encoded, 'base64').toString('utf-8');
+        }
+        if (typeof atob === 'function') {
+          return atob(encoded);
+        }
+      }
+
+      const res = await fetch(attachment.url);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch attachment from URL "${attachment.url}": ${res.statusText}`);
+      }
+      return await res.text();
+    }
+
+    throw new Error(`Cannot read attachment "${id}": no valid storageKey or URL found.`);
   }
 
   async getPresignedAttachmentUploadUrl(options: PresignedUrlOptions): Promise<PresignedUploadResult> {

@@ -172,5 +172,45 @@ describe('Storage Adapters', () => {
       expect(storedUri?.sizeBytes).toBe(Buffer.from(rawText).length);
       expect(new TextDecoder().decode(storedUri?.data)).toBe(rawText);
     });
+
+    it('downloads file bytes and reads text content from attachments via engine', async () => {
+      const mockStorage = new InMemoryFirebaseStorageMock();
+      const storageAdapter = new FirebaseStorageAdapter({ bucket: mockStorage, bucketName: 'test-bucket' });
+      const engine = new CriticalPathEngine({ fileStorage: storageAdapter });
+
+      const project = await engine.createProject({ name: 'Attachment Reading Test' });
+      const task = await engine.createTask({ projectId: project.id, title: 'Document Task' });
+
+      const planMarkdown = '# Project Roadmap\n\nPhase 1: Research\nPhase 2: Execution';
+      const attachment = await engine.uploadAttachmentFile({
+        filename: 'Roadmap.md',
+        data: planMarkdown,
+        mimeType: 'text/markdown',
+        taskId: task.id,
+        projectId: project.id,
+        uploaderId: 'agent_planner',
+        uploaderType: 'agent',
+        artifactType: 'plan'
+      });
+
+      expect(attachment.id).toBeDefined();
+      expect(attachment.artifactType).toBe('plan');
+
+      // Test download method on adapter
+      const downloadedBytes = await storageAdapter.download(attachment.storageKey!);
+      expect(new TextDecoder().decode(downloadedBytes)).toBe(planMarkdown);
+
+      // Test engine readAttachmentText
+      const readText = await engine.readAttachmentText(attachment.id);
+      expect(readText).toBe(planMarkdown);
+
+      // Test filtering by artifactType
+      const planAttachments = await engine.getAttachments({ taskId: task.id, artifactType: 'plan' });
+      expect(planAttachments.length).toBe(1);
+      expect(planAttachments[0].id).toBe(attachment.id);
+
+      const reviewAttachments = await engine.getAttachments({ taskId: task.id, artifactType: 'review' });
+      expect(reviewAttachments.length).toBe(0);
+    });
   });
 });

@@ -52,6 +52,11 @@ export class InMemoryFirebaseStorageMock implements FirebaseStorageBucketInterfa
       async delete() {
         files.delete(path);
       },
+      async download(): Promise<[Uint8Array]> {
+        const file = files.get(path);
+        if (!file) throw new Error(`File not found: ${path}`);
+        return [file.data];
+      },
       async getMetadata(): Promise<[any]> {
         const file = files.get(path);
         return [{
@@ -144,6 +149,21 @@ export class FirebaseStorageAdapter implements FileStorageAdapter {
     } catch {
       return false;
     }
+  }
+
+  async download(storageKey: string): Promise<Buffer | Uint8Array> {
+    const fileRef = this.bucket.file(storageKey);
+    if (typeof (fileRef as any).download === 'function') {
+      const [buf] = await (fileRef as any).download();
+      return buf;
+    }
+    const url = await this.getDownloadUrl(storageKey);
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Failed to download file from "${url}": ${res.statusText}`);
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
   }
 
   async getDownloadUrl(storageKey: string): Promise<string> {
