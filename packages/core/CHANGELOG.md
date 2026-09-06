@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.14.0
+
+### Minor Changes
+
+- 3dc2798: feat(core): add readAttachmentText engine method, download on storage adapters, and artifactType metadata
+
 ## 0.13.3
 
 ### Patch Changes
