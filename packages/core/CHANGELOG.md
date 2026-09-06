@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.13.3
+
+### Patch Changes
+
+- 573a4fa: Fix mention regex to avoid capturing trailing punctuation like periods or commas in unquoted handles
+
 ## 0.13.2
 
 ### Patch Changes
