@@ -271,6 +271,7 @@ export interface Attachment {
   sizeBytes: number;
   url: string;
   storageKey?: string;
+  artifactType?: 'plan' | 'spec' | 'deliverable' | 'review' | 'general';
   metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -309,6 +310,7 @@ export interface PresignedUploadResult {
 export interface FileStorageAdapter {
   upload(input: UploadFileInput): Promise<UploadFileResult>;
   delete(storageKey: string): Promise<boolean>;
+  download?(storageKey: string): Promise<Buffer | Uint8Array>;
   getDownloadUrl?(storageKey: string): Promise<string>;
   getPresignedUploadUrl?(options: PresignedUrlOptions): Promise<PresignedUploadResult>;
 }

@@ -123,6 +123,14 @@ export class InMemoryFileStore implements FileStorageAdapter {
     return this.files.delete(storageKey);
   }
 
+  async download(storageKey: string): Promise<Buffer | Uint8Array> {
+    const file = this.files.get(storageKey);
+    if (!file) {
+      throw new Error(`File with storageKey "${storageKey}" not found`);
+    }
+    return file.data;
+  }
+
   async getDownloadUrl(storageKey: string): Promise<string> {
     const file = this.files.get(storageKey);
     if (!file) {
