@@ -10,7 +10,7 @@ export interface MentionSegment {
  * - Standard mentions: @jane_doe, @planner, @user-1, @john.smith
  * Note: Does not match emails like foo@bar.com (requires word boundary or start of string before @).
  */
-export const MENTION_REGEX = /(?:^|\s)@(?:"([^"]+)"|([a-zA-Z0-9_.-]+))/g;
+export const MENTION_REGEX = /(?:^|\s)@(?:"([^"]+)"|([a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*))/g;
 
 /**
  * Extracts unique mention handles from a text string.

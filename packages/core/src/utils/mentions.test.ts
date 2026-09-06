@@ -32,6 +32,11 @@ describe('mentions utility', () => {
       const text = 'Call @agent-1, @super_user, and @john.doe';
       expect(extractMentions(text)).toEqual(['agent-1', 'super_user', 'john.doe']);
     });
+
+    it('correctly ignores trailing punctuation such as periods, commas, and exclamation marks', () => {
+      const text = 'Check with @turquoise. Then ping @john.doe! Also ask @coordinator, and @"Jane Doe".';
+      expect(extractMentions(text)).toEqual(['turquoise', 'john.doe', 'coordinator', 'Jane Doe']);
+    });
   });
 
   describe('parseMentionSegments', () => {
@@ -51,6 +56,15 @@ describe('mentions utility', () => {
         { type: 'text', value: 'Hello ' },
         { type: 'mention', value: '@planner', handle: 'planner' },
         { type: 'text', value: ', please check.' }
+      ]);
+    });
+
+    it('correctly segments mention with trailing period', () => {
+      const result = parseMentionSegments('Hello @turquoise.');
+      expect(result).toEqual([
+        { type: 'text', value: 'Hello ' },
+        { type: 'mention', value: '@turquoise', handle: 'turquoise' },
+        { type: 'text', value: '.' }
       ]);
     });
 
