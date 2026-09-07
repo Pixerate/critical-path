@@ -30,6 +30,7 @@ import {
   validateTransition,
   getAllowedNextStatuses,
   getAllowedPreviousStatuses,
+  getAllowedTransitions,
   WorkflowValidationError,
   DEFAULT_SOFTWARE_WORKFLOW
 } from '../utils/workflow.js';
@@ -39,6 +40,7 @@ import {
   TaskCreatedEvent,
   TaskUpdatedEvent,
   TaskStatusChangedEvent,
+  TaskUnblockedEvent,
   TaskDeletedEvent,
   ProjectCreatedEvent,
   ProjectUpdatedEvent,
@@ -235,6 +237,13 @@ export class CriticalPathEngine {
   }
 
   async getAllowedTaskTransitions(taskId: string): Promise<string[]> {
+    const task = await this.store.getTask(taskId);
+    if (!task) return [];
+    const workflow = await this.resolveProjectWorkflow(task.projectId);
+    return getAllowedTransitions(workflow || undefined, task.status);
+  }
+
+  async getAllowedNextTaskTransitions(taskId: string): Promise<string[]> {
     const task = await this.store.getTask(taskId);
     if (!task) return [];
     const workflow = await this.resolveProjectWorkflow(task.projectId);
@@ -467,6 +476,14 @@ export class CriticalPathEngine {
         }
       };
       await this.events.publish(statusEvent);
+
+      const statusDef = resolveStatusDefinition(
+        updated.status,
+        project?.statusDefinitions || workflow?.statuses
+      );
+      if (statusDef.category === 'completed') {
+        await this.checkAndUnblockDownstreamTasks(updated);
+      }
     } else {
       const updateEvent: TaskUpdatedEvent = {
         id: `evt_${Math.random().toString(36).substring(2, 9)}`,
@@ -496,6 +513,82 @@ export class CriticalPathEngine {
     });
 
     return updated;
+  }
+
+  private async checkAndUnblockDownstreamTasks(completedTask: Task): Promise<void> {
+    try {
+      const graph = await this.getTaskDependencyGraph(completedTask.id);
+      if (!graph.downstreamTasks || graph.downstreamTasks.length === 0) return;
+
+      for (const downstream of graph.downstreamTasks) {
+        const downstreamProject = await this.store.getProject(downstream.projectId);
+        const downstreamWorkflow = await this.resolveProjectWorkflow(downstream.projectId);
+        const downstreamStatusDefs = downstreamProject?.statusDefinitions || downstreamWorkflow?.statuses;
+        const downstreamStatusDef = resolveStatusDefinition(downstream.status, downstreamStatusDefs);
+
+        if (downstreamStatusDef.category === 'completed' || downstreamStatusDef.category === 'canceled') {
+          continue;
+        }
+
+        const downstreamGraph = await this.getTaskDependencyGraph(downstream.id);
+        const allUpstreamsCompleted = downstreamGraph.upstreamTasks.every((up) => {
+          const upDef = resolveStatusDefinition(up.status, downstreamStatusDefs);
+          return upDef.category === 'completed';
+        });
+
+        if (allUpstreamsCompleted) {
+          let updatedDownstream = downstream;
+          const updates: Partial<Task> = {};
+
+          if (downstream.status === 'blocked') {
+            const defaultStatus = downstreamWorkflow?.defaultStatusKey || 'todo';
+            updates.status = defaultStatus;
+          }
+
+          if (downstream.customFields?.isBlocked || downstream.customFields?.blockedReason) {
+            updates.customFields = {
+              ...downstream.customFields,
+              isBlocked: false,
+              blockedReason: null
+            };
+          }
+
+          if (Object.keys(updates).length > 0) {
+            const res = await this.store.updateTask(downstream.id, updates);
+            if (res) updatedDownstream = res;
+          }
+
+          const now = new Date().toISOString();
+          const unblockedEvent: TaskUnblockedEvent = {
+            id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+            name: 'task.unblocked',
+            aggregateId: downstream.id,
+            aggregateType: 'Task',
+            occurredAt: now,
+            payload: {
+              task: updatedDownstream,
+              upstreamTaskId: completedTask.id
+            }
+          };
+          await this.events.publish(unblockedEvent);
+
+          await this.store.logActivity({
+            projectId: downstream.projectId,
+            taskId: downstream.id,
+            actorId: 'system',
+            action: 'task.unblocked',
+            details: { unblockedByTaskId: completedTask.id }
+          });
+
+          this.dispatchWebhook('task.unblocked', {
+            task: updatedDownstream,
+            upstreamTaskId: completedTask.id
+          });
+        }
+      }
+    } catch (err) {
+      console.error(`[CriticalPathEngine] Error during auto-unblocking for task ${completedTask.id}:`, err);
+    }
   }
 
   async deleteTask(id: string): Promise<boolean> {

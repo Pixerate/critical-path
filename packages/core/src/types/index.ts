@@ -369,6 +369,7 @@ export type WebhookEvent =
   | 'task.updated'
   | 'task.deleted'
   | 'task.status_changed'
+  | 'task.unblocked'
   | 'comment.created'
   | 'comment.updated'
   | 'comment.deleted'

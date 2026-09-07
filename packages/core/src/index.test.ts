@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CriticalPathEngine, deriveTaskLifecycleState } from './index.js';
+import { CriticalPathEngine, deriveTaskLifecycleState, DEFAULT_VFX_WORKFLOW } from './index.js';
 import type { CriticalPathPlugin } from './types/index.js';
 
 describe('CriticalPathEngine Core Tests', () => {
@@ -371,6 +371,74 @@ describe('CriticalPathEngine Core Tests', () => {
     });
     const backlogPrev = await engine.getAllowedPreviousTaskTransitions(backlogTask.id);
     expect(backlogPrev).toEqual([]);
+  });
+
+  it('automatically unblocks downstream tasks and publishes task.unblocked event when upstream task completes', async () => {
+    const engine = new CriticalPathEngine();
+    const proj = await engine.createProject({ key: 'UNBLK', name: 'Auto-Unblock Project' });
+
+    const upstream = await engine.createTask({
+      projectId: proj.id,
+      title: 'Upstream Task',
+      status: 'in_progress'
+    });
+
+    const downstream = await engine.createTask({
+      projectId: proj.id,
+      title: 'Downstream Task',
+      status: 'blocked',
+      customFields: { isBlocked: true, blockedReason: 'Waiting on upstream' }
+    });
+
+    await engine.addDependency({
+      taskId: downstream.id,
+      dependsOnTaskId: upstream.id,
+      type: 'blocking'
+    });
+
+    const unblockedEvents: any[] = [];
+    engine.events.subscribe('task.unblocked', async (evt) => {
+      unblockedEvents.push(evt);
+    });
+
+    // Complete upstream task
+    const completedUpstream = await engine.updateTask(upstream.id, { status: 'done' });
+    expect(completedUpstream?.status).toBe('done');
+
+    // Downstream task should now be unblocked
+    expect(unblockedEvents).toHaveLength(1);
+    expect(unblockedEvents[0].payload.task.id).toBe(downstream.id);
+    expect(unblockedEvents[0].payload.upstreamTaskId).toBe(upstream.id);
+
+    const refreshedDownstream = await engine.getTask(downstream.id);
+    expect(refreshedDownstream?.status).toBe('todo');
+    expect(refreshedDownstream?.customFields?.isBlocked).toBe(false);
+  });
+
+  it('allows VFX workflow transitions from revision_requested to in_production', async () => {
+    const engine = new CriticalPathEngine();
+    const vfxWorkflow = await engine.createWorkflow(DEFAULT_VFX_WORKFLOW);
+    const proj = await engine.createProject({
+      key: 'VFX',
+      name: 'VFX Film Project',
+      workflowId: vfxWorkflow.id
+    });
+
+    const task = await engine.createTask({
+      projectId: proj.id,
+      title: 'Compositing Shot 010',
+      status: 'revision_requested'
+    });
+
+    const allowed = await engine.getAllowedTaskTransitions(task.id);
+    expect(allowed).toContain('in_production');
+    expect(allowed).toContain('internal_review');
+
+    const allowedPrevious = await engine.getAllowedPreviousTaskTransitions(task.id);
+    expect(allowedPrevious).toContain('in_production');
+
+    const updated = await engine.updateTask(task.id, { status: 'in_production' });
+    expect(updated?.status).toBe('in_production');
   });
 });
 

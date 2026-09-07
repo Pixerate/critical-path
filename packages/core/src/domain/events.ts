@@ -42,6 +42,14 @@ export interface TaskStatusChangedEvent extends DomainEvent<{
   readonly aggregateType: 'Task';
 }
 
+export interface TaskUnblockedEvent extends DomainEvent<{
+  task: Task;
+  upstreamTaskId: string;
+}> {
+  readonly name: 'task.unblocked';
+  readonly aggregateType: 'Task';
+}
+
 export interface TaskDeletedEvent extends DomainEvent<{ taskId: string; projectId: string; title: string }> {
   readonly name: 'task.deleted';
   readonly aggregateType: 'Task';
@@ -161,6 +169,7 @@ export type CriticalPathDomainEvent =
   | TaskCreatedEvent
   | TaskUpdatedEvent
   | TaskStatusChangedEvent
+  | TaskUnblockedEvent
   | TaskDeletedEvent
   | TimeLoggedEvent
   | CommentAddedEvent

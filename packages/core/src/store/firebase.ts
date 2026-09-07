@@ -546,8 +546,18 @@ export class FirebaseStore implements StorageAdapter {
 
   // --- Dependencies ---
   async getDependencies(taskId: string): Promise<TaskDependency[]> {
-    const snap = await this.db.collection('dependencies').where('taskId', '==', taskId).get();
-    return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+    const [snap1, snap2] = await Promise.all([
+      this.db.collection('dependencies').where('taskId', '==', taskId).get(),
+      this.db.collection('dependencies').where('dependsOnTaskId', '==', taskId).get()
+    ]);
+    const depMap = new Map<string, TaskDependency>();
+    for (const doc of snap1.docs) {
+      depMap.set(doc.id, { ...doc.data(), id: doc.id } as TaskDependency);
+    }
+    for (const doc of snap2.docs) {
+      depMap.set(doc.id, { ...doc.data(), id: doc.id } as TaskDependency);
+    }
+    return Array.from(depMap.values());
   }
 
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {

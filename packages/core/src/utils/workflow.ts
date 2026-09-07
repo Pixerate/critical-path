@@ -101,14 +101,27 @@ export const DEFAULT_VFX_WORKFLOW: Workflow = {
   ],
   transitions: [
     { name: 'Award Bid', fromStatusKey: 'bidding', toStatusKey: 'awarded' },
+    { name: 'Start Directly from Bid', fromStatusKey: 'bidding', toStatusKey: 'in_production' },
     { name: 'Start Work', fromStatusKey: 'awarded', toStatusKey: 'in_production' },
+    { name: 'Reopen Bid', fromStatusKey: 'awarded', toStatusKey: 'bidding' },
     { name: 'Submit to Lead Review', fromStatusKey: 'in_production', toStatusKey: 'internal_review' },
+    { name: 'Fast-Track Client Review', fromStatusKey: 'in_production', toStatusKey: 'client_review' },
+    { name: 'Direct Approval', fromStatusKey: 'in_production', toStatusKey: 'approved' },
     { name: 'Submit to Client Review', fromStatusKey: 'internal_review', toStatusKey: 'client_review' },
     { name: 'Request Internal Revisions', fromStatusKey: 'internal_review', toStatusKey: 'revision_requested' },
+    { name: 'Return to Production', fromStatusKey: 'internal_review', toStatusKey: 'in_production' },
+    { name: 'Approve from Lead Review', fromStatusKey: 'internal_review', toStatusKey: 'approved' },
     { name: 'Request Client Revisions', fromStatusKey: 'client_review', toStatusKey: 'revision_requested' },
-    { name: 'Address Revisions', fromStatusKey: 'revision_requested', toStatusKey: 'in_production' },
+    { name: 'Return to Lead Review', fromStatusKey: 'client_review', toStatusKey: 'internal_review' },
     { name: 'Approve Final Shot', fromStatusKey: 'client_review', toStatusKey: 'approved' },
-    { name: 'Cancel', fromStatusKey: '*', toStatusKey: 'canceled' }
+    { name: 'Address Revisions in Production', fromStatusKey: 'revision_requested', toStatusKey: 'in_production' },
+    { name: 'Resubmit to Lead Review', fromStatusKey: 'revision_requested', toStatusKey: 'internal_review' },
+    { name: 'Resubmit to Client Review', fromStatusKey: 'revision_requested', toStatusKey: 'client_review' },
+    { name: 'Reopen Shot', fromStatusKey: 'approved', toStatusKey: 'in_production' },
+    { name: 'Reopen Lead Review', fromStatusKey: 'approved', toStatusKey: 'internal_review' },
+    { name: 'Cancel', fromStatusKey: '*', toStatusKey: 'canceled' },
+    { name: 'Restore to Bidding', fromStatusKey: 'canceled', toStatusKey: 'bidding' },
+    { name: 'Restore to Production', fromStatusKey: 'canceled', toStatusKey: 'in_production' }
   ],
   taskTypes: [
     { key: 'vfx_task', label: 'VFX Task', description: 'Department task (e.g. Matchmove, Animation, FX, Comp)', icon: 'film' },
@@ -139,14 +152,23 @@ export const DEFAULT_CREATIVE_WORKFLOW: Workflow = {
   transitions: [
     { name: 'Start Concepts', fromStatusKey: 'briefing', toStatusKey: 'concept' },
     { name: 'Approve Concept for Production', fromStatusKey: 'concept', toStatusKey: 'in_production' },
+    { name: 'Return to Briefing', fromStatusKey: 'concept', toStatusKey: 'briefing' },
     { name: 'Submit for Internal Review', fromStatusKey: 'in_production', toStatusKey: 'internal_review' },
+    { name: 'Submit for Client Review', fromStatusKey: 'in_production', toStatusKey: 'client_review' },
     { name: 'Submit for Client Review', fromStatusKey: 'internal_review', toStatusKey: 'client_review' },
     { name: 'Request Revisions (Internal)', fromStatusKey: 'internal_review', toStatusKey: 'revision_requested' },
+    { name: 'Return to Production', fromStatusKey: 'internal_review', toStatusKey: 'in_production' },
+    { name: 'Approve from Lead Review', fromStatusKey: 'internal_review', toStatusKey: 'approved' },
     { name: 'Request Revisions (Client)', fromStatusKey: 'client_review', toStatusKey: 'revision_requested' },
+    { name: 'Return to Internal Review', fromStatusKey: 'client_review', toStatusKey: 'internal_review' },
     { name: 'Address Revisions', fromStatusKey: 'revision_requested', toStatusKey: 'in_production' },
+    { name: 'Resubmit to Lead Review', fromStatusKey: 'revision_requested', toStatusKey: 'internal_review' },
+    { name: 'Resubmit to Client Review', fromStatusKey: 'revision_requested', toStatusKey: 'client_review' },
     { name: 'Approve Work', fromStatusKey: 'client_review', toStatusKey: 'approved' },
     { name: 'Deliver Final Assets', fromStatusKey: 'approved', toStatusKey: 'delivered' },
-    { name: 'Cancel', fromStatusKey: '*', toStatusKey: 'canceled' }
+    { name: 'Reopen Deliverable', fromStatusKey: 'delivered', toStatusKey: 'in_production' },
+    { name: 'Cancel', fromStatusKey: '*', toStatusKey: 'canceled' },
+    { name: 'Restore', fromStatusKey: 'canceled', toStatusKey: 'briefing' }
   ],
   taskTypes: [
     { key: 'deliverable', label: 'Deliverable', description: 'Finished asset, cutdown, or packaged export', icon: 'package' },
@@ -209,6 +231,41 @@ export function getAllowedNextStatuses(
   }
 
   return [allStatusKeys[currentIndex + 1]];
+}
+
+export function getAllowedTransitions(
+  workflow: Workflow | undefined,
+  currentStatus: string
+): string[] {
+  if (!workflow || !workflow.statuses || workflow.statuses.length === 0) {
+    return Object.keys(DEFAULT_STATUS_DEFINITIONS);
+  }
+
+  const allStatusKeys = workflow.statuses.map((s) => s.key);
+  if (!allStatusKeys.includes(currentStatus)) {
+    return [];
+  }
+
+  if (workflow.transitions && workflow.transitions.length > 0) {
+    const matches = workflow.transitions.filter(
+      (t) => t.fromStatusKey === '*' || t.fromStatusKey === currentStatus
+    );
+
+    const allowed = new Set<string>();
+    for (const t of matches) {
+      if (t.toStatusKey === '*') {
+        allStatusKeys.filter((k) => k !== currentStatus).forEach((k) => allowed.add(k));
+      } else if (t.toStatusKey !== currentStatus && allStatusKeys.includes(t.toStatusKey)) {
+        allowed.add(t.toStatusKey);
+      }
+    }
+
+    return Array.from(allowed);
+  }
+
+  const next = getAllowedNextStatuses(workflow, currentStatus);
+  const prev = getAllowedPreviousStatuses(workflow, currentStatus);
+  return Array.from(new Set([...next, ...prev]));
 }
 
 export function getAllowedPreviousStatuses(

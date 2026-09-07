@@ -91,5 +91,21 @@ describe('FirebaseStore', () => {
     expect(doc?.name).toBe('Undefined Test');
     expect('description' in (doc as any)).toBe(false);
   });
+
+  it('should retrieve dependencies when queried as taskId or dependsOnTaskId', async () => {
+    const dep = await store.addDependency({
+      taskId: 'task-downstream',
+      dependsOnTaskId: 'task-upstream',
+      type: 'blocking'
+    });
+
+    const byDownstream = await store.getDependencies('task-downstream');
+    expect(byDownstream).toHaveLength(1);
+    expect(byDownstream[0].id).toBe(dep.id);
+
+    const byUpstream = await store.getDependencies('task-upstream');
+    expect(byUpstream).toHaveLength(1);
+    expect(byUpstream[0].id).toBe(dep.id);
+  });
 });
 
