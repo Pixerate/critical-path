@@ -238,8 +238,8 @@ describe('CriticalPathEngine Deliverables & Rollup Metrics', () => {
     const summary = await engine.getDeliverableSummary(deliverable.id);
     expect(summary).not.toBeNull();
     expect(summary!.totalTasks).toBe(3);
-    expect(summary!.completedTasks).toBe(1); // 'approved' has completionState 'done'
-    expect(summary!.activeTasks).toBe(1); // 'in_production' has executionState 'active'
+    expect(summary!.completedTasks).toBe(1); // 'approved' has category 'completed'
+    expect(summary!.activeTasks).toBe(1); // 'in_production' has category 'in_progress'
     expect(summary!.estimatedHours).toBe(26); // 8 + 12 + 6
     expect(summary!.loggedHours).toBe(14); // 8 + 6 + 0
     expect(summary!.progressPercentage).toBe(50); // (100 + 50 + 0) / 3 = 50%

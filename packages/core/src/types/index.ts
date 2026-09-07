@@ -4,16 +4,32 @@ export type Priority = DefaultPriority | (string & {});
 export type DefaultTaskStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled';
 export type TaskStatus = DefaultTaskStatus | (string & {});
 
-export type CompletionState = 'done' | 'not_done';
-export type ExecutionState = 'active' | 'inactive';
+export type SemanticStatus = 'not_started' | 'in_progress' | 'completed' | 'canceled';
 
 export interface StatusDefinition {
   key: string;
   label: string;
-  completionState: CompletionState;
-  executionState: ExecutionState;
-  isCancelled?: boolean;
+  category: SemanticStatus;
 }
+
+export interface TaskDerivedStatus {
+  semanticStatus: SemanticStatus;
+  isReady: boolean;
+  isBlocked: boolean;
+  blockingTaskIds: string[];
+  isOverdue: boolean;
+  isUpcoming: boolean;
+  isUnplanned: boolean;
+  isUnassigned: boolean;
+  isStalled: boolean;
+  isOverEstimate: boolean;
+  isPaceWarning: boolean;
+  isDone: boolean;
+  isActive: boolean;
+  isCancelled: boolean;
+}
+
+export type TaskLifecycleState = TaskDerivedStatus;
 
 export type Role = 'admin' | 'project_manager' | 'contributor' | 'viewer';
 
@@ -142,6 +158,7 @@ export interface Task {
   title: string;
   description?: string;
   status: TaskStatus;
+  semanticStatus?: SemanticStatus;
   priority: Priority;
   taskType?: string; // e.g. "bug", "feature", "task", "epic"
   assigneeId?: string;

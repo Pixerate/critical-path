@@ -128,9 +128,9 @@ describe('CriticalPathEngine Core Tests', () => {
       key: 'CUST',
       name: 'Custom Workflow Project',
       statusDefinitions: [
-        { key: 'draft', label: 'Draft', completionState: 'not_done', executionState: 'inactive' },
-        { key: 'active_work', label: 'Active Work', completionState: 'not_done', executionState: 'active' },
-        { key: 'finished', label: 'Finished', completionState: 'done', executionState: 'inactive' }
+        { key: 'draft', label: 'Draft', category: 'not_started' },
+        { key: 'active_work', label: 'Active Work', category: 'in_progress' },
+        { key: 'finished', label: 'Finished', category: 'completed' }
       ]
     });
 
@@ -145,10 +145,10 @@ describe('CriticalPathEngine Core Tests', () => {
 
     const state = await engine.getTaskLifecycleState(task.id);
     expect(state).not.toBeNull();
-    expect(state?.completionState).toBe('not_done');
-    expect(state?.executionState).toBe('active');
+    expect(state?.semanticStatus).toBe('in_progress');
     expect(state?.isActive).toBe(true);
     expect(state?.isDone).toBe(false);
+    expect(state?.isBlocked).toBe(false);
   });
 
   it('builds task dependency graph with upstream and downstream tasks', async () => {
@@ -181,9 +181,9 @@ describe('CriticalPathEngine Core Tests', () => {
       name: 'Strict Software Workflow',
       defaultStatusKey: 'backlog',
       statuses: [
-        { key: 'backlog', label: 'Backlog', completionState: 'not_done', executionState: 'inactive' },
-        { key: 'in_progress', label: 'In Progress', completionState: 'not_done', executionState: 'active' },
-        { key: 'done', label: 'Done', completionState: 'done', executionState: 'inactive' }
+        { key: 'backlog', label: 'Backlog', category: 'not_started' },
+        { key: 'in_progress', label: 'In Progress', category: 'in_progress' },
+        { key: 'done', label: 'Done', category: 'completed' }
       ],
       transitions: [
         { id: 't1', fromStatusKey: 'backlog', toStatusKey: 'in_progress', name: 'Start Work' },

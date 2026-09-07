@@ -210,16 +210,46 @@ The central unit of work. Tasks support:
 - **Subtasks**: `parentId` pointing to parent task.
 - **Custom Config & Metadata**: `status` (string key), `priority` (string key), `tags`, `customFields`.
 
-### 6. Foundational Status & Lifecycle Framework
-While consumers define custom task statuses (arbitrary string keys e.g. `'ready_for_qa'`), Critical Path maps every status to foundational states:
-- **`completionState`**: `'done' | 'not_done'` (Is the task completed or canceled?).
-- **`executionState`**: `'active' | 'inactive'` (Is someone currently actively working on the task?).
+### 6. Universal Semantic Status & Implied Status Framework
+Critical Path implements a clean 3-tier status architecture:
 
-The engine evaluates these foundational states alongside task dates to derive lifecycle indicators:
-- `isDone`: `completionState === 'done'`
-- `isActive`: `executionState === 'active'`
-- `isOverdue`: `!isDone` and `dueDate < currentTimestamp`
-- `isUpcoming`: `!isDone` and `!isActive` and `plannedStartDate > currentTimestamp`
+#### Tier 1: Universal Semantic Statuses
+The universal baseline meaning for any unit of work across all domains (software, VFX, construction, creative):
+- **`not_started`**: Work has not yet begun.
+- **`in_progress`**: Work is actively underway.
+- **`completed`**: Work is finished and deliverables are satisfied.
+- **`canceled`**: Work has been abandoned or aborted (does not satisfy dependencies).
+
+#### Tier 2: Workflow-Defined Statuses
+Consumers and projects define arbitrary, domain-specific workflow statuses (e.g., `'draft'`, `'in_bidding'`, `'rigging'`, `'lighting'`, `'client_review'`, `'signed_off'`). Each status definition specifies its universal semantic category:
+```ts
+interface StatusDefinition {
+  key: string;
+  label: string;
+  category: SemanticStatus;
+}
+```
+
+#### Tier 3: System-Derived Implied Statuses
+Calculated dynamically by the engine based on task metadata, dates, assignees, estimates, and dependencies:
+- **Dependency Indicators**:
+  - `isReady`: `true` if `not_started` and all upstream blocking tasks have reached `completed`.
+  - `isBlocked`: `true` if any upstream blocking task is not yet `completed`.
+  - `blockingTaskIds`: Array of task IDs preventing this task from starting.
+- **Schedule Indicators**:
+  - `isOverdue`: `true` if `dueDate < referenceDate` and task is not completed or canceled.
+  - `isUpcoming`: `true` if `plannedStartDate` is scheduled within threshold (default 3 days).
+  - `isUnplanned`: `true` if task lacks both `plannedStartDate` and `dueDate`.
+- **Resource Indicators**:
+  - `isUnassigned`: `true` if neither `assigneeId` nor `assignees` are assigned.
+  - `isStalled`: `true` if `in_progress` with no updates for longer than threshold (default 7 days).
+- **Estimate & Pace Indicators**:
+  - `isOverEstimate`: `true` if actual/logged time exceeds estimated time.
+  - `isPaceWarning`: `true` if elapsed duration in progress exceeds estimated duration.
+- **Convenience Status Flags**:
+  - `isDone`: `category === 'completed'`.
+  - `isActive`: `category === 'in_progress'`.
+  - `isCancelled`: `category === 'canceled'`.
 
 ---
 

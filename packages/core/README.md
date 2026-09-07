@@ -26,6 +26,8 @@
   - First-class `TaskAssignee` taxonomy supporting co-assignments across users, autonomous AI agents, and teams with role metadata and custom avatar URLs.
 - **Bidirectional Workflow Transitions**:
   - Symmetrical transition helpers (`getAllowedNextStatuses`, `getAllowedPreviousStatuses`) and engine methods for moving tasks backwards and forwards through customized workflow states.
+- **Universal Semantic Status & Implied Status Framework**:
+  - Clean 3-tier status architecture: Universal Semantic Statuses (`not_started`, `in_progress`, `completed`, `canceled`), customizable workflow-defined statuses mapped by `category`, and automatic system-derived implied statuses (`isReady`, `isBlocked`, `blockingTaskIds`, `isOverdue`, `isUpcoming`, `isUnplanned`, `isUnassigned`, `isStalled`, `isOverEstimate`, `isPaceWarning`).
 - **Creative Workflows & First-Class Deliverables**:
   - `DeliverableEntity` aggregate with automatic delivery timestamps (`deliveredAt`) and URL registry (`outputUrls`).
   - `DEFAULT_CREATIVE_WORKFLOW` template tailored for creative agencies and content production pipelines.
@@ -125,6 +127,26 @@ await engine.createTask({
 // 3. Rollup metrics
 const summary = await engine.getDeliverableSummary(deliverable.id);
 console.log(`Progress: ${summary?.progressPercentage}%, Total tasks: ${summary?.totalTasks}`);
+```
+
+### 5. Evaluating Implied Statuses & Dependency Readiness
+
+```ts
+// Evaluates task status category, upstream dependency states, schedules, assignees, and pace
+const state = await engine.getTaskLifecycleState('task_123');
+
+if (state?.isBlocked) {
+  console.warn(`Task blocked by upstream tasks: ${state.blockingTaskIds.join(', ')}`);
+} else if (state?.isReady) {
+  console.log('All dependencies satisfied! Task is ready to start.');
+}
+
+if (state?.isOverEstimate) {
+  console.warn('Task logged hours have exceeded estimated hours!');
+}
+if (state?.isPaceWarning) {
+  console.warn('Task has been active longer than its estimated duration!');
+}
 ```
 
 ---

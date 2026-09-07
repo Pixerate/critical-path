@@ -138,7 +138,7 @@ describe('Critical Path Use Case Validation Suite', () => {
       // Check Lifecycle State
       const lifecycle = await engine.getTaskLifecycleState(featureTask.id);
       expect(lifecycle?.isDone).toBe(true);
-      expect(lifecycle?.completionState).toBe('done');
+      expect(lifecycle?.semanticStatus).toBe('completed');
     });
   });
 

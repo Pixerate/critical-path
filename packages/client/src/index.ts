@@ -15,8 +15,19 @@ import type {
   Workflow,
   Deliverable,
   DeliverableSummary,
-  CreateDeliverableInput
+  CreateDeliverableInput,
+  SemanticStatus,
+  StatusDefinition,
+  TaskDerivedStatus,
+  TaskLifecycleState
 } from '@critical-path/core';
+
+export type {
+  SemanticStatus,
+  StatusDefinition,
+  TaskDerivedStatus,
+  TaskLifecycleState
+};
 
 export interface ClientOptions {
   baseUrl: string; // e.g. "http://localhost:3000/api/critical-path"
@@ -151,6 +162,11 @@ export class CriticalPathClient {
   async getTaskDependencies(taskId: string): Promise<TaskDependencyGraph> {
     const res = await this.request<{ graph: TaskDependencyGraph }>(`/tasks/${encodeURIComponent(taskId)}/dependencies`);
     return res.graph;
+  }
+
+  async getTaskLifecycleState(taskId: string): Promise<TaskDerivedStatus> {
+    const res = await this.request<{ state: TaskDerivedStatus }>(`/tasks/${encodeURIComponent(taskId)}/lifecycle`);
+    return res.state;
   }
 
   async getAllowedTaskTransitions(taskId: string): Promise<string[]> {

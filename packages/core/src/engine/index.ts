@@ -20,11 +20,12 @@ import type {
   CreateProjectInput,
   Deliverable,
   DeliverableSummary,
-  CreateDeliverableInput
+  CreateDeliverableInput,
+  TaskLifecycleState
 } from '../types/index.js';
 import { StorageAdapter, InMemoryStore } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
-import { deriveTaskLifecycleState, type TaskLifecycleState, resolveStatusDefinition } from '../utils/status.js';
+import { deriveTaskLifecycleState, resolveStatusDefinition } from '../utils/status.js';
 import {
   validateTransition,
   getAllowedNextStatuses,
@@ -335,16 +336,18 @@ export class CriticalPathEngine {
     const initialStatus = processedInput.status || taskInput.status || defaultStatus;
     const now = new Date().toISOString();
 
-    // Derive initial lifecycle timestamps
+    // Derive initial lifecycle timestamps and semantic status
     const statusDef = resolveStatusDefinition(initialStatus, project?.statusDefinitions || workflow?.statuses);
-    const actualStartDate = processedInput.actualStartDate ?? taskInput.actualStartDate ?? (statusDef.executionState === 'active' ? now : undefined);
-    const actualEndDate = processedInput.actualEndDate ?? taskInput.actualEndDate ?? (statusDef.completionState === 'done' ? now : undefined);
+    const semanticStatus = processedInput.semanticStatus ?? taskInput.semanticStatus ?? statusDef.category;
+    const actualStartDate = processedInput.actualStartDate ?? taskInput.actualStartDate ?? (statusDef.category === 'in_progress' ? now : undefined);
+    const actualEndDate = processedInput.actualEndDate ?? taskInput.actualEndDate ?? ((statusDef.category === 'completed' || statusDef.category === 'canceled') ? now : undefined);
 
     const created = await this.store.createTask({
       projectId,
       title: processedInput.title || taskInput.title,
       description: processedInput.description ?? taskInput.description,
       status: initialStatus,
+      semanticStatus,
       priority: processedInput.priority || taskInput.priority || 'medium',
       taskType: processedInput.taskType || taskInput.taskType || 'task',
       assigneeId: processedInput.assigneeId ?? taskInput.assigneeId,
@@ -366,7 +369,7 @@ export class CriticalPathEngine {
       estimatedDurationMinutes: processedInput.estimatedDurationMinutes ?? taskInput.estimatedDurationMinutes,
       actualDurationMinutes: processedInput.actualDurationMinutes ?? taskInput.actualDurationMinutes,
       billableDurationMinutes: processedInput.billableDurationMinutes ?? taskInput.billableDurationMinutes,
-      progress: processedInput.progress ?? taskInput.progress ?? (statusDef.completionState === 'done' ? 100 : 0),
+      progress: processedInput.progress ?? taskInput.progress ?? (statusDef.category === 'completed' ? 100 : 0),
       tags: processedInput.tags ?? taskInput.tags ?? [],
       customFields: processedInput.customFields ?? taskInput.customFields ?? {},
       parentId: processedInput.parentId ?? taskInput.parentId
@@ -428,13 +431,14 @@ export class CriticalPathEngine {
         processedUpdates.status,
         project?.statusDefinitions || workflow?.statuses
       );
+      processedUpdates.semanticStatus = processedUpdates.semanticStatus ?? statusDef.category;
       const now = new Date().toISOString();
-      if (statusDef.executionState === 'active' && !existing.actualStartDate && !processedUpdates.actualStartDate) {
+      if (statusDef.category === 'in_progress' && !existing.actualStartDate && !processedUpdates.actualStartDate) {
         processedUpdates.actualStartDate = now;
       }
-      if (statusDef.completionState === 'done' && !processedUpdates.actualEndDate) {
+      if ((statusDef.category === 'completed' || statusDef.category === 'canceled') && !processedUpdates.actualEndDate) {
         processedUpdates.actualEndDate = now;
-        if (processedUpdates.progress === undefined && (existing.progress || 0) < 100) {
+        if (statusDef.category === 'completed' && processedUpdates.progress === undefined && (existing.progress || 0) < 100) {
           processedUpdates.progress = 100;
         }
       }
@@ -590,13 +594,25 @@ export class CriticalPathEngine {
     };
   }
 
-  async getTaskLifecycleState(taskId: string): Promise<TaskLifecycleState | null> {
+  async getTaskLifecycleState(
+    taskId: string,
+    options?: { referenceDate?: Date; stalledThresholdDays?: number }
+  ): Promise<TaskLifecycleState | null> {
     const task = await this.getTask(taskId);
     if (!task) return null;
     const project = await this.getProject(task.projectId);
     const workflow = await this.resolveProjectWorkflow(task.projectId);
     const statusDefs = project?.statusDefinitions || workflow?.statuses;
-    return deriveTaskLifecycleState(task, statusDefs);
+
+    const graph = await this.getTaskDependencyGraph(taskId);
+    const upstreamTasks = graph.upstreamTasks;
+
+    return deriveTaskLifecycleState(task, {
+      customDefinitions: statusDefs,
+      referenceDate: options?.referenceDate,
+      stalledThresholdDays: options?.stalledThresholdDays,
+      upstreamTasks
+    });
   }
 
   // --- Time Tracking ---
@@ -1142,9 +1158,9 @@ export class CriticalPathEngine {
 
     for (const task of tasks) {
       const statusDef = resolveStatusDefinition(task.status, project?.statusDefinitions || workflow?.statuses);
-      if (statusDef.completionState === 'done') {
+      if (statusDef.category === 'completed') {
         completedTasks++;
-      } else if (statusDef.executionState === 'active') {
+      } else if (statusDef.category === 'in_progress') {
         activeTasks++;
       }
 
@@ -1154,7 +1170,7 @@ export class CriticalPathEngine {
       if (typeof task.progress === 'number') {
         totalProgress += task.progress;
       } else {
-        totalProgress += statusDef.completionState === 'done' ? 100 : 0;
+        totalProgress += statusDef.category === 'completed' ? 100 : 0;
       }
     }
 

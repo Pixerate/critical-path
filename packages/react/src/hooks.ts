@@ -9,8 +9,11 @@ import type {
   Attachment,
   Deliverable,
   DeliverableSummary,
-  CreateDeliverableInput
+  CreateDeliverableInput,
+  StatusDefinition,
+  SemanticStatus
 } from '@critical-path/core';
+import { resolveStatusDefinition } from '@critical-path/core';
 import { useCriticalPathClient } from './provider.js';
 
 export function useWorkflows() {
@@ -262,17 +265,56 @@ export function useTasks(projectId?: string) {
   return { tasks, loading, error, refresh: fetchTasks, createTask, updateTaskStatus, deleteTask };
 }
 
-export function useKanban(projectId?: string) {
+export interface UseKanbanOptions {
+  groupBy?: 'workflow' | 'semantic';
+  customDefinitions?: StatusDefinition[];
+}
+
+export function useKanban(projectId?: string, options?: UseKanbanOptions) {
   const { tasks, loading, error, refresh, updateTaskStatus, createTask } = useTasks(projectId);
 
-  const columns: Record<TaskStatus, Task[]> = {
-    backlog: tasks.filter((t) => t.status === 'backlog'),
-    todo: tasks.filter((t) => t.status === 'todo'),
-    in_progress: tasks.filter((t) => t.status === 'in_progress'),
-    in_review: tasks.filter((t) => t.status === 'in_review'),
-    done: tasks.filter((t) => t.status === 'done'),
-    canceled: tasks.filter((t) => t.status === 'canceled')
-  };
+  const columns = useMemo<Record<string, Task[]>>(() => {
+    if (options?.groupBy === 'semantic') {
+      const semanticCols: Record<SemanticStatus, Task[]> = {
+        not_started: [],
+        in_progress: [],
+        completed: [],
+        canceled: []
+      };
+      for (const task of tasks) {
+        const category = task.semanticStatus || resolveStatusDefinition(task.status, options?.customDefinitions).category;
+        if (semanticCols[category]) {
+          semanticCols[category].push(task);
+        } else {
+          semanticCols.not_started.push(task);
+        }
+      }
+      return semanticCols;
+    }
+
+    const workflowCols: Record<string, Task[]> = {};
+    if (options?.customDefinitions && options.customDefinitions.length > 0) {
+      for (const def of options.customDefinitions) {
+        workflowCols[def.key] = [];
+      }
+    } else {
+      workflowCols.backlog = [];
+      workflowCols.todo = [];
+      workflowCols.in_progress = [];
+      workflowCols.in_review = [];
+      workflowCols.done = [];
+      workflowCols.canceled = [];
+    }
+
+    for (const task of tasks) {
+      if (!workflowCols[task.status]) {
+        workflowCols[task.status] = [];
+      }
+      workflowCols[task.status].push(task);
+    }
+
+    return workflowCols;
+  }, [tasks, options?.groupBy, options?.customDefinitions]);
 
   const moveTask = async (taskId: string, targetStatus: TaskStatus) => {
     return updateTaskStatus(taskId, targetStatus);

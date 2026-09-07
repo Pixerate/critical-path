@@ -155,7 +155,7 @@ describe('SQLiteStore', () => {
       name: 'SQLite Workflow',
       isDefault: true,
       defaultStatusKey: 'todo',
-      statuses: [{ key: 'todo', label: 'To Do', completionState: 'not_done', executionState: 'inactive' }],
+      statuses: [{ key: 'todo', label: 'To Do', category: 'not_started' }],
       transitions: []
     });
 

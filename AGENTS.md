@@ -104,7 +104,14 @@ export const auditLogPlugin: CriticalPathPlugin = {
 
 ```ts
 type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
-type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled';
+type SemanticStatus = 'not_started' | 'in_progress' | 'completed' | 'canceled';
+type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled' | (string & {});
+
+interface StatusDefinition {
+  key: string;
+  label: string;
+  category: SemanticStatus;
+}
 
 interface Task {
   id: string;
@@ -112,6 +119,7 @@ interface Task {
   title: string;
   description?: string;
   status: TaskStatus;
+  semanticStatus?: SemanticStatus;
   priority: Priority;
   assigneeId?: string;
   reporterId?: string;

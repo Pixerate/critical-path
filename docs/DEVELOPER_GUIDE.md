@@ -71,7 +71,8 @@ export interface Task {
   projectId: string;
   title: string;
   description?: string;
-  status: 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled';
+  status: 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled' | (string & {});
+  semanticStatus?: SemanticStatus;
   priority: 'urgent' | 'high' | 'medium' | 'low' | 'none';
   taskType?: 'task' | 'bug' | 'feature' | 'epic' | 'subtask' | (string & {});
   assigneeId?: string;
@@ -94,6 +95,34 @@ export interface TaskAssignee {
   role?: string;
   type?: 'user' | 'agent' | 'team';
   avatarUrl?: string;
+}
+```
+
+### Universal Status & Derived Lifecycle
+```ts
+export type SemanticStatus = 'not_started' | 'in_progress' | 'completed' | 'canceled';
+
+export interface StatusDefinition {
+  key: string;
+  label: string;
+  category: SemanticStatus;
+}
+
+export interface TaskDerivedStatus {
+  semanticStatus: SemanticStatus;
+  isReady: boolean;
+  isBlocked: boolean;
+  blockingTaskIds: string[];
+  isOverdue: boolean;
+  isUpcoming: boolean;
+  isUnplanned: boolean;
+  isUnassigned: boolean;
+  isStalled: boolean;
+  isOverEstimate: boolean;
+  isPaceWarning: boolean;
+  isDone: boolean;
+  isActive: boolean;
+  isCancelled: boolean;
 }
 ```
 

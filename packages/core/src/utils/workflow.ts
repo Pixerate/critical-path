@@ -90,13 +90,13 @@ export const DEFAULT_VFX_WORKFLOW: Workflow = {
   name: 'VFX Production Workflow',
   description: 'Visual effects production pipeline from bidding and drafting to internal lead review and client supervisor approval.',
   statuses: [
-    { key: 'bidding', label: 'Bidding & Draft', completionState: 'not_done', executionState: 'inactive' },
-    { key: 'awarded', label: 'Awarded / Ready', completionState: 'not_done', executionState: 'inactive' },
-    { key: 'in_production', label: 'In Production', completionState: 'not_done', executionState: 'active' },
-    { key: 'internal_review', label: 'Internal Review', completionState: 'not_done', executionState: 'active' },
-    { key: 'client_review', label: 'Client Review', completionState: 'not_done', executionState: 'active' },
-    { key: 'revision_requested', label: 'Revision Requested', completionState: 'not_done', executionState: 'active' },
-    { key: 'approved', label: 'Approved (Final)', completionState: 'done', executionState: 'inactive' },
+    { key: 'bidding', label: 'Bidding & Draft', category: 'not_started' },
+    { key: 'awarded', label: 'Awarded / Ready', category: 'not_started' },
+    { key: 'in_production', label: 'In Production', category: 'in_progress' },
+    { key: 'internal_review', label: 'Internal Review', category: 'in_progress' },
+    { key: 'client_review', label: 'Client Review', category: 'in_progress' },
+    { key: 'revision_requested', label: 'Revision Requested', category: 'in_progress' },
+    { key: 'approved', label: 'Approved (Final)', category: 'completed' },
     DEFAULT_STATUS_DEFINITIONS.canceled
   ],
   transitions: [
@@ -126,14 +126,14 @@ export const DEFAULT_CREATIVE_WORKFLOW: Workflow = {
   name: 'Creative Production Workflow',
   description: 'Production pipeline for creative deliverables from briefing and concepts to internal review, client feedback, and final delivery.',
   statuses: [
-    { key: 'briefing', label: 'Briefing & Scoping', completionState: 'not_done', executionState: 'inactive' },
-    { key: 'concept', label: 'Concept & Storyboarding', completionState: 'not_done', executionState: 'active' },
-    { key: 'in_production', label: 'In Production', completionState: 'not_done', executionState: 'active' },
-    { key: 'internal_review', label: 'Internal Review', completionState: 'not_done', executionState: 'active' },
-    { key: 'client_review', label: 'Client Review', completionState: 'not_done', executionState: 'active' },
-    { key: 'revision_requested', label: 'Revision Requested', completionState: 'not_done', executionState: 'active' },
-    { key: 'approved', label: 'Approved', completionState: 'done', executionState: 'inactive' },
-    { key: 'delivered', label: 'Delivered', completionState: 'done', executionState: 'inactive' },
+    { key: 'briefing', label: 'Briefing & Scoping', category: 'not_started' },
+    { key: 'concept', label: 'Concept & Storyboarding', category: 'in_progress' },
+    { key: 'in_production', label: 'In Production', category: 'in_progress' },
+    { key: 'internal_review', label: 'Internal Review', category: 'in_progress' },
+    { key: 'client_review', label: 'Client Review', category: 'in_progress' },
+    { key: 'revision_requested', label: 'Revision Requested', category: 'in_progress' },
+    { key: 'approved', label: 'Approved', category: 'completed' },
+    { key: 'delivered', label: 'Delivered', category: 'completed' },
     DEFAULT_STATUS_DEFINITIONS.canceled
   ],
   transitions: [

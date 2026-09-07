@@ -62,8 +62,8 @@ describe('@critical-path/server Router Tests', () => {
         name: 'Strict API Workflow',
         defaultStatusKey: 'todo',
         statuses: [
-          { key: 'todo', label: 'To Do', completionState: 'not_done', executionState: 'inactive' },
-          { key: 'done', label: 'Done', completionState: 'done', executionState: 'inactive' }
+          { key: 'todo', label: 'To Do', category: 'not_started' },
+          { key: 'done', label: 'Done', category: 'completed' }
         ],
         transitions: [
           { id: 't1', fromStatusKey: 'todo', toStatusKey: 'done', name: 'Finish' }

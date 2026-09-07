@@ -45,7 +45,7 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
         name: 'Svelte Workflow',
         isDefault: true,
         defaultStatusKey: 'todo',
-        statuses: [{ key: 'todo', label: 'To Do', completionState: 'not_done', executionState: 'inactive' }],
+        statuses: [{ key: 'todo', label: 'To Do', category: 'not_started' }],
         transitions: [],
         createdAt: '2026-01-01',
         updatedAt: '2026-01-01'

@@ -62,7 +62,7 @@ describe('FirebaseStore', () => {
       name: 'Firebase Workflow',
       isDefault: false,
       defaultStatusKey: 'backlog',
-      statuses: [{ key: 'backlog', label: 'Backlog', completionState: 'not_done', executionState: 'inactive' }],
+      statuses: [{ key: 'backlog', label: 'Backlog', category: 'not_started' }],
       transitions: []
     });
 

@@ -11,7 +11,8 @@ import type {
   CreateProjectInput,
   Deliverable,
   DeliverableStatus,
-  CreateDeliverableInput
+  CreateDeliverableInput,
+  SemanticStatus
 } from '../types/index.js';
 import type {
   DomainEvent,
@@ -65,6 +66,7 @@ export class TaskEntity extends BaseEntity {
   public title: string;
   public description?: string;
   public status: TaskStatus;
+  public semanticStatus?: SemanticStatus;
   public priority: Priority;
   public taskType?: string;
   public assigneeId?: string;
@@ -98,6 +100,7 @@ export class TaskEntity extends BaseEntity {
     this.title = data.title;
     this.description = data.description;
     this.status = data.status;
+    this.semanticStatus = data.semanticStatus;
     this.priority = data.priority;
     this.taskType = data.taskType;
     this.assigneeId = data.assigneeId;
@@ -136,12 +139,16 @@ export class TaskEntity extends BaseEntity {
       validateCustomFieldValues(options.customFieldDefs, input.customFields);
     }
 
+    const status = input.status || options?.workflow?.defaultStatusKey || 'todo';
+    const statusDef = resolveStatusDefinition(status, options?.workflow?.statuses);
+
     const task = new TaskEntity({
       ...input,
       id,
       createdAt: now,
       updatedAt: now,
-      status: input.status || options?.workflow?.defaultStatusKey || 'todo',
+      status,
+      semanticStatus: input.semanticStatus || statusDef.category,
       priority: input.priority || 'medium',
       loggedHours: input.loggedHours ?? 0,
       progress: input.progress ?? 0,
@@ -180,12 +187,14 @@ export class TaskEntity extends BaseEntity {
     const now = new Date().toISOString();
 
     const statusDef = resolveStatusDefinition(newStatus, options?.statusDefs || workflow?.statuses);
-    if (statusDef.executionState === 'active' && !this.actualStartDate) {
+    this.semanticStatus = statusDef.category;
+
+    if (statusDef.category === 'in_progress' && !this.actualStartDate) {
       this.actualStartDate = now;
     }
-    if (statusDef.completionState === 'done') {
+    if (statusDef.category === 'completed' || statusDef.category === 'canceled') {
       this.actualEndDate = now;
-      if (this.progress !== undefined && this.progress < 100) {
+      if (statusDef.category === 'completed' && this.progress !== undefined && this.progress < 100) {
         this.progress = 100;
       }
     }
@@ -365,6 +374,7 @@ export class TaskEntity extends BaseEntity {
       title: this.title,
       description: this.description,
       status: this.status,
+      semanticStatus: this.semanticStatus,
       priority: this.priority,
       taskType: this.taskType,
       assigneeId: this.assigneeId,
