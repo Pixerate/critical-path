@@ -1,5 +1,13 @@
 # @critical-path/svelte
 
+## 0.10.1
+
+### Patch Changes
+
+- Updated dependencies [f53afab]
+  - @critical-path/core@0.15.1
+  - @critical-path/client@0.9.1
+
 ## 0.10.0
 
 ### Minor Changes

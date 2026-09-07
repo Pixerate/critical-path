@@ -1,5 +1,12 @@
 # @critical-path/server
 
+## 0.9.1
+
+### Patch Changes
+
+- Updated dependencies [f53afab]
+  - @critical-path/core@0.15.1
+
 ## 0.9.0
 
 ### Minor Changes

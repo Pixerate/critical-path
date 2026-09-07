@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.15.1
+
+### Patch Changes
+
+- f53afab: Add automated downstream task unblocking on task completion, full bidirectional VFX and Creative workflow transitions, and bidirectional dependency querying in FirebaseStore.
+
 ## 0.15.0
 
 ### Minor Changes
