@@ -1,0 +1,93 @@
+---
+// apps/docs/src/components/ScrollProgress.astro
+---
+
+<div id="scroll-progress" class="scroll-progress-bar" aria-hidden="true"></div>
+
+<style>
+  .scroll-progress-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg, #0284c7 0%, #6366f1 50%, #a855f7 100%);
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+    transform-origin: 0% 50%;
+    transform: scaleX(0);
+    z-index: 999;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: scroll()) {
+      @keyframes grow-scroll-progress {
+        from {
+          transform: scaleX(0);
+        }
+        to {
+          transform: scaleX(1);
+        }
+      }
+
+      .scroll-progress-bar {
+        animation: grow-scroll-progress auto linear;
+        animation-timeline: scroll();
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scroll-progress-bar {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  // Progressive enhancement fallback for browsers without native scroll-timeline (e.g. Firefox)
+  if (!CSS.supports('animation-timeline', 'scroll()')) {
+    const progressBar = document.getElementById('scroll-progress');
+    if (progressBar && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      let ticking = false;
+      const updateProgress = () => {
+        const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+        if (scrollable > 0) {
+          const progress = Math.min(Math.max(window.scrollY / scrollable, 0), 1);
+          progressBar.style.transform = `scaleX(${progress})`;
+        }
+        ticking = false;
+      };
+
+      window.addEventListener('scroll', () => {
+        if (!ticking) {
+          window.requestAnimationFrame(updateProgress);
+          ticking = true;
+        }
+      }, { passive: true });
+      updateProgress();
+    }
+  }
+
+  // Progressive enhancement fallback for scroll-reveal on browsers without native view() timeline
+  if (!CSS.supports('(animation-timeline: view()) and (animation-range: entry)')) {
+    document.documentElement.classList.add('no-scroll-timeline');
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-revealed');
+              observer.unobserve(entry.target);
+            }
+          });
+        },
+        { threshold: 0.08, rootMargin: '0px 0px -40px 0px' }
+      );
+
+      document.querySelectorAll('.scroll-reveal, .scroll-reveal-card').forEach((el) => {
+        observer.observe(el);
+      });
+    }
+  }
+</script>

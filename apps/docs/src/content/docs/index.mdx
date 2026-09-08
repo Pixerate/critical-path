@@ -10,6 +10,7 @@ hero:
   hidden: true
 ---
 
+import ScrollProgress from '../../components/ScrollProgress.astro';
 import Hero from '../../components/Hero.astro';
 import VisualDemo from '../../components/VisualDemo.astro';
 import FeatureGrid from '../../components/FeatureGrid.astro';
@@ -17,12 +18,26 @@ import CodeSwitcher from '../../components/CodeSwitcher.astro';
 import ArchitectureSection from '../../components/ArchitectureSection.astro';
 import FooterSection from '../../components/FooterSection.astro';
 
+<ScrollProgress />
+
 <div class="not-content">
   <Hero />
-  <VisualDemo />
-  <FeatureGrid />
-  <CodeSwitcher />
-  <ArchitectureSection />
-  <FooterSection />
+  <div class="scroll-reveal">
+    <VisualDemo />
+  </div>
+  <div class="scroll-reveal">
+    <FeatureGrid />
+  </div>
+  <div class="scroll-reveal">
+    <CodeSwitcher />
+  </div>
+  <div class="scroll-reveal">
+    <ArchitectureSection />
+  </div>
+  <div class="scroll-reveal">
+    <FooterSection />
+  </div>
 </div>
+
+
 
