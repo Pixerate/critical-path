@@ -127,70 +127,61 @@ html:not([data-has-sidebar]) .hero {
    Scroll-Driven Animations & Immersive Effects
    ========================================================================== */
 
-@keyframes scroll-fade-in {
-  from {
-    opacity: 0.15;
-    transform: translateY(28px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+/* Sections smoothly reveal as they enter viewport */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  filter: blur(2px);
+  transition: opacity 0.75s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.75s cubic-bezier(0.16, 1, 0.3, 1),
+              filter 0.75s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform, filter;
 }
 
-@keyframes parallax-float {
-  from {
-    transform: translateY(-30px);
-  }
-  to {
-    transform: translateY(30px);
-  }
+.scroll-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  @supports ((animation-timeline: view()) and (animation-range: entry)) {
-    .scroll-reveal {
-      animation: scroll-fade-in linear both;
-      animation-timeline: view();
-      animation-range: entry 10% cover 30%;
-    }
+/* Individual capability cards stagger into view */
+.scroll-reveal-card {
+  opacity: 0;
+  transform: translateY(28px) scale(0.98);
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
 
-    .scroll-reveal-card {
-      animation: scroll-fade-in linear both;
-      animation-timeline: view();
-      animation-range: entry 5% cover 25%;
-    }
+.scroll-reveal-card.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
 
-    .scroll-parallax {
-      animation: parallax-float linear both;
-      animation-timeline: view();
-      animation-range: entry 0% exit 100%;
-    }
-  }
+/* Header elevation styling when scrolled */
+header.header.header-scrolled {
+  box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.25) !important;
+}
+[data-theme='dark'] header.header.header-scrolled {
+  box-shadow: 0 4px 30px -2px rgba(0, 0, 0, 0.6);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.35) !important;
+}
 
-  /* Progressive enhancement fallback for browsers without CSS view() timeline */
-  .no-scroll-timeline .scroll-reveal,
-  .no-scroll-timeline .scroll-reveal-card {
-    opacity: 0;
-    transform: translateY(24px);
-    transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
-    will-change: opacity, transform;
-  }
-
-  .no-scroll-timeline .scroll-reveal.is-revealed,
-  .no-scroll-timeline .scroll-reveal-card.is-revealed {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Parallax element smoothing */
+.parallax-element {
+  will-change: transform;
+  transition: transform 0.1s cubic-bezier(0, 0, 0.2, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .scroll-reveal,
-  .scroll-reveal-card,
-  .scroll-parallax {
-    animation: none !important;
+  .scroll-reveal-card {
     opacity: 1 !important;
     transform: none !important;
+    filter: none !important;
+    transition: none !important;
   }
 }
+
 
