@@ -1,0 +1,74 @@
+---
+// apps/docs/src/components/FeatureGrid.astro
+const features = [
+  {
+    icon: '🧩',
+    title: '100% Headless Architecture',
+    description: 'Completely decoupled logic and state. Build your UI using React, Svelte, Vue, or vanilla HTML without fighting opinionated design systems.',
+    badge: 'Modular'
+  },
+  {
+    icon: '⚡',
+    title: 'Real-time DAG & Critical Path',
+    description: 'Automated topological sorting, cycle detection, and sub-millisecond calculation of critical path duration and blocker chains.',
+    badge: 'High Performance'
+  },
+  {
+    icon: '🗄️',
+    title: 'Pluggable Storage Adapters',
+    description: 'Switch between SQLite, Google Cloud Firestore, or In-Memory storage with a single line of configuration. Or roll your own adapter.',
+    badge: 'Multi-Database'
+  },
+  {
+    icon: '🔌',
+    title: 'Extensible Lifecycle Hooks',
+    description: 'Tap into async hooks: beforeTaskCreate, afterTaskUpdate, onStatusTransition. Add audit logging, webhook notifications, and automated workflows.',
+    badge: 'Event-Driven'
+  },
+  {
+    icon: '🌐',
+    title: 'Standards-Compliant Web Fetch',
+    description: 'Built on standard Web Request/Response objects. Mount seamlessly into Next.js App Router, SvelteKit, Express, or Cloudflare Workers.',
+    badge: 'Universal'
+  },
+  {
+    icon: '🤖',
+    title: 'Agentic & AI-Native',
+    description: 'Predictable typed schemas and deterministic JSON payloads designed specifically for LLM tool calling, autonomous agents, and AI copilots.',
+    badge: 'AI-Ready'
+  }
+];
+---
+
+<section class="py-16 md:py-20">
+  <div class="text-center max-w-2xl mx-auto mb-12">
+    <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-mono uppercase tracking-wider mb-3">
+      Core Capabilities
+    </div>
+    <h2 class="text-3xl md:text-4xl font-bold text-white tracking-tight">
+      Engineered for Modern Web Architecture
+    </h2>
+    <p class="text-slate-400 mt-3 text-sm md:text-base">
+      Everything you need to orchestrate complex task workflows, dependencies, and project state without heavy monolithic bloat.
+    </p>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    {features.map((item) => (
+      <div class="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 hover:bg-slate-900/90 transition-all duration-300 group hover:-translate-y-1 shadow-lg relative overflow-hidden">
+        <div class="flex items-center justify-between mb-4">
+          <span class="text-3xl select-none">{item.icon}</span>
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-mono bg-slate-800 text-slate-300 border border-slate-700/60">
+            {item.badge}
+          </span>
+        </div>
+        <h3 class="text-lg font-bold text-slate-100 group-hover:text-sky-400 transition-colors">
+          {item.title}
+        </h3>
+        <p class="text-sm text-slate-400 mt-2 leading-relaxed">
+          {item.description}
+        </p>
+      </div>
+    ))}
+  </div>
+</section>

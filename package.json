@@ -8,7 +8,8 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "examples/*"
+    "examples/*",
+    "apps/*"
   ],
   "scripts": {
     "build": "pnpm --recursive run build",
@@ -16,6 +17,8 @@
     "lint": "pnpm --recursive run lint",
     "dev": "pnpm --recursive --parallel run dev",
     "clean": "pnpm --recursive run clean",
+    "docs:dev": "pnpm --filter @critical-path/docs dev",
+    "docs:build": "pnpm --filter @critical-path/docs build",
     "changeset": "changeset",
     "version:packages": "changeset version",
     "release": "changeset publish"

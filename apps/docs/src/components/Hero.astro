@@ -1,0 +1,92 @@
+---
+// apps/docs/src/components/Hero.astro
+---
+
+<section class="relative pt-12 pb-16 md:pt-20 md:pb-24 overflow-hidden text-center">
+  <!-- Glowing Background Gradients -->
+  <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-gradient-to-tr from-sky-500/20 via-indigo-500/20 to-purple-500/20 rounded-full blur-3xl pointer-events-none -z-10"></div>
+
+  <!-- Release & Status Badge -->
+  <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-slate-700/60 shadow-lg text-xs mb-6 backdrop-blur-md">
+    <span class="flex h-2 w-2 rounded-full bg-emerald-400"></span>
+    <span class="font-medium text-slate-300">v0.1.2 Production Release</span>
+    <span class="text-slate-600">&bull;</span>
+    <span class="text-sky-400 font-mono">100% Type-Safe Headless PM</span>
+  </div>
+
+  <!-- Main Headline -->
+  <h1 class="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight text-white max-w-4xl mx-auto leading-tight md:leading-[1.15]">
+    The Headless <span class="gradient-text">Project Management</span> Engine
+  </h1>
+
+  <!-- Subtitle -->
+  <p class="mt-6 text-lg md:text-xl text-slate-300 max-w-2xl mx-auto font-normal leading-relaxed">
+    Build custom project boards, dynamic DAG dependency trackers, and reactive Kanban workflows into your web apps. No bloated Jira or Linear iframes. Zero vendor lock-in.
+  </p>
+
+  <!-- Install Bar with One-Click Copy -->
+  <div class="mt-8 flex justify-center">
+    <div class="inline-flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-950/90 border border-slate-800 shadow-xl backdrop-blur-md font-mono text-sm text-slate-300 group hover:border-sky-500/50 transition-colors">
+      <span class="text-sky-400 select-none">$</span>
+      <code id="install-command">pnpm add @critical-path/core @critical-path/client</code>
+      <button
+        id="copy-install-btn"
+        class="ml-2 px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+        title="Copy install command"
+      >
+        <span id="copy-btn-text">Copy</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Call to Action Buttons -->
+  <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
+    <a
+      href="/getting-started/introduction/"
+      class="px-6 py-3 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-semibold text-sm shadow-lg shadow-sky-500/25 transition-all transform hover:-translate-y-0.5"
+    >
+      Explore Documentation &rarr;
+    </a>
+    <a
+      href="https://github.com/Pixerate/Critical-Path"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="px-6 py-3 rounded-xl bg-slate-900/90 hover:bg-slate-800/90 text-slate-200 border border-slate-700/80 font-semibold text-sm transition-all transform hover:-translate-y-0.5 flex items-center gap-2"
+    >
+      <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+      </svg>
+      Star on GitHub
+    </a>
+  </div>
+
+  <!-- Tech Badges / Framework Compatibility Pills -->
+  <div class="mt-12 flex flex-wrap items-center justify-center gap-2 md:gap-3 text-xs font-mono text-slate-400">
+    <span class="px-3 py-1 rounded-lg bg-slate-900/60 border border-slate-800">Next.js App Router</span>
+    <span class="px-3 py-1 rounded-lg bg-slate-900/60 border border-slate-800">SvelteKit</span>
+    <span class="px-3 py-1 rounded-lg bg-slate-900/60 border border-slate-800">React Hooks</span>
+    <span class="px-3 py-1 rounded-lg bg-slate-900/60 border border-slate-800">SQLite &amp; Firestore</span>
+    <span class="px-3 py-1 rounded-lg bg-slate-900/60 border border-slate-800">Web Fetch API</span>
+    <span class="px-3 py-1 rounded-lg bg-slate-900/60 border border-slate-800">Google Cloud Ready</span>
+  </div>
+</section>
+
+<script>
+  const copyBtn = document.getElementById('copy-install-btn');
+  const copyText = document.getElementById('copy-btn-text');
+  const command = 'pnpm add @critical-path/core @critical-path/client';
+
+  copyBtn?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      if (copyText) {
+        copyText.textContent = 'Copied!';
+        setTimeout(() => {
+          copyText.textContent = 'Copy';
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('Failed to copy', err);
+    }
+  });
+</script>

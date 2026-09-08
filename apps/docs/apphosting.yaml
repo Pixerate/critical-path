@@ -1,0 +1,12 @@
+# Firebase App Hosting configuration
+# Reference: https://firebase.google.com/docs/app-hosting/configure
+schemaVersion: v1
+runConfig:
+  cpu: 1
+  memoryMiB: 1024
+  concurrency: 80
+  maxInstances: 10
+  minInstances: 0
+env:
+  - variable: NODE_VERSION
+    value: "24"

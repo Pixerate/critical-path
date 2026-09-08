@@ -42,6 +42,7 @@ The repository uses pnpm workspaces containing the following core packages:
 - `packages/react` (`@critical-path/react`): React Context Provider (`CriticalPathProvider`) and hooks (`useProjects`, `useTasks`, `useKanban`).
 - `packages/svelte` (`@critical-path/svelte`): Svelte 5 Runes state classes & factory functions (`createProjectState`, `createTaskState`).
 - `packages/create-critical-path` (`create-critical-path`): CLI scaffolder executable (`npx create-critical-path@latest`).
+- `apps/docs` (`@critical-path/docs`): Astro + Starlight + Tailwind CSS documentation and marketing site deployed to Firebase App Hosting at `https://criticalpath.pixerate.com`.
 
 ---
 

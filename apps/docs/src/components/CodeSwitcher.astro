@@ -1,0 +1,199 @@
+---
+// apps/docs/src/components/CodeSwitcher.astro
+---
+
+<section class="py-16 md:py-20 border-t border-slate-800/80">
+  <div class="text-center max-w-2xl mx-auto mb-10">
+    <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 text-xs font-mono uppercase tracking-wider mb-3">
+      Effortless Integration
+    </div>
+    <h2 class="text-3xl md:text-4xl font-bold text-white tracking-tight">
+      Drop-In Simplicity Across Frameworks
+    </h2>
+    <p class="text-slate-400 mt-3 text-sm md:text-base">
+      Clean, idiomatic APIs tailored for your favorite frontend and backend ecosystems.
+    </p>
+  </div>
+
+  <div class="max-w-4xl mx-auto rounded-2xl bg-slate-950 border border-slate-800 shadow-2xl overflow-hidden">
+    <!-- Tab Headers -->
+    <div class="flex items-center justify-between px-4 py-3 bg-slate-900/90 border-b border-slate-800 overflow-x-auto">
+      <div class="flex items-center gap-2" id="code-tabs">
+        <button
+          data-tab="nextjs"
+          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium bg-sky-500/20 text-sky-300 border border-sky-500/30 transition-all cursor-pointer"
+        >
+          Next.js App Router
+        </button>
+        <button
+          data-tab="sveltekit"
+          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer"
+        >
+          SvelteKit Handler
+        </button>
+        <button
+          data-tab="react"
+          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer"
+        >
+          React Hooks
+        </button>
+        <button
+          data-tab="svelte"
+          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer"
+        >
+          Svelte State
+        </button>
+        <button
+          data-tab="storage"
+          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer"
+        >
+          Storage Setup
+        </button>
+      </div>
+
+      <button
+        id="copy-snippet-btn"
+        class="text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 transition-colors font-mono cursor-pointer shrink-0 ml-4"
+      >
+        Copy Code
+      </button>
+    </div>
+
+    <!-- Tab Code Panels -->
+    <div class="p-5 font-mono text-xs md:text-sm overflow-x-auto bg-[#0d1117] text-slate-200 leading-relaxed">
+      <!-- Next.js -->
+      <div id="panel-nextjs" class="tab-panel block">
+<pre is:raw class="text-slate-200"><span class="text-slate-500">// app/api/critical-path/[...path]/route.ts</span>
+<span class="text-purple-400">import</span> { createNextHandler } <span class="text-purple-400">from</span> <span class="text-emerald-300">'@critical-path/server'</span>;
+<span class="text-purple-400">import</span> { SQLiteStore } <span class="text-purple-400">from</span> <span class="text-emerald-300">'@critical-path/core'</span>;
+
+<span class="text-slate-500">// Initialize store and mount standard Next.js route handler</span>
+<span class="text-purple-400">const</span> store = <span class="text-purple-400">new</span> <span class="text-amber-300">SQLiteStore</span>({ filename: <span class="text-emerald-300">'critical-path.db'</span> });
+<span class="text-purple-400">const</span> handler = <span class="text-blue-400">createNextHandler</span>({ store });
+
+<span class="text-purple-400">export</span> {
+  handler <span class="text-purple-400">as</span> GET,
+  handler <span class="text-purple-400">as</span> POST,
+  handler <span class="text-purple-400">as</span> PUT,
+  handler <span class="text-purple-400">as</span> PATCH,
+  handler <span class="text-purple-400">as</span> DELETE,
+  handler <span class="text-purple-400">as</span> OPTIONS
+};</pre>
+      </div>
+
+      <!-- SvelteKit -->
+      <div id="panel-sveltekit" class="tab-panel hidden">
+<pre is:raw class="text-slate-200"><span class="text-slate-500">// src/routes/api/critical-path/[...path]/+server.ts</span>
+<span class="text-purple-400">import</span> { createSvelteKitHandler } <span class="text-purple-400">from</span> <span class="text-emerald-300">'@critical-path/server'</span>;
+<span class="text-purple-400">import</span> { SQLiteStore } <span class="text-purple-400">from</span> <span class="text-emerald-300">'@critical-path/core'</span>;
+
+<span class="text-purple-400">const</span> store = <span class="text-purple-400">new</span> <span class="text-amber-300">SQLiteStore</span>({ filename: <span class="text-emerald-300">'critical-path.db'</span> });
+<span class="text-purple-400">const</span> handler = <span class="text-blue-400">createSvelteKitHandler</span>({ store });
+
+<span class="text-purple-400">export const</span> GET = handler;
+<span class="text-purple-400">export const</span> POST = handler;
+<span class="text-purple-400">export const</span> PUT = handler;
+<span class="text-purple-400">export const</span> PATCH = handler;
+<span class="text-purple-400">export const</span> DELETE = handler;
+<span class="text-purple-400">export const</span> OPTIONS = handler;</pre>
+      </div>
+
+      <!-- React -->
+      <div id="panel-react" class="tab-panel hidden">
+<pre is:raw class="text-slate-200"><span class="text-slate-500">// components/ProjectBoard.tsx</span>
+<span class="text-purple-400">import</span> { CriticalPathProvider, useTasks, useKanban } <span class="text-purple-400">from</span> <span class="text-emerald-300">'@critical-path/react'</span>;
+
+<span class="text-purple-400">export function</span> <span class="text-blue-400">ProjectBoard</span>({ projectId }: { projectId: <span class="text-amber-300">string</span> }) {
+  <span class="text-purple-400">const</span> { tasks, loading, updateTaskStatus } = <span class="text-blue-400">useTasks</span>({ projectId });
+  <span class="text-purple-400">const</span> { columns, moveTask } = <span class="text-blue-400">useKanban</span>({ projectId });
+
+  <span class="text-purple-400">if</span> (loading) <span class="text-purple-400">return</span> &lt;<span class="text-amber-300">div</span>&gt;Calculating critical path...&lt;/<span class="text-amber-300">div</span>&gt;;
+
+  <span class="text-purple-400">return</span> (
+    &lt;<span class="text-amber-300">div</span> className=<span class="text-emerald-300">"grid grid-cols-3 gap-4"</span>&gt;
+      {columns.map(col =&gt; (
+        &lt;<span class="text-amber-300">KanbanColumn</span> key={col.id} column={col} onDrop={moveTask} /&gt;
+      ))}
+    &lt;/<span class="text-amber-300">div</span>&gt;
+  );
+}</pre>
+      </div>
+
+      <!-- Svelte -->
+      <div id="panel-svelte" class="tab-panel hidden">
+<pre is:raw class="text-slate-200"><span class="text-slate-500">&lt;!-- components/TaskMonitor.svelte --&gt;</span>
+<span class="text-purple-400">&lt;script lang="ts"&gt;</span>
+  <span class="text-purple-400">import</span> { createCriticalPathClient, createTaskState } <span class="text-purple-400">from</span> <span class="text-emerald-300">'@critical-path/svelte'</span>;
+
+  <span class="text-purple-400">const</span> client = <span class="text-blue-400">createCriticalPathClient</span>({ baseUrl: <span class="text-emerald-300">'/api/critical-path'</span> });
+  <span class="text-purple-400">const</span> taskState = <span class="text-blue-400">createTaskState</span>(client, <span class="text-emerald-300">'proj-alpha'</span>);
+<span class="text-purple-400">&lt;/script&gt;</span>
+
+&lt;<span class="text-amber-300">div</span> class=<span class="text-emerald-300">"space-y-2"</span>&gt;
+  {#each $taskState.tasks as task}
+    &lt;<span class="text-amber-300">div</span> class=<span class="text-emerald-300">"p-3 rounded border"</span>&gt;
+      &lt;<span class="text-amber-300">span</span>&gt;{task.title}&lt;/<span class="text-amber-300">span</span>&gt;
+      &lt;<span class="text-amber-300">span</span> class=<span class="text-emerald-300">"badge"</span>&gt;{task.status}&lt;/<span class="text-amber-300">span</span>&gt;
+    &lt;/<span class="text-amber-300">div</span>&gt;
+  {/each}
+&lt;/<span class="text-amber-300">div</span>&gt;</pre>
+      </div>
+
+      <!-- Storage -->
+      <div id="panel-storage" class="tab-panel hidden">
+<pre is:raw class="text-slate-200"><span class="text-slate-500">// Choose SQLite (local/edge) or Google Cloud Firestore</span>
+<span class="text-purple-400">import</span> { CriticalPathEngine, SQLiteStore, FirebaseStore } <span class="text-purple-400">from</span> <span class="text-emerald-300">'@critical-path/core'</span>;
+<span class="text-purple-400">import</span> { getFirestore } <span class="text-purple-400">from</span> <span class="text-emerald-300">'firebase-admin/firestore'</span>;
+
+<span class="text-slate-500">// Option A: SQLite (file or in-memory)</span>
+<span class="text-purple-400">const</span> sqliteStore = <span class="text-purple-400">new</span> <span class="text-amber-300">SQLiteStore</span>({ filename: <span class="text-emerald-300">'./critical-path.db'</span> });
+
+<span class="text-slate-500">// Option B: Google Cloud Firestore</span>
+<span class="text-purple-400">const</span> firebaseStore = <span class="text-purple-400">new</span> <span class="text-amber-300">FirebaseStore</span>({ db: <span class="text-blue-400">getFirestore</span>() });
+
+<span class="text-slate-500">// Instantiate the Engine</span>
+<span class="text-purple-400">export const</span> engine = <span class="text-purple-400">new</span> <span class="text-amber-300">CriticalPathEngine</span>({ store: firebaseStore });</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const buttons = document.querySelectorAll('#code-tabs .tab-btn');
+  const panels = document.querySelectorAll('.tab-panel');
+  const copyBtn = document.getElementById('copy-snippet-btn');
+
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.getAttribute('data-tab');
+
+      // Update button visual states
+      buttons.forEach(b => {
+        b.className = 'tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer';
+      });
+      btn.className = 'tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium bg-sky-500/20 text-sky-300 border border-sky-500/30 transition-all cursor-pointer';
+
+      // Switch panels
+      panels.forEach(panel => {
+        if (panel.id === `panel-${target}`) {
+          panel.classList.remove('hidden');
+          panel.classList.add('block');
+        } else {
+          panel.classList.add('hidden');
+          panel.classList.remove('block');
+        }
+      });
+    });
+  });
+
+  copyBtn?.addEventListener('click', async () => {
+    const activePanel = document.querySelector('.tab-panel.block pre');
+    if (activePanel) {
+      await navigator.clipboard.writeText(activePanel.textContent || '');
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy Code';
+      }, 2000);
+    }
+  });
+</script>
