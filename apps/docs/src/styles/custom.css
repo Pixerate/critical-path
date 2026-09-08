@@ -45,6 +45,17 @@ html:not([data-has-sidebar]) .hero {
   display: none !important;
 }
 
+/* Header cleanup: remove the divider line after social icons since theme select is removed */
+.social-icons::after {
+  display: none !important;
+}
+
+/* Custom marketing content link styles */
+.not-content a {
+  text-decoration: none !important;
+}
+
+
 /* Glassmorphism utilities */
 .glass-panel {
   background: rgba(255, 255, 255, 0.85);

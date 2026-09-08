@@ -1,0 +1,23 @@
+---
+// apps/docs/src/components/ThemeSelectOverride.astro
+// Replaces Starlight's ThemeSelect dropdown to automatically follow system color scheme preference ('auto')
+---
+
+<script is:inline>
+  (() => {
+    try {
+      localStorage.removeItem('starlight-theme');
+    } catch {}
+
+    const syncAutoTheme = () => {
+      const isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+      document.documentElement.dataset.theme = isLight ? 'light' : 'dark';
+    };
+
+    syncAutoTheme();
+
+    try {
+      window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', syncAutoTheme);
+    } catch {}
+  })();
+</script>
