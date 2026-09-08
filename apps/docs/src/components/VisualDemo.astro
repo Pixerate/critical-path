@@ -2,35 +2,35 @@
 // apps/docs/src/components/VisualDemo.astro
 ---
 
-<div class="w-full my-12 p-6 md:p-8 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-2xl relative overflow-hidden">
+<div class="w-full my-8 p-6 md:p-8 rounded-2xl bg-white/90 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-lg dark:shadow-2xl relative overflow-hidden">
   <!-- Glowing ambient orb in the background -->
   <div class="absolute -top-24 -right-24 w-80 h-80 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
   <div class="absolute -bottom-24 -left-24 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-  <div class="flex flex-col md:flex-row items-start md:items-center justify-between pb-6 border-b border-slate-800/80 gap-4">
+  <div class="flex flex-col md:flex-row items-start md:items-center justify-between pb-6 border-b border-slate-200 dark:border-slate-800/80 gap-4">
     <div>
-      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 text-xs font-mono uppercase tracking-wider mb-2">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-700 dark:text-sky-400 text-xs font-mono uppercase tracking-wider mb-2">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
         Interactive Live Demonstration
       </div>
-      <h3 class="text-xl md:text-2xl font-bold text-slate-100 flex items-center gap-2">
+      <h3 class="text-xl md:text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
         Real-Time Critical Path DAG Calculation
       </h3>
-      <p class="text-sm text-slate-400 mt-1">
+      <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
         Click tasks to toggle completion. Watch downstream blockers dynamically resolve and the critical path recalculate.
       </p>
     </div>
 
     <!-- Calculated Critical Path Metric -->
-    <div class="flex items-center gap-4 bg-slate-950/60 border border-slate-800 px-4 py-2.5 rounded-xl">
+    <div class="flex items-center gap-4 bg-slate-100 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-xl shadow-sm dark:shadow-none">
       <div class="text-right">
-        <div class="text-xs uppercase font-mono text-slate-400">Critical Path Duration</div>
-        <div id="cp-duration-metric" class="text-lg font-bold text-sky-400 font-mono">14 Hours</div>
+        <div class="text-xs uppercase font-mono text-slate-500 dark:text-slate-400">Critical Path Duration</div>
+        <div id="cp-duration-metric" class="text-lg font-bold text-sky-600 dark:text-sky-400 font-mono">14 Hours</div>
       </div>
-      <div class="h-8 w-[1px] bg-slate-800"></div>
+      <div class="h-8 w-[1px] bg-slate-300 dark:bg-slate-800"></div>
       <div class="text-right">
-        <div class="text-xs uppercase font-mono text-slate-400">Unblocked Tasks</div>
-        <div id="unblocked-count-metric" class="text-lg font-bold text-emerald-400 font-mono">1 / 4</div>
+        <div class="text-xs uppercase font-mono text-slate-500 dark:text-slate-400">Unblocked Tasks</div>
+        <div id="unblocked-count-metric" class="text-lg font-bold text-emerald-600 dark:text-emerald-400 font-mono">1 / 4</div>
       </div>
     </div>
   </div>
@@ -43,16 +43,16 @@
       data-id="1"
       data-status="in_progress"
       data-duration="3"
-      class="task-node text-left p-4 rounded-xl border border-amber-500/40 bg-amber-500/5 hover:bg-amber-500/10 transition-all duration-200 cursor-pointer relative group shadow-lg"
+      class="task-node text-left p-4 rounded-xl border border-amber-400/60 dark:border-amber-500/40 bg-amber-50/80 dark:bg-amber-500/5 hover:bg-amber-100/80 dark:hover:bg-amber-500/10 transition-all duration-200 cursor-pointer relative group shadow-sm dark:shadow-lg"
     >
       <div class="flex items-center justify-between mb-2">
-        <span class="text-xs font-mono text-slate-400">TASK-01</span>
-        <span class="task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">In Progress</span>
+        <span class="text-xs font-mono text-slate-500 dark:text-slate-400">TASK-01</span>
+        <span class="task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30">In Progress</span>
       </div>
-      <div class="font-medium text-slate-200 text-sm">Schema Definition</div>
-      <div class="text-xs text-slate-400 mt-1">Est: 3h &bull; Depends: None</div>
-      <div class="mt-3 text-xs text-amber-400/90 font-mono flex items-center gap-1">
-        <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+      <div class="font-medium text-slate-900 dark:text-slate-200 text-sm">Schema Definition</div>
+      <div class="text-xs text-slate-600 dark:text-slate-400 mt-1">Est: 3h &bull; Depends: None</div>
+      <div class="mt-3 text-xs text-amber-700 dark:text-amber-400/90 font-mono flex items-center gap-1">
+        <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
         Click to complete
       </div>
     </button>
@@ -63,15 +63,15 @@
       data-id="2"
       data-status="blocked"
       data-duration="5"
-      class="task-node text-left p-4 rounded-xl border border-slate-800 bg-slate-950/40 opacity-70 hover:opacity-90 transition-all duration-200 cursor-pointer relative group"
+      class="task-node text-left p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/40 opacity-70 hover:opacity-90 transition-all duration-200 cursor-pointer relative group"
     >
       <div class="flex items-center justify-between mb-2">
-        <span class="text-xs font-mono text-slate-400">TASK-02</span>
-        <span class="task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-red-500/20 text-red-300 border border-red-500/30">Blocked</span>
+        <span class="text-xs font-mono text-slate-500 dark:text-slate-400">TASK-02</span>
+        <span class="task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 dark:bg-red-500/20 text-rose-700 dark:text-red-300 border border-rose-200 dark:border-red-500/30">Blocked</span>
       </div>
-      <div class="font-medium text-slate-200 text-sm">Engine Pipeline</div>
-      <div class="text-xs text-slate-400 mt-1">Est: 5h &bull; Depends: TASK-01</div>
-      <div class="mt-3 text-xs text-slate-400 font-mono flex items-center gap-1">
+      <div class="font-medium text-slate-800 dark:text-slate-200 text-sm">Engine Pipeline</div>
+      <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">Est: 5h &bull; Depends: TASK-01</div>
+      <div class="mt-3 text-xs text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1">
         <span>🔒 Blocked by TASK-01</span>
       </div>
     </button>
@@ -82,15 +82,15 @@
       data-id="3"
       data-status="blocked"
       data-duration="4"
-      class="task-node text-left p-4 rounded-xl border border-slate-800 bg-slate-950/40 opacity-70 hover:opacity-90 transition-all duration-200 cursor-pointer relative group"
+      class="task-node text-left p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/40 opacity-70 hover:opacity-90 transition-all duration-200 cursor-pointer relative group"
     >
       <div class="flex items-center justify-between mb-2">
-        <span class="text-xs font-mono text-slate-400">TASK-03</span>
-        <span class="task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-red-500/20 text-red-300 border border-red-500/30">Blocked</span>
+        <span class="text-xs font-mono text-slate-500 dark:text-slate-400">TASK-03</span>
+        <span class="task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 dark:bg-red-500/20 text-rose-700 dark:text-red-300 border border-rose-200 dark:border-red-500/30">Blocked</span>
       </div>
-      <div class="font-medium text-slate-200 text-sm">React/Svelte Adapters</div>
-      <div class="text-xs text-slate-400 mt-1">Est: 4h &bull; Depends: TASK-02</div>
-      <div class="mt-3 text-xs text-slate-400 font-mono flex items-center gap-1">
+      <div class="font-medium text-slate-800 dark:text-slate-200 text-sm">React/Svelte Adapters</div>
+      <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">Est: 4h &bull; Depends: TASK-02</div>
+      <div class="mt-3 text-xs text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1">
         <span>🔒 Blocked by TASK-02</span>
       </div>
     </button>
@@ -101,22 +101,22 @@
       data-id="4"
       data-status="blocked"
       data-duration="2"
-      class="task-node text-left p-4 rounded-xl border border-slate-800 bg-slate-950/40 opacity-70 hover:opacity-90 transition-all duration-200 cursor-pointer relative group"
+      class="task-node text-left p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/40 opacity-70 hover:opacity-90 transition-all duration-200 cursor-pointer relative group"
     >
       <div class="flex items-center justify-between mb-2">
-        <span class="text-xs font-mono text-slate-400">TASK-04</span>
-        <span class="task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-red-500/20 text-red-300 border border-red-500/30">Blocked</span>
+        <span class="text-xs font-mono text-slate-500 dark:text-slate-400">TASK-04</span>
+        <span class="task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 dark:bg-red-500/20 text-rose-700 dark:text-red-300 border border-rose-200 dark:border-red-500/30">Blocked</span>
       </div>
-      <div class="font-medium text-slate-200 text-sm">Release & Deployment</div>
-      <div class="text-xs text-slate-400 mt-1">Est: 2h &bull; Depends: TASK-03</div>
-      <div class="mt-3 text-xs text-slate-400 font-mono flex items-center gap-1">
+      <div class="font-medium text-slate-800 dark:text-slate-200 text-sm">Release & Deployment</div>
+      <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">Est: 2h &bull; Depends: TASK-03</div>
+      <div class="mt-3 text-xs text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1">
         <span>🔒 Blocked by TASK-03</span>
       </div>
     </button>
   </div>
 
   <!-- Interactive Terminal Log Feed -->
-  <div class="rounded-xl bg-slate-950 border border-slate-800 p-4 font-mono text-xs">
+  <div class="rounded-xl bg-slate-950 border border-slate-800 p-4 font-mono text-xs shadow-inner">
     <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80 text-slate-400">
       <div class="flex items-center gap-2">
         <span class="w-2.5 h-2.5 rounded-full bg-rose-500/80"></span>
@@ -124,7 +124,7 @@
         <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
         <span class="ml-2 font-medium text-slate-300">Engine Event Bus Log</span>
       </div>
-      <button id="reset-demo-btn" class="text-xs text-sky-400 hover:text-sky-300 transition-colors">
+      <button id="reset-demo-btn" class="text-xs text-sky-400 hover:text-sky-300 transition-colors cursor-pointer">
         Reset Simulation
       </button>
     </div>
@@ -173,7 +173,7 @@
     let unblockedCount = 0;
     let remainingDuration = 0;
 
-    currentTasks.forEach((task, index) => {
+    currentTasks.forEach((task) => {
       const btn = document.getElementById(`task-${task.id}-btn`);
       if (!btn) return;
 
@@ -194,34 +194,34 @@
 
       // Update Node Visuals
       if (task.status === 'completed') {
-        btn.className = 'task-node text-left p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 transition-all duration-200 cursor-pointer shadow-lg shadow-emerald-500/5';
+        btn.className = 'task-node text-left p-4 rounded-xl border border-emerald-500/50 bg-emerald-50/80 dark:bg-emerald-500/10 transition-all duration-200 cursor-pointer shadow-sm dark:shadow-lg shadow-emerald-500/5';
         if (badge) {
-          badge.className = 'task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+          badge.className = 'task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30';
           badge.textContent = 'Completed';
         }
         if (actionText) {
-          actionText.className = 'mt-3 text-xs text-emerald-400 font-mono';
+          actionText.className = 'mt-3 text-xs text-emerald-700 dark:text-emerald-400 font-mono';
           actionText.innerHTML = '&check; Done (click to reopen)';
         }
       } else if (task.status === 'in_progress') {
-        btn.className = 'task-node text-left p-4 rounded-xl border border-sky-500/50 bg-sky-500/10 hover:bg-sky-500/15 transition-all duration-200 cursor-pointer shadow-lg shadow-sky-500/10 scale-[1.02]';
+        btn.className = 'task-node text-left p-4 rounded-xl border border-sky-500/60 bg-sky-50/80 dark:bg-sky-500/10 hover:bg-sky-100/80 dark:hover:bg-sky-500/15 transition-all duration-200 cursor-pointer shadow-sm dark:shadow-lg shadow-sky-500/10 scale-[1.02]';
         if (badge) {
-          badge.className = 'task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/30';
+          badge.className = 'task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-500/30';
           badge.textContent = 'Ready / Active';
         }
         if (actionText) {
-          actionText.className = 'mt-3 text-xs text-sky-400 font-mono flex items-center gap-1';
-          actionText.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></span> Click to complete';
+          actionText.className = 'mt-3 text-xs text-sky-700 dark:text-sky-400 font-mono flex items-center gap-1';
+          actionText.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse"></span> Click to complete';
         }
       } else {
-        btn.className = 'task-node text-left p-4 rounded-xl border border-slate-800 bg-slate-950/40 opacity-60 hover:opacity-80 transition-all duration-200 cursor-not-allowed';
+        btn.className = 'task-node text-left p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/40 opacity-60 hover:opacity-80 transition-all duration-200 cursor-not-allowed';
         if (badge) {
-          badge.className = 'task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700';
+          badge.className = 'task-badge px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400 border border-slate-300 dark:border-slate-700';
           badge.textContent = 'Blocked';
         }
         const parent = currentTasks.find(t => t.id === task.dependsOn);
         if (actionText && parent) {
-          actionText.className = 'mt-3 text-xs text-slate-400 font-mono';
+          actionText.className = 'mt-3 text-xs text-slate-500 dark:text-slate-400 font-mono';
           actionText.textContent = `🔒 Blocked by ${parent.code}`;
         }
       }

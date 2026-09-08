@@ -2,50 +2,50 @@
 // apps/docs/src/components/CodeSwitcher.astro
 ---
 
-<section class="py-16 md:py-20 border-t border-slate-800/80">
+<section class="py-12 md:py-16 border-t border-slate-200 dark:border-slate-800/80">
   <div class="text-center max-w-2xl mx-auto mb-10">
-    <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 text-xs font-mono uppercase tracking-wider mb-3">
+    <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-700 dark:text-sky-400 text-xs font-mono uppercase tracking-wider mb-3">
       Effortless Integration
     </div>
-    <h2 class="text-3xl md:text-4xl font-bold text-white tracking-tight">
+    <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white tracking-tight">
       Drop-In Simplicity Across Frameworks
     </h2>
-    <p class="text-slate-400 mt-3 text-sm md:text-base">
+    <p class="text-slate-600 dark:text-slate-400 mt-3 text-sm md:text-base">
       Clean, idiomatic APIs tailored for your favorite frontend and backend ecosystems.
     </p>
   </div>
 
-  <div class="max-w-4xl mx-auto rounded-2xl bg-slate-950 border border-slate-800 shadow-2xl overflow-hidden">
+  <div class="max-w-4xl mx-auto rounded-2xl bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xl dark:shadow-2xl overflow-hidden">
     <!-- Tab Headers -->
-    <div class="flex items-center justify-between px-4 py-3 bg-slate-900/90 border-b border-slate-800 overflow-x-auto">
+    <div class="flex items-center justify-between px-4 py-3 bg-slate-100 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
       <div class="flex items-center gap-2" id="code-tabs">
         <button
           data-tab="nextjs"
-          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium bg-sky-500/20 text-sky-300 border border-sky-500/30 transition-all cursor-pointer"
+          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium bg-white dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-slate-300 dark:border-sky-500/30 shadow-sm transition-all cursor-pointer"
         >
           Next.js App Router
         </button>
         <button
           data-tab="sveltekit"
-          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer"
+          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition-all cursor-pointer"
         >
           SvelteKit Handler
         </button>
         <button
           data-tab="react"
-          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer"
+          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition-all cursor-pointer"
         >
           React Hooks
         </button>
         <button
           data-tab="svelte"
-          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer"
+          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition-all cursor-pointer"
         >
           Svelte State
         </button>
         <button
           data-tab="storage"
-          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer"
+          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition-all cursor-pointer"
         >
           Storage Setup
         </button>
@@ -53,7 +53,7 @@
 
       <button
         id="copy-snippet-btn"
-        class="text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 transition-colors font-mono cursor-pointer shrink-0 ml-4"
+        class="text-xs text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white px-2.5 py-1 rounded-md bg-white dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-transparent transition-colors font-mono cursor-pointer shrink-0 ml-4 shadow-sm"
       >
         Copy Code
       </button>
@@ -141,14 +141,14 @@
 
       <!-- Storage -->
       <div id="panel-storage" class="tab-panel hidden">
-<pre is:raw class="text-slate-200"><span class="text-slate-500">// Choose SQLite (local/edge) or Google Cloud Firestore</span>
+<pre is:raw class="text-slate-200"><span class="text-slate-500">// Choose SQLite (local/edge) or Firestore</span>
 <span class="text-purple-400">import</span> { CriticalPathEngine, SQLiteStore, FirebaseStore } <span class="text-purple-400">from</span> <span class="text-emerald-300">'@critical-path/core'</span>;
 <span class="text-purple-400">import</span> { getFirestore } <span class="text-purple-400">from</span> <span class="text-emerald-300">'firebase-admin/firestore'</span>;
 
 <span class="text-slate-500">// Option A: SQLite (file or in-memory)</span>
 <span class="text-purple-400">const</span> sqliteStore = <span class="text-purple-400">new</span> <span class="text-amber-300">SQLiteStore</span>({ filename: <span class="text-emerald-300">'./critical-path.db'</span> });
 
-<span class="text-slate-500">// Option B: Google Cloud Firestore</span>
+<span class="text-slate-500">// Option B: Firestore (scalable NoSQL)</span>
 <span class="text-purple-400">const</span> firebaseStore = <span class="text-purple-400">new</span> <span class="text-amber-300">FirebaseStore</span>({ db: <span class="text-blue-400">getFirestore</span>() });
 
 <span class="text-slate-500">// Instantiate the Engine</span>
@@ -163,15 +163,20 @@
   const panels = document.querySelectorAll('.tab-panel');
   const copyBtn = document.getElementById('copy-snippet-btn');
 
+  const activeClasses = ['bg-white', 'dark:bg-sky-500/20', 'text-sky-700', 'dark:text-sky-300', 'border', 'border-slate-300', 'dark:border-sky-500/30', 'shadow-sm'];
+  const inactiveClasses = ['text-slate-600', 'dark:text-slate-400', 'hover:text-slate-900', 'dark:hover:text-slate-200', 'hover:bg-slate-200/70', 'dark:hover:bg-slate-800'];
+
   buttons.forEach(btn => {
     btn.addEventListener('click', () => {
       const target = btn.getAttribute('data-tab');
 
       // Update button visual states
       buttons.forEach(b => {
-        b.className = 'tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer';
+        b.classList.remove(...activeClasses);
+        b.classList.add(...inactiveClasses);
       });
-      btn.className = 'tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium bg-sky-500/20 text-sky-300 border border-sky-500/30 transition-all cursor-pointer';
+      btn.classList.remove(...inactiveClasses);
+      btn.classList.add(...activeClasses);
 
       // Switch panels
       panels.forEach(panel => {

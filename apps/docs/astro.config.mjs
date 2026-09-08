@@ -20,6 +20,9 @@ export default defineConfig({
         github: 'https://github.com/Pixerate/Critical-Path',
       },
       customCss: ['./src/styles/custom.css'],
+      components: {
+        Hero: './src/components/StarlightHeroOverride.astro',
+      },
       sidebar: [
         {
           label: 'Start Here',

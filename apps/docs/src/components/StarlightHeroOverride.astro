@@ -1,0 +1,7 @@
+---
+import DefaultHero from '@astrojs/starlight/components/Hero.astro';
+
+const isSplash = Astro.locals.starlightRoute.entry.data.template === 'splash' && Astro.locals.starlightRoute.entry.slug === '';
+---
+
+{isSplash ? null : <DefaultHero {...Astro.props}><slot /></DefaultHero>}
