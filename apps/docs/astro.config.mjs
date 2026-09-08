@@ -20,6 +20,19 @@ export default defineConfig({
         github: 'https://github.com/Pixerate/Critical-Path',
       },
       customCss: ['./src/styles/custom.css'],
+      head: [
+        {
+          tag: 'script',
+          attrs: {
+            async: true,
+            src: `https://www.googletagmanager.com/gtag/js?id=${process.env.PUBLIC_GA_MEASUREMENT_ID || 'G-XF2M2Z6EV0'}`,
+          },
+        },
+        {
+          tag: 'script',
+          content: `window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);}gtag('js', new Date());gtag('config', '${process.env.PUBLIC_GA_MEASUREMENT_ID || 'G-XF2M2Z6EV0'}');`,
+        },
+      ],
       components: {
         Hero: './src/components/StarlightHeroOverride.astro',
         ThemeSelect: './src/components/ThemeSelectOverride.astro',

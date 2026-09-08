@@ -5,3 +5,10 @@ runConfig:
   concurrency: 80
   cpu: 1
   memoryMiB: 512
+
+env:
+  - variable: PUBLIC_GA_MEASUREMENT_ID
+    value: G-XF2M2Z6EV0
+    availability:
+      - BUILD
+      - RUNTIME
