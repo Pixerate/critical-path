@@ -6,11 +6,6 @@
   "author": "Jack James",
   "license": "MIT",
   "type": "module",
-  "workspaces": [
-    "packages/*",
-    "examples/*",
-    "apps/*"
-  ],
   "scripts": {
     "build": "pnpm --recursive run build",
     "test": "pnpm --recursive run test",

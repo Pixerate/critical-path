@@ -1,3 +1,4 @@
+import node from "@apphosting/astro-adapter";
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import tailwind from '@astrojs/tailwind';
@@ -5,7 +6,8 @@ import tailwind from '@astrojs/tailwind';
 // https://astro.build/config
 export default defineConfig({
   site: 'https://criticalpath.pixerate.com',
-  output: 'static',
+  output: 'server',
+  adapter: node({ mode: 'standalone' }),
   integrations: [
     starlight({
       title: 'Critical Path',

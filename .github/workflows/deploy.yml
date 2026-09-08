@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to Firebase Hosting
+    name: Deploy to Firebase App Hosting
     runs-on: ubuntu-latest
 
     permissions:
@@ -42,5 +42,5 @@ jobs:
           workload_identity_provider: 'projects/977274560376/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
           service_account: 'firebase-hosting-deployer@critical-path-7a109.iam.gserviceaccount.com'
 
-      - name: Deploy to Firebase Hosting
-        run: npx firebase-tools deploy --only hosting --project critical-path-7a109 --debug --non-interactive
+      - name: Deploy to Firebase App Hosting
+        run: npx firebase-tools apphosting:rollouts:create critical-path-web --project critical-path-7a109 --git-branch main --force

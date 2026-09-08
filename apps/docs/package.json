@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "start": "astro dev",
+    "start": "node dist/server/entry.mjs",
     "build": "astro build",
     "preview": "astro preview"
   },
   "dependencies": {
+    "@apphosting/astro-adapter": "^0.0.2",
     "@astrojs/node": "^9.0.0",
     "@astrojs/starlight": "^0.32.0",
     "@astrojs/tailwind": "^5.1.0",
