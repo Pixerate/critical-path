@@ -1,5 +1,13 @@
 # @critical-path/svelte
 
+## 0.10.2
+
+### Patch Changes
+
+- Updated dependencies [dbd2072]
+  - @critical-path/core@0.15.2
+  - @critical-path/client@0.9.2
+
 ## 0.10.1
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @critical-path/server
 
+## 0.9.2
+
+### Patch Changes
+
+- Updated dependencies [dbd2072]
+  - @critical-path/core@0.15.2
+
 ## 0.9.1
 
 ### Patch Changes

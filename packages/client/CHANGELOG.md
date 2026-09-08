@@ -1,5 +1,13 @@
 # @critical-path/client
 
+## 0.9.2
+
+### Patch Changes
+
+- dbd2072: Add comprehensive unit test coverage for task state lifecycle behaviors and upstream/downstream dependency validation.
+- Updated dependencies [dbd2072]
+  - @critical-path/core@0.15.2
+
 ## 0.9.1
 
 ### Patch Changes
