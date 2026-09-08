@@ -1,12 +1,11 @@
 {
-  "apphosting": {
-    "backendId": "critical-path-web",
-    "rootDir": "apps/docs",
+  "hosting": {
+    "public": "apps/docs/dist",
+    "cleanUrls": true,
     "ignore": [
-      "node_modules",
-      ".git",
-      "firebase-debug.log",
-      "firebase-debug.*.log"
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
     ]
   }
 }

@@ -11,4 +11,5 @@ coverage
 .env.*.local
 *.tsbuildinfo
 .astro
+.firebase
 
