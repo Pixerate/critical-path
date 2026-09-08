@@ -213,5 +213,57 @@ describe('@critical-path/client Tests', () => {
     const deleted = await client.deleteDeliverable('d1');
     expect(deleted).toBe(true);
   });
+
+  it('retrieves task lifecycle state and dependencies via client SDK', async () => {
+    const mockState = {
+      semanticStatus: 'not_started' as const,
+      isReady: false,
+      isBlocked: true,
+      blockingTaskIds: ['task_upstream'],
+      isOverdue: false,
+      isUpcoming: false,
+      isUnplanned: true,
+      isUnassigned: false,
+      isStalled: false,
+      isOverEstimate: false,
+      isPaceWarning: false,
+      isDone: false,
+      isActive: false,
+      isCancelled: false
+    };
+
+    const mockFetch = async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr.endsWith('/tasks/t1/lifecycle')) {
+        return new Response(JSON.stringify({ state: mockState }), { status: 200 });
+      }
+      if (urlStr.endsWith('/tasks/t1/dependencies')) {
+        return new Response(JSON.stringify({
+          graph: {
+            taskId: 't1',
+            upstreamTasks: [{ id: 'task_upstream', title: 'API', status: 'in_progress' }],
+            downstreamTasks: [],
+            dependencies: [{ id: 'dep1', taskId: 't1', dependsOnTaskId: 'task_upstream', type: 'blocking' }]
+          }
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+    };
+
+    const client = new CriticalPathClient({
+      baseUrl: 'http://localhost:3000/api/critical-path',
+      fetch: mockFetch as typeof fetch
+    });
+
+    const lifecycle = await client.getTaskLifecycleState('t1');
+    expect(lifecycle.isBlocked).toBe(true);
+    expect(lifecycle.isReady).toBe(false);
+    expect(lifecycle.blockingTaskIds).toEqual(['task_upstream']);
+
+    const deps = await client.getTaskDependencies('t1');
+    expect(deps.upstreamTasks).toHaveLength(1);
+    expect(deps.upstreamTasks[0].id).toBe('task_upstream');
+    expect(deps.dependencies).toHaveLength(1);
+  });
 });
 
