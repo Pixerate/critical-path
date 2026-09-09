@@ -28,3 +28,11 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
   ```
   Both `@critical-path/react` (`useWebMCP`) and `@critical-path/svelte` (`createWebMcpState`) already use this subpath internally.
 
+### Publishing New Scoped Packages via npm Trusted Publishing / Changesets
+- **Area / Package**: CI/CD, `@critical-path/mcp`, `.changeset`
+- **Symptom / Behavior**: `changeset publish` in GitHub Actions fails with `Package @critical-path/<pkg> was not found in the registry` and `ENEEDAUTH: This command requires you to be logged in to https://registry.npmjs.org/`.
+- **Root Cause**: npm Trusted Publishing (OIDC Provenance) requires the package to already exist on npmjs.com with Trusted Publisher configured in its settings, or requires an `NPM_TOKEN` secret for initial creation. Additionally, scoped packages default to private unless `"publishConfig": { "access": "public" }` is explicitly present in the package's `package.json`.
+- **Solution / Workaround**:
+  1. Always add `"publishConfig": { "access": "public" }` to new package `package.json` files.
+  2. For the very first publish of a brand new scoped package name, either provide `NPM_TOKEN` with write permission in GitHub Actions secrets, or manually publish version `0.1.0` once with `npm publish --access public` and configure the GitHub repository as a Trusted Publisher on npmjs.com.
+
