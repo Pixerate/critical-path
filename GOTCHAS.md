@@ -36,3 +36,12 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
   1. Always add `"publishConfig": { "access": "public" }` to new package `package.json` files.
   2. For the very first publish of a brand new scoped package name, either provide `NPM_TOKEN` with write permission in GitHub Actions secrets, or manually publish version `0.1.0` once with `npm publish --access public` and configure the GitHub repository as a Trusted Publisher on npmjs.com.
 
+### Firebase App Hosting Deployment Requires `apps/docs/package-lock.json` Sync
+- **Area / Package**: `apps/docs`, Firebase App Hosting, Cloud Build
+- **Symptom / Behavior**: Cloud Build step 3 fails with `npm error code EUSAGE: npm ci can only install packages when your package.json and package-lock.json are in sync. Missing: <pkg> from lock file`.
+- **Root Cause**: Firebase App Hosting runs in `apps/docs` and uses `npm ci` rather than `pnpm install`. Modifying `apps/docs/package.json` with `pnpm` updates `pnpm-lock.yaml`, but leaves `apps/docs/package-lock.json` outdated.
+- **Solution / Workaround**: Whenever adding or updating dependencies in `apps/docs`, always regenerate `apps/docs/package-lock.json`:
+  ```bash
+  cd apps/docs && npm install --package-lock-only
+  ```
+
