@@ -21,7 +21,7 @@ When an AI agent maintains, extends, or consumes project management features usi
 
 ## ⚙️ Mandatory Agent Operational Workflows
 
-Whenever an agent makes code changes or pushes to this repository, the agent MUST follow these three mandatory operational rules:
+Whenever an agent makes code changes or pushes to this repository, the agent MUST follow these mandatory operational rules:
 
 ### 1. 🔍 Monitor CI/CD Pipeline Success
 - After making a push or creating a PR, the agent MUST run `gh run list --repo Pixerate/Critical-Path` and `gh run watch <run_id> --exit-status` to verify that both **CI - Test & Build** and **Release & Publish Packages** workflows succeed 100%.
@@ -43,6 +43,10 @@ Whenever an agent makes code changes or pushes to this repository, the agent MUS
 ### 4. 📦 Changeset Release Workflow
 - When modifying package code in `packages/*`, create a changeset markdown file via `pnpm changeset` or place a changeset in `.changeset/`.
 - This ensures automated semver bumping, selective package publishing, and package-level `CHANGELOG.md` generation on merge.
+
+### 5. 💡 Maintain & Check `GOTCHAS.md`
+- Always check [`GOTCHAS.md`](./GOTCHAS.md) before starting tasks or debugging to review known issues, pitfalls, and established workarounds.
+- Whenever you encounter or resolve non-obvious bugs, tricky edge cases, setup quirks, or pitfalls, document them in [`GOTCHAS.md`](./GOTCHAS.md) alongside their root cause, solution, and workarounds.
 
 ---
 
