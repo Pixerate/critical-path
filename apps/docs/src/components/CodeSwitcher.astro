@@ -49,6 +49,12 @@
         >
           Storage Setup
         </button>
+        <button
+          data-tab="mcp"
+          class="tab-btn px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition-all cursor-pointer"
+        >
+          MCP & AI
+        </button>
       </div>
 
       <button
@@ -153,6 +159,25 @@
 
 <span class="text-slate-500">// Instantiate the Engine</span>
 <span class="text-purple-400">export const</span> engine = <span class="text-purple-400">new</span> <span class="text-amber-300">CriticalPathEngine</span>({ store: firebaseStore });</pre>
+      </div>
+
+      <!-- MCP & WebMCP -->
+      <div id="panel-mcp" class="tab-panel hidden">
+<pre is:raw class="text-slate-200"><span class="text-slate-500">// Option A: Run MCP server for Claude Desktop / Cursor CLI</span>
+<span class="text-slate-400">$</span> npx @critical-path/mcp --db ./app.db
+
+<span class="text-slate-500">// Option B: In-browser WebMCP tool registration for AI copilots</span>
+<span class="text-purple-400">import</span> { useWebMCP } <span class="text-purple-400">from</span> <span class="text-emerald-300">'@critical-path/react'</span>;
+
+<span class="text-purple-400">function</span> <span class="text-blue-400">ProjectView</span>({ projectId }) {
+  <span class="text-slate-500">// Exposes ambient project actions to document.modelContext</span>
+  <span class="text-purple-400">const</span> { registered, tools } = <span class="text-blue-400">useWebMCP</span>({
+    projectId,
+    tools: [<span class="text-emerald-300">'create_task'</span>, <span class="text-emerald-300">'list_tasks'</span>, <span class="text-emerald-300">'update_task'</span>]
+  });
+
+  <span class="text-purple-400">return</span> &lt;<span class="text-amber-300">div</span>&gt;AI Copilot Active ({tools.length} actions)&lt;/<span class="text-amber-300">div</span>&gt;;
+}</pre>
       </div>
     </div>
   </div>

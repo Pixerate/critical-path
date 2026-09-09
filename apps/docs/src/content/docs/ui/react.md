@@ -80,3 +80,26 @@ function KanbanBoard({ projectId }: { projectId: string }) {
   );
 }
 ```
+
+### `useWebMCP`
+Registers client-side WebMCP tools into the browser context (`document.modelContext`) for AI copilots, automatically scoped to the active project:
+
+```tsx
+import { useWebMCP } from '@critical-path/react';
+
+function CopilotIntegration({ projectId }: { projectId: string }) {
+  const { registered, tools, error } = useWebMCP({
+    projectId,
+    tools: ['create_task', 'list_tasks', 'update_task', 'add_comment']
+  });
+
+  if (!registered) return null;
+
+  return (
+    <div className="copilot-badge">
+      🤖 AI Assistant Active ({tools.length} actions available)
+    </div>
+  );
+}
+```
+

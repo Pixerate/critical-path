@@ -39,8 +39,10 @@ Whenever an agent makes code changes or pushes to this repository, the agent MUS
 ### 3. 📚 Update Documentation Alongside Code
 - Any new features, storage adapters, or configuration options MUST be documented simultaneously across:
   - Root [`README.md`](./README.md)
-  - Applicable package READMEs (e.g. [`packages/core/README.md`](./packages/core/README.md))
+  - Applicable package READMEs (e.g. [`packages/core/README.md`](./packages/core/README.md), [`packages/mcp/README.md`](./packages/mcp/README.md))
   - [`docs/DEVELOPER_GUIDE.md`](./docs/DEVELOPER_GUIDE.md)
+  - Astro Documentation & Marketing Website ([`apps/docs`](./apps/docs)) — Any major architecture, protocol, or framework changes MUST consider and incorporate updates to the Astro documentation site as part of the work. This includes adding/updating content in `apps/docs/src/content/docs/`, updating sidebar navigation in `apps/docs/astro.config.mjs`, and updating interactive landing page components (e.g. `FeatureGrid.astro`, `CodeSwitcher.astro`).
+
 
 ### 4. 📦 Changeset Release Workflow
 - When modifying package code in `packages/*`, create a changeset markdown file via `pnpm changeset` or place a changeset in `.changeset/`.

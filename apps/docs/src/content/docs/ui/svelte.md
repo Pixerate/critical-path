@@ -39,3 +39,43 @@ The `@critical-path/svelte` package offers native reactive state containers tail
   {/if}
 </div>
 ```
+
+---
+
+## Svelte 5 Runes WebMCP State (`createWebMcpState`)
+
+Expose client-side WebMCP tools to in-browser AI assistants with reactive Svelte 5 Runes (`$state`):
+
+```svelte
+<script lang="ts">
+  import {
+    createCriticalPathClient,
+    createWebMcpState
+  } from '@critical-path/svelte';
+
+  const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
+
+  // WebMcpState leverages Svelte 5 runes ($state)
+  const mcp = createWebMcpState(client, {
+    projectId: 'proj-123',
+    tools: ['create_task', 'list_tasks', 'update_task', 'add_comment']
+  });
+
+  function handleProjectChange(newProjectId: string) {
+    mcp.setProjectId(newProjectId); // Dynamically updates ambient scope
+  }
+</script>
+
+<div class="copilot-panel">
+  {#if mcp.registered}
+    <div class="ai-status">
+      🟢 AI Assistant Enabled ({mcp.tools.length} tools registered for {mcp.activeProjectId})
+    </div>
+  {/if}
+
+  {#if mcp.error}
+    <div class="error">{mcp.error.message}</div>
+  {/if}
+</div>
+```
+

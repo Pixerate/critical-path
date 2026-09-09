@@ -63,6 +63,10 @@ export default defineConfig({
           autogenerate: { directory: 'plugins' },
         },
         {
+          label: 'Model Context Protocol (MCP)',
+          autogenerate: { directory: 'mcp' },
+        },
+        {
           label: 'Reference & AI',
           autogenerate: { directory: 'reference' },
         },

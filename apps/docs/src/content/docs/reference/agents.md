@@ -18,6 +18,7 @@ You are interacting with a project managed via the Critical Path headless framew
      - @critical-path/core for Engine, Plugins, and Storage Adapters
      - @critical-path/server for Web Fetch route handlers
      - @critical-path/client for HTTP SDK calls
+     - @critical-path/mcp for Model Context Protocol & WebMCP tools
      - @critical-path/react or @critical-path/svelte for UI state
   2. Every task status must map to a valid SemanticStatus:
      'not_started' | 'in_progress' | 'completed' | 'canceled'.
@@ -26,8 +27,28 @@ You are interacting with a project managed via the Critical Path headless framew
 
 ---
 
+## Model Context Protocol (MCP) Integration
+
+The easiest and most reliable way to connect AI agents to Critical Path is through [`@critical-path/mcp`](../mcp/overview/):
+
+### External / IDE Agents (Claude Desktop, Cursor, CLI)
+```bash
+npx @critical-path/mcp --db ./app.db
+# or connect to remote web handler:
+npx @critical-path/mcp --api http://localhost:3000/api/critical-path
+```
+
+### In-Browser Copilots (WebMCP)
+```typescript
+import { registerWebMcpTools } from '@critical-path/mcp/web';
+registerWebMcpTools({ client, projectId: 'current-project-id' });
+```
+
+---
+
 ## Operational Workflow for Coding Agents
 
 1. **Verify CI/CD Pipelines**: Always check GitHub Actions run logs and ensure all test matrices pass before marking tasks as complete.
 2. **Deterministic Schemas**: Treat all API payloads as strict TypeScript contracts. Never send unstructured strings for priority or status fields.
-3. **Documentation Parity**: Whenever adding new features, update markdown documentation simultaneously.
+3. **Documentation Parity & Astro Site Updates**: Whenever adding new features, update markdown documentation simultaneously, including the Astro documentation site (`apps/docs`).
+
