@@ -24,7 +24,8 @@
   },
   "dependencies": {
     "@critical-path/client": "workspace:*",
-    "@critical-path/core": "workspace:*"
+    "@critical-path/core": "workspace:*",
+    "@critical-path/mcp": "workspace:*"
   },
   "peerDependencies": {
     "svelte": "^5.0.0"

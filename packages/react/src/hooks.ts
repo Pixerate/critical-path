@@ -14,6 +14,7 @@ import type {
   SemanticStatus
 } from '@critical-path/core';
 import { resolveStatusDefinition } from '@critical-path/core';
+import { registerWebMcpTools } from '@critical-path/mcp/web';
 import { useCriticalPathClient } from './provider.js';
 
 export function useWorkflows() {
@@ -634,4 +635,56 @@ export function useDeliverableSummary(deliverableId?: string) {
     refresh: fetchSummary
   };
 }
+
+export interface UseWebMCPOptions {
+  projectId?: string;
+  tools?: string[];
+  enabled?: boolean;
+  onToolExecuted?: (toolName: string, input: any, result: any) => void;
+}
+
+export function useWebMCP(options: UseWebMCPOptions = {}) {
+  const client = useCriticalPathClient();
+  const { projectId, tools, enabled = true, onToolExecuted } = options;
+  const [registered, setRegistered] = useState(false);
+  const [registeredTools, setRegisteredTools] = useState<string[]>([]);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setRegistered(false);
+      setRegisteredTools([]);
+      return;
+    }
+
+    try {
+      const handle = registerWebMcpTools({
+        client,
+        projectId,
+        tools,
+        onToolExecuted
+      });
+
+      setRegistered(true);
+      setRegisteredTools(handle.getRegisteredTools().map((t) => t.name));
+      setError(null);
+
+      return () => {
+        handle.unregister();
+        setRegistered(false);
+        setRegisteredTools([]);
+      };
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+      setRegistered(false);
+    }
+  }, [client, projectId, enabled, tools, onToolExecuted]);
+
+  return {
+    registered,
+    tools: registeredTools,
+    error
+  };
+}
+
 

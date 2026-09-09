@@ -14,8 +14,10 @@ When an AI agent maintains, extends, or consumes project management features usi
    - `@critical-path/core`: Types, `CriticalPathEngine`, plugins, storage adapters (`InMemoryStore`, `SQLiteStore`, `FirebaseStore`).
    - `@critical-path/server`: Route handlers and framework adapters (`createNextHandler`, `createSvelteKitHandler`).
    - `@critical-path/client`: `CriticalPathClient` type-safe SDK.
-   - `@critical-path/react`: `CriticalPathProvider`, `useProjects`, `useTasks`, `useKanban`.
-   - `@critical-path/svelte`: `createCriticalPathClient`, `createProjectState`, `createTaskState`, `ProjectState`, `TaskState`.
+   - `@critical-path/mcp`: Model Context Protocol server (`createCriticalPathMcpServer`) & client WebMCP (`registerWebMcpTools`).
+   - `@critical-path/react`: `CriticalPathProvider`, `useProjects`, `useTasks`, `useKanban`, `useWebMCP`.
+   - `@critical-path/svelte`: `createCriticalPathClient`, `createProjectState`, `createTaskState`, `ProjectState`, `TaskState`, `WebMcpState`, `createWebMcpState`.
+
 
 ---
 

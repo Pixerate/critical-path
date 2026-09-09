@@ -5,7 +5,8 @@ import {
   useComments,
   useAttachments,
   useDeliverables,
-  useDeliverableSummary
+  useDeliverableSummary,
+  useWebMCP
 } from './index.js';
 
 describe('@critical-path/react Exports Test', () => {
@@ -16,5 +17,6 @@ describe('@critical-path/react Exports Test', () => {
     expect(useAttachments).toBeDefined();
     expect(useDeliverables).toBeDefined();
     expect(useDeliverableSummary).toBeDefined();
+    expect(useWebMCP).toBeDefined();
   });
 });

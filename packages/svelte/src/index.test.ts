@@ -14,7 +14,9 @@ import {
   TaskActivityState,
   createTaskActivityState,
   DeliverableState,
-  createDeliverableState
+  createDeliverableState,
+  WebMcpState,
+  createWebMcpState
 } from './index.js';
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Project, Task, Workflow, Comment, Attachment, Deliverable, DeliverableSummary } from '@critical-path/core';
@@ -408,5 +410,51 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       expect(state.data).toEqual([]);
     });
   });
+
+  describe('WebMcpState', () => {
+    it('manages WebMCP registration, project scoping, and unregistration', async () => {
+      const mockDoc: any = {};
+      const mockWin: any = {};
+
+      const mockClient = {
+        getTasks: vi.fn().mockResolvedValue([]),
+        createTask: vi.fn().mockImplementation((input) => Promise.resolve({ id: 't1', ...input }))
+      } as unknown as CriticalPathClient;
+
+      const mcpState = createWebMcpState(mockClient, {
+        projectId: 'proj_svelte',
+        document: mockDoc,
+        window: mockWin
+      });
+
+      expect(mcpState.registered).toBe(true);
+      expect(mcpState.activeProjectId).toBe('proj_svelte');
+      expect(mcpState.tools.length).toBeGreaterThan(0);
+      expect(mockDoc.modelContext).toBeDefined();
+
+      // Execute tool via modelContext
+      const created = await mockDoc.modelContext.executeTool('create_task', {
+        title: 'Svelte 5 Task'
+      });
+      expect(created.projectId).toBe('proj_svelte');
+      expect(created.title).toBe('Svelte 5 Task');
+
+      // Update project ID dynamically
+      mcpState.setProjectId('proj_svelte_2');
+      expect(mcpState.activeProjectId).toBe('proj_svelte_2');
+      expect(mcpState.registered).toBe(true);
+
+      const created2 = await mockDoc.modelContext.executeTool('create_task', {
+        title: 'Svelte 5 Task 2'
+      });
+      expect(created2.projectId).toBe('proj_svelte_2');
+
+      // Unregister
+      mcpState.unregister();
+      expect(mcpState.registered).toBe(false);
+      expect(mcpState.tools).toEqual([]);
+    });
+  });
 });
+
 

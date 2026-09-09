@@ -19,6 +19,7 @@ Welcome to the **Critical Path** developer documentation. This guide provides an
 9. [File Storage Adapters (Attachments & S3 / Firebase Storage)](#9-file-storage-adapters-attachments--s3--firebase-storage)
 10. [Threaded Comments & Attachments (React & Svelte)](#10-threaded-comments--attachments-react--svelte)
 11. [Domain-Driven Design (DDD) & Event-Driven Architecture](#11-domain-driven-design-ddd--event-driven-architecture)
+12. [Model Context Protocol (MCP) & WebMCP Integration](#12-model-context-protocol-mcp--webmcp-integration)
 
 ---
 
@@ -39,8 +40,9 @@ The repository uses pnpm workspaces containing the following core packages:
 - `packages/core` (`@critical-path/core`): Domain models, `CriticalPathEngine`, `PluginRegistry`, `StorageAdapter` interface, `InMemoryStore`, `SQLiteStore`, and `FirebaseStore`.
 - `packages/server` (`@critical-path/server`): Web Fetch router and platform adapters (`createNextHandler`, `createSvelteKitHandler`).
 - `packages/client` (`@critical-path/client`): Type-safe HTTP Client SDK (`CriticalPathClient`).
-- `packages/react` (`@critical-path/react`): React Context Provider (`CriticalPathProvider`) and hooks (`useProjects`, `useTasks`, `useKanban`).
-- `packages/svelte` (`@critical-path/svelte`): Svelte 5 Runes state classes & factory functions (`createProjectState`, `createTaskState`).
+- `packages/mcp` (`@critical-path/mcp`): Model Context Protocol (MCP) server & client-side WebMCP integration.
+- `packages/react` (`@critical-path/react`): React Context Provider (`CriticalPathProvider`) and hooks (`useProjects`, `useTasks`, `useKanban`, `useWebMCP`).
+- `packages/svelte` (`@critical-path/svelte`): Svelte 5 Runes state classes & factory functions (`createProjectState`, `createTaskState`, `createWebMcpState`).
 - `packages/create-critical-path` (`create-critical-path`): CLI scaffolder executable (`npx create-critical-path@latest`).
 - `apps/docs` (`@critical-path/docs`): Astro + Starlight + Tailwind CSS documentation and marketing site deployed to Firebase App Hosting at `https://criticalpath.pixerate.com`.
 
@@ -657,4 +659,63 @@ Discrete interfaces are provided for repository segregation:
 - `DependencyRepository`
 - `WebhookRepository`
 - `StorageAdapter` (composition of all repositories)
+
+---
+
+## 12. Model Context Protocol (MCP) & WebMCP Integration
+
+`@critical-path/mcp` connects AI coding agents, autonomous background workers, and in-browser copilots directly into your project management workflow.
+
+### 1. Standard Server MCP (Stdio / Remote API)
+
+Run via CLI to expose project management tools to Claude Desktop, Cursor, or terminal agents:
+```bash
+# Direct local SQLite database
+npx @critical-path/mcp --db ./app.db
+
+# Remote Next.js / SvelteKit endpoint
+npx @critical-path/mcp --api http://localhost:3000/api/critical-path
+```
+
+Or instantiate programmatically in server runtimes:
+```typescript
+import { createCriticalPathMcpServer, startStdioServer } from '@critical-path/mcp/server';
+import { CriticalPathEngine, SQLiteStore } from '@critical-path/core';
+
+const engine = new CriticalPathEngine({ store: new SQLiteStore({ filename: 'prod.db' }) });
+const server = createCriticalPathMcpServer({ engine });
+await startStdioServer(server);
+```
+
+### 2. Client-Side WebMCP (W3C WebML CG Compliant)
+
+WebMCP enables in-browser AI assistants (page copilots, sidebar agents, extension bots) to manipulate tasks with ambient project scoping, without scraping DOM elements.
+
+#### React Hook (`useWebMCP`)
+```tsx
+import { useWebMCP } from '@critical-path/react';
+
+export function ProjectView({ projectId }: { projectId: string }) {
+  const { registered, tools } = useWebMCP({
+    projectId,
+    tools: ['create_task', 'list_tasks', 'update_task', 'add_comment']
+  });
+
+  return <div>{registered ? 'AI Copilot Ready' : 'Loading Copilot...'}</div>;
+}
+```
+
+#### Svelte 5 Runes State (`createWebMcpState`)
+```svelte
+<script lang="ts">
+  import { createCriticalPathClient, createWebMcpState } from '@critical-path/svelte';
+
+  const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
+  const mcp = createWebMcpState(client, { projectId: 'project_1' });
+</script>
+
+{#if mcp.registered}
+  <span class="badge">🤖 Copilot active: {mcp.tools.length} tools registered</span>
+{/if}
+```
 

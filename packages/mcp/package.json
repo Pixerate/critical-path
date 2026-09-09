@@ -1,7 +1,7 @@
 {
-  "name": "@critical-path/react",
-  "version": "0.6.2",
-  "description": "React Context Provider and Hooks for Critical Path headless project management framework",
+  "name": "@critical-path/mcp",
+  "version": "0.1.0",
+  "description": "Standard Model Context Protocol (MCP) server and client-side WebMCP support for Critical Path",
   "author": "Jack James",
   "license": "MIT",
   "repository": {
@@ -11,10 +11,21 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "critical-path-mcp": "./dist/bin/cli.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./server": {
+      "import": "./dist/server/index.js",
+      "types": "./dist/server/index.d.ts"
+    },
+    "./web": {
+      "import": "./dist/web/index.js",
+      "types": "./dist/web/index.d.ts"
     }
   },
   "scripts": {
@@ -25,15 +36,11 @@
   "dependencies": {
     "@critical-path/client": "workspace:*",
     "@critical-path/core": "workspace:*",
-    "@critical-path/mcp": "workspace:*"
-  },
-  "peerDependencies": {
-    "react": "^18.0.0 || ^19.0.0"
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "@types/react": "^19.0.0",
-    "react": "^19.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },

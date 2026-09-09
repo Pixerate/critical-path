@@ -111,8 +111,9 @@ graph TD
 - 🔔 **Webhooks & Audit Streams**: Real-time event notifications (`task.created`, `task.status_changed`) and immutable activity logs.
 - 💬 **Threaded Conversations & Discussions**: Hierarchical threaded discussions with parent/reply mapping, multi-author taxonomy (`user`, `agent`, `system`), and emoji reactions (`👍`, `🚀`, `❤️`, etc.).
 - 📁 **Attachment Management & Cloud Storage**: Attachment metadata tracking with zero-dependency adapters for **AWS S3** (`S3StorageAdapter`), **Google Cloud / Firebase Storage** (`FirebaseStorageAdapter`), and in-memory (`InMemoryFileStore`).
-- ⏱️ **Time Tracking & Activity Streams**: Full time entry logging and audit feeds.
+- 🤖 **Model Context Protocol (MCP) & Client-Side WebMCP**: Dual AI integration with standard Server MCP (`@critical-path/mcp/server`) for Claude Desktop/Cursor/agents, and W3C WebML CG compliant WebMCP (`@critical-path/mcp/web`) with ambient project scoping for in-browser copilots across React (`useWebMCP`) and Svelte 5 (`WebMcpState`).
 - ⚡ **Type-Safe Ecosystem**: First-class TypeScript types across engine, server route adapters, client SDK, and React/Svelte hooks.
+
 
 ---
 
@@ -177,8 +178,9 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 | [`@critical-path/core`](./packages/core) | Core domain engine, plugin lifecycle hooks, and storage adapters | ![npm](https://img.shields.io/npm/v/@critical-path/core) |
 | [`@critical-path/server`](./packages/server) | Web Fetch API router with adapters for Next.js App Router & SvelteKit | ![npm](https://img.shields.io/npm/v/@critical-path/server) |
 | [`@critical-path/client`](./packages/client) | Type-safe HTTP Client SDK for web applications | ![npm](https://img.shields.io/npm/v/@critical-path/client) |
-| [`@critical-path/react`](./packages/react) | React Context Provider and hooks (`useProjects`, `useTasks`, `useKanban`) | ![npm](https://img.shields.io/npm/v/@critical-path/react) |
-| [`@critical-path/svelte`](./packages/svelte) | Svelte 5 Runes state (`createProjectState`, `createTaskState`) | ![npm](https://img.shields.io/npm/v/@critical-path/svelte) |
+| [`@critical-path/mcp`](./packages/mcp) | Model Context Protocol (MCP) server & client-side WebMCP integration | ![npm](https://img.shields.io/npm/v/@critical-path/mcp) |
+| [`@critical-path/react`](./packages/react) | React Context Provider and hooks (`useProjects`, `useTasks`, `useWebMCP`) | ![npm](https://img.shields.io/npm/v/@critical-path/react) |
+| [`@critical-path/svelte`](./packages/svelte) | Svelte 5 Runes state (`createProjectState`, `createWebMcpState`) | ![npm](https://img.shields.io/npm/v/@critical-path/svelte) |
 | [`create-critical-path`](./packages/create-critical-path) | CLI tool (`npx create-critical-path@latest`) to scaffold new apps | ![npm](https://img.shields.io/npm/v/create-critical-path) |
 
 ---
