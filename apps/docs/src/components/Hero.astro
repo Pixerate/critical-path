@@ -1,5 +1,8 @@
 ---
 // apps/docs/src/components/Hero.astro
+import corePkg from '../../../../packages/core/package.json';
+
+const version = `v${corePkg.version}`;
 ---
 
 <section class="relative pt-2 pb-12 md:pt-4 md:pb-20 overflow-hidden text-center">
@@ -11,7 +14,7 @@
   <!-- Release & Status Badge -->
   <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-100 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-700/60 shadow-sm dark:shadow-lg text-xs mb-6 backdrop-blur-md">
     <span class="flex h-2 w-2 rounded-full bg-emerald-500"></span>
-    <span class="font-medium text-slate-700 dark:text-slate-300">v0.1.2 Production Release</span>
+    <span class="font-medium text-slate-700 dark:text-slate-300">{version} Production Release</span>
     <span class="text-slate-400 dark:text-slate-600">&bull;</span>
     <span class="text-sky-600 dark:text-sky-400 font-mono font-medium">100% Type-Safe Headless PM</span>
   </div>
