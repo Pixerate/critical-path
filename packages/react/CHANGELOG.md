@@ -1,5 +1,13 @@
 # @critical-path/react
 
+## 0.8.0
+
+### Minor Changes
+
+- 105f3d3: Synchronize feature parity between `@critical-path/react` and `@critical-path/svelte`:
+  - `@critical-path/react`: Added `updateTask` with optimistic updates and rollback to `useTasks`, and introduced `useTaskActivity` hook for unified threaded discussions and attachments.
+  - `@critical-path/svelte`: Added `KanbanState` (`createKanbanState`), `TaskTransitionsState` (`createTaskTransitionsState`), and `DeliverableSummaryState` (`createDeliverableSummaryState`) using native Svelte 5 runes.
+
 ## 0.7.0
 
 ### Minor Changes
