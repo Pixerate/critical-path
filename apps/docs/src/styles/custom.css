@@ -31,6 +31,10 @@
   --sl-color-hairline-light: rgba(0, 0, 0, 0.08);
 }
 
+html, body {
+  overflow-x: clip;
+}
+
 /* Splash page layout optimizations: wider container and tighter top padding */
 html:not([data-has-sidebar]) .content-panel {
   padding-top: 0.5rem;
