@@ -11,5 +11,9 @@ export * from './comment-state.svelte.js';
 export * from './attachment-state.svelte.js';
 export * from './activity-state.svelte.js';
 export * from './deliverable-state.svelte.js';
+export * from './deliverable-summary-state.svelte.js';
+export * from './kanban-state.svelte.js';
+export * from './task-transitions-state.svelte.js';
 export * from './webmcp-state.svelte.js';
+
 

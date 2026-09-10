@@ -2,7 +2,7 @@
 
 > **Svelte 5 Runes Reactive Integrations for Critical Path.**
 
-`@critical-path/svelte` provides Svelte 5 Runes reactive state classes and factories (`ProjectState`, `TaskState`, `WorkflowState`, `CommentState`, `AttachmentState`, `TaskActivityState`) for building project management UIs in Svelte 5 and SvelteKit applications.
+`@critical-path/svelte` provides Svelte 5 Runes reactive state classes and factories (`ProjectState`, `TaskState`, `KanbanState`, `TaskTransitionsState`, `WorkflowState`, `CommentState`, `AttachmentState`, `TaskActivityState`, `DeliverableState`, `DeliverableSummaryState`, `WebMcpState`) for building project management UIs in Svelte 5 and SvelteKit applications.
 
 ---
 
@@ -52,7 +52,39 @@ pnpm add @critical-path/svelte svelte@^5.0.0
 {/if}
 ```
 
-### 2. Unified Task Activity & Threaded Discussions (`TaskActivityState`)
+### 2. Reactive Kanban Board (`KanbanState`)
+
+Buckets tasks reactively into workflow columns (`backlog`, `todo`, `in_progress`, etc.) or semantic columns (`not_started`, `in_progress`, `completed`, `canceled`):
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { createCriticalPathClient, createKanbanState } from '@critical-path/svelte';
+
+  const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
+  const kanban = createKanbanState(client, 'proj_1');
+
+  onMount(() => {
+    kanban.fetch();
+  });
+</script>
+
+<div class="board" style="display: flex; gap: 16px;">
+  {#each Object.entries(kanban.columns) as [status, tasks]}
+    <div class="column">
+      <h3>{status} ({tasks.length})</h3>
+      {#each tasks as task}
+        <div class="card">
+          <h4>{task.title}</h4>
+          <button on:click={() => kanban.moveTask(task.id, 'done')}>Mark Done</button>
+        </div>
+      {/each}
+    </div>
+  {/each}
+</div>
+```
+
+### 3. Unified Task Activity & Threaded Discussions (`TaskActivityState`)
 
 Combines threaded comments with inline attachments (`attachment.commentId === comment.id`) and standalone attachments in a single reactive store:
 

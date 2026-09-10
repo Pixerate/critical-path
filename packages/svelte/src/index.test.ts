@@ -15,6 +15,12 @@ import {
   createTaskActivityState,
   DeliverableState,
   createDeliverableState,
+  DeliverableSummaryState,
+  createDeliverableSummaryState,
+  KanbanState,
+  createKanbanState,
+  TaskTransitionsState,
+  createTaskTransitionsState,
   WebMcpState,
   createWebMcpState
 } from './index.js';
@@ -31,6 +37,9 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
     expect(createAttachmentState).toBeDefined();
     expect(createTaskActivityState).toBeDefined();
     expect(createDeliverableState).toBeDefined();
+    expect(createDeliverableSummaryState).toBeDefined();
+    expect(createKanbanState).toBeDefined();
+    expect(createTaskTransitionsState).toBeDefined();
     expect(ProjectState).toBeDefined();
     expect(TaskState).toBeDefined();
     expect(WorkflowState).toBeDefined();
@@ -38,6 +47,11 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
     expect(AttachmentState).toBeDefined();
     expect(TaskActivityState).toBeDefined();
     expect(DeliverableState).toBeDefined();
+    expect(DeliverableSummaryState).toBeDefined();
+    expect(KanbanState).toBeDefined();
+    expect(TaskTransitionsState).toBeDefined();
+    expect(WebMcpState).toBeDefined();
+    expect(createWebMcpState).toBeDefined();
   });
 
   describe('WorkflowState', () => {
@@ -455,6 +469,106 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       expect(mcpState.tools).toEqual([]);
     });
   });
+
+  describe('KanbanState', () => {
+    it('initializes and buckets tasks into workflow and semantic columns', async () => {
+      const mockTasks: Task[] = [
+        {
+          id: 't_todo',
+          projectId: 'p1',
+          title: 'To Do Task',
+          status: 'todo',
+          priority: 'high',
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-01'
+        },
+        {
+          id: 't_done',
+          projectId: 'p1',
+          title: 'Done Task',
+          status: 'done',
+          priority: 'low',
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-01'
+        }
+      ];
+
+      const mockClient = {
+        getTasks: vi.fn().mockResolvedValue(mockTasks),
+        updateTask: vi.fn().mockImplementation((id, updates) => Promise.resolve({ ...mockTasks.find((t) => t.id === id), ...updates }))
+      } as unknown as CriticalPathClient;
+
+      // Workflow grouping
+      const kanban = createKanbanState(mockClient, 'p1');
+      await kanban.fetch();
+
+      expect(kanban.columns.todo).toHaveLength(1);
+      expect(kanban.columns.done).toHaveLength(1);
+      expect(kanban.columns.in_progress).toHaveLength(0);
+
+      // Move task
+      const updated = await kanban.moveTask('t_todo', 'in_progress');
+      expect(updated.status).toBe('in_progress');
+
+      // Semantic grouping
+      const semanticKanban = createKanbanState(mockClient, 'p1', { groupBy: 'semantic' });
+      await semanticKanban.fetch();
+      expect(semanticKanban.columns.not_started).toHaveLength(1);
+      expect(semanticKanban.columns.completed).toHaveLength(1);
+    });
+  });
+
+  describe('TaskTransitionsState', () => {
+    it('fetches allowed transitions for a task', async () => {
+      const mockClient = {
+        getAllowedTaskTransitions: vi.fn().mockResolvedValue(['in_progress', 'canceled'])
+      } as unknown as CriticalPathClient;
+
+      const transitionsState = createTaskTransitionsState(mockClient, 'task_123');
+      expect(transitionsState.allowedTransitions).toEqual([]);
+
+      await transitionsState.fetch();
+      expect(mockClient.getAllowedTaskTransitions).toHaveBeenCalledWith('task_123');
+      expect(transitionsState.allowedTransitions).toEqual(['in_progress', 'canceled']);
+    });
+  });
+
+  describe('DeliverableSummaryState', () => {
+    it('fetches deliverable summary reactively', async () => {
+      const mockDeliverable: Deliverable = {
+        id: 'deliv_1',
+        projectId: 'proj_1',
+        title: 'MVP Launch',
+        status: 'planned',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      };
+
+      const mockSummary: DeliverableSummary = {
+        deliverable: mockDeliverable,
+        totalTasks: 4,
+        completedTasks: 3,
+        activeTasks: 1,
+        progressPercentage: 75,
+        estimatedHours: 40,
+        loggedHours: 30
+      };
+
+      const mockClient = {
+        getDeliverableSummary: vi.fn().mockResolvedValue(mockSummary)
+      } as unknown as CriticalPathClient;
+
+      const summaryState = createDeliverableSummaryState(mockClient, 'deliv_1');
+      expect(summaryState.summary).toBeNull();
+      expect(summaryState.data).toBeNull();
+
+      await summaryState.fetch();
+      expect(mockClient.getDeliverableSummary).toHaveBeenCalledWith('deliv_1');
+      expect(summaryState.summary).toEqual(mockSummary);
+      expect(summaryState.data).toEqual(mockSummary);
+    });
+  });
 });
+
 
 

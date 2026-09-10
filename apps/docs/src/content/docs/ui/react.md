@@ -16,7 +16,7 @@ import { CriticalPathProvider } from '@critical-path/react';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <CriticalPathProvider baseUrl="/api/critical-path">
+    <CriticalPathProvider options={{ baseUrl: '/api/critical-path' }}>
       {children}
     </CriticalPathProvider>
   );
@@ -28,16 +28,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 ## Available Hooks
 
 ### `useTasks`
-Manages task retrieval, filtering, and CRUD operations:
+Manages task retrieval, filtering, and CRUD operations with optimistic rollback:
 
 ```tsx
 import { useTasks } from '@critical-path/react';
 
 function TaskView({ projectId }: { projectId: string }) {
-  const { tasks, loading, error, createTask, updateTaskStatus, deleteTask } = useTasks({
-    projectId,
-    status: 'in_progress', // Optional filter
-  });
+  const { tasks, loading, error, createTask, updateTask, updateTaskStatus, deleteTask } = useTasks(projectId);
+
+  const handleUpdate = async (taskId: string) => {
+    await updateTask(taskId, { priority: 'urgent' });
+  };
 
   return (/* JSX */);
 }
@@ -56,27 +57,71 @@ function ProjectSelector() {
 ```
 
 ### `useKanban`
-Organizes tasks into customizable Kanban columns with reordering and drag-and-drop support:
+Organizes tasks into workflow or semantic Kanban columns with reordering and drag-and-drop support:
 
 ```tsx
 import { useKanban } from '@critical-path/react';
 
 function KanbanBoard({ projectId }: { projectId: string }) {
-  const { columns, moveTask } = useKanban({ projectId });
+  const { columns, moveTask, loading } = useKanban(projectId, { groupBy: 'workflow' });
+
+  if (loading) return <div>Loading board...</div>;
 
   return (
     <div className="flex gap-4">
-      {columns.map(column => (
-        <div key={column.id} className="w-72 bg-gray-100 p-4 rounded">
-          <h3 className="font-bold">{column.title} ({column.tasks.length})</h3>
-          {column.tasks.map(task => (
+      {Object.entries(columns).map(([columnName, tasks]) => (
+        <div key={columnName} className="w-72 bg-gray-100 p-4 rounded">
+          <h3 className="font-bold">{columnName} ({tasks.length})</h3>
+          {tasks.map(task => (
             <div key={task.id} className="p-2 bg-white rounded shadow my-2">
-              {task.title}
+              <span>{task.title}</span>
+              <button onClick={() => moveTask(task.id, 'done')}>Done</button>
             </div>
           ))}
         </div>
       ))}
     </div>
+  );
+}
+```
+
+### `useTaskActivity`
+Combines threaded discussions with inline attachments and emoji reactions:
+
+```tsx
+import { useTaskActivity } from '@critical-path/react';
+
+function TaskActivity({ taskId }: { taskId: string }) {
+  const { threads, standaloneAttachments, addComment, addReaction } = useTaskActivity(taskId);
+
+  return (
+    <div>
+      {threads.map(thread => (
+        <div key={thread.id}>
+          <p>{thread.content}</p>
+          <button onClick={() => addReaction(thread.id, '👍', 'user_1')}>👍</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+### `useTaskTransitions`
+Fetches allowed state transitions for a task governed by workflow definitions:
+
+```tsx
+import { useTaskTransitions } from '@critical-path/react';
+
+function TaskStatusPicker({ taskId }: { taskId: string }) {
+  const { allowedTransitions, loading } = useTaskTransitions(taskId);
+
+  return (
+    <select>
+      {allowedTransitions.map(status => (
+        <option key={status} value={status}>{status}</option>
+      ))}
+    </select>
   );
 }
 ```

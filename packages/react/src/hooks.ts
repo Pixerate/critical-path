@@ -205,7 +205,7 @@ export function useTasks(projectId?: string) {
     }
   };
 
-  const updateTaskStatus = async (taskId: string, status: TaskStatus) => {
+  const updateTask = async (taskId: string, updates: Partial<Task>) => {
     let previousTask: Task | undefined;
 
     setTasks((prev) => {
@@ -213,13 +213,13 @@ export function useTasks(projectId?: string) {
       if (!previousTask) return prev;
       return prev.map((t) =>
         t.id === taskId
-          ? { ...t, status, updatedAt: new Date().toISOString() }
+          ? { ...t, ...updates, updatedAt: new Date().toISOString() }
           : t
       );
     });
 
     try {
-      const updated = await client.updateTask(taskId, { status });
+      const updated = await client.updateTask(taskId, updates);
       setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
       return updated;
     } catch (err) {
@@ -231,6 +231,10 @@ export function useTasks(projectId?: string) {
       setError(errorObj);
       throw errorObj;
     }
+  };
+
+  const updateTaskStatus = async (taskId: string, status: TaskStatus) => {
+    return updateTask(taskId, { status });
   };
 
   const deleteTask = async (taskId: string) => {
@@ -263,7 +267,7 @@ export function useTasks(projectId?: string) {
     }
   };
 
-  return { tasks, loading, error, refresh: fetchTasks, createTask, updateTaskStatus, deleteTask };
+  return { tasks, loading, error, refresh: fetchTasks, createTask, updateTask, updateTaskStatus, deleteTask };
 }
 
 export interface UseKanbanOptions {
@@ -686,5 +690,224 @@ export function useWebMCP(options: UseWebMCPOptions = {}) {
     error
   };
 }
+
+export interface ThreadedCommentWithAttachments extends Comment {
+  attachments: Attachment[];
+  replies: ThreadedCommentWithAttachments[];
+}
+
+export function useTaskActivity(taskId?: string) {
+  const client = useCriticalPathClient();
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchActivity = useCallback(async () => {
+    if (!taskId) {
+      setComments([]);
+      setAttachments([]);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const [fetchedComments, fetchedAttachments] = await Promise.all([
+        client.getComments(taskId),
+        client.getAttachments({ taskId })
+      ]);
+      setComments(fetchedComments);
+      setAttachments(fetchedAttachments);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, taskId]);
+
+  useEffect(() => {
+    fetchActivity();
+  }, [fetchActivity]);
+
+  const threads = useMemo<ThreadedCommentWithAttachments[]>(() => {
+    const map = new Map<string, ThreadedCommentWithAttachments>();
+    const roots: ThreadedCommentWithAttachments[] = [];
+
+    const attachmentsByComment = new Map<string, Attachment[]>();
+    for (const a of attachments) {
+      if (a.commentId) {
+        if (!attachmentsByComment.has(a.commentId)) {
+          attachmentsByComment.set(a.commentId, []);
+        }
+        attachmentsByComment.get(a.commentId)!.push(a);
+      }
+    }
+
+    for (const c of comments) {
+      map.set(c.id, {
+        ...c,
+        attachments: attachmentsByComment.get(c.id) || [],
+        replies: []
+      });
+    }
+
+    for (const c of comments) {
+      const threaded = map.get(c.id)!;
+      if (c.parentId && map.has(c.parentId)) {
+        map.get(c.parentId)!.replies.push(threaded);
+      } else {
+        roots.push(threaded);
+      }
+    }
+
+    return roots;
+  }, [comments, attachments]);
+
+  const standaloneAttachments = useMemo<Attachment[]>(() => {
+    return attachments.filter((a) => !a.commentId);
+  }, [attachments]);
+
+  const addComment = async (
+    input: Omit<Comment, 'id' | 'taskId' | 'createdAt' | 'updatedAt'>,
+    attachmentInputs?: Array<Omit<Attachment, 'id' | 'taskId' | 'commentId' | 'createdAt' | 'updatedAt'>>
+  ) => {
+    if (!taskId) {
+      throw new Error('useTaskActivity requires a taskId to add comments.');
+    }
+    try {
+      const comment = await client.addComment({ ...input, taskId });
+      let createdAttachments: Attachment[] = [];
+
+      if (attachmentInputs && attachmentInputs.length > 0) {
+        createdAttachments = await Promise.all(
+          attachmentInputs.map((att) =>
+            client.createAttachment({
+              ...att,
+              taskId,
+              commentId: comment.id
+            })
+          )
+        );
+      }
+
+      setComments((prev) => [...prev, comment]);
+      if (createdAttachments.length > 0) {
+        setAttachments((prev) => [...prev, ...createdAttachments]);
+      }
+      return { comment, attachments: createdAttachments };
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const addAttachment = async (input: Omit<Attachment, 'id' | 'taskId' | 'createdAt' | 'updatedAt'>) => {
+    if (!taskId) {
+      throw new Error('useTaskActivity requires a taskId to add attachments.');
+    }
+    try {
+      const created = await client.createAttachment({ ...input, taskId });
+      setAttachments((prev) => [created, ...prev]);
+      return created;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const deleteComment = async (id: string) => {
+    let previousComments: Comment[] = [];
+    setComments((prev) => {
+      previousComments = prev;
+      return prev.filter((c) => c.id !== id);
+    });
+
+    try {
+      await client.deleteComment(id);
+    } catch (err) {
+      setComments(previousComments);
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const deleteAttachment = async (id: string) => {
+    let previousAttachments: Attachment[] = [];
+    setAttachments((prev) => {
+      previousAttachments = prev;
+      return prev.filter((a) => a.id !== id);
+    });
+
+    try {
+      await client.deleteAttachment(id);
+    } catch (err) {
+      setAttachments(previousAttachments);
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const addReaction = async (
+    commentId: string,
+    reactionOrEmoji: { emoji: string; userId: string } | string,
+    maybeUserId?: string
+  ) => {
+    try {
+      const payload =
+        typeof reactionOrEmoji === 'string'
+          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
+          : reactionOrEmoji;
+      const updated = await client.addCommentReaction(commentId, payload);
+      setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)));
+      return updated;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  const removeReaction = async (
+    commentId: string,
+    reactionOrEmoji: { emoji: string; userId: string } | string,
+    maybeUserId?: string
+  ) => {
+    try {
+      const payload =
+        typeof reactionOrEmoji === 'string'
+          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
+          : reactionOrEmoji;
+      const updated = await client.removeCommentReaction(commentId, payload);
+      setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)));
+      return updated;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      setError(errorObj);
+      throw errorObj;
+    }
+  };
+
+  return {
+    comments,
+    attachments,
+    threads,
+    standaloneAttachments,
+    loading,
+    error,
+    refresh: fetchActivity,
+    addComment,
+    addAttachment,
+    deleteComment,
+    deleteAttachment,
+    addReaction,
+    removeReaction
+  };
+}
+
 
 

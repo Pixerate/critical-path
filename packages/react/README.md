@@ -2,7 +2,7 @@
 
 > **React Context Provider & Hooks for Critical Path.**
 
-`@critical-path/react` provides components and custom React hooks (`useProjects`, `useTasks`, `useKanban`) for rendering project management UIs in React and Next.js.
+`@critical-path/react` provides components and custom React hooks (`useProjects`, `useTasks`, `useKanban`, `useTaskActivity`, `useComments`, `useAttachments`, `useTaskTransitions`, `useWorkflows`, `useDeliverables`, `useDeliverableSummary`, `useWebMCP`) for rendering project management UIs in React and Next.js.
 
 ---
 
@@ -80,6 +80,33 @@ export function TaskDiscussion({ taskId }: { taskId: string }) {
             <button onClick={() => addReaction(comment.id, '🚀', 'user_1')}>🚀</button>
             <span>{comment.reactions?.length || 0} reactions</span>
           </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+### 4. Unified Task Activity (`useTaskActivity`)
+
+Combines threaded comments with inline attachments and standalone attachments:
+
+```tsx
+'use client';
+
+import { useTaskActivity } from '@critical-path/react';
+
+export function ActivityStream({ taskId }: { taskId: string }) {
+  const { threads, standaloneAttachments, addComment, addReaction } = useTaskActivity(taskId);
+
+  return (
+    <div>
+      {threads.map((thread) => (
+        <div key={thread.id}>
+          <p><strong>{thread.authorId}</strong>: {thread.content}</p>
+          {thread.attachments.map((att) => (
+            <a key={att.id} href={att.url}>{att.filename}</a>
+          ))}
         </div>
       ))}
     </div>
