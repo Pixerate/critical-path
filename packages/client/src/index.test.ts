@@ -265,5 +265,77 @@ describe('@critical-path/client Tests', () => {
     expect(deps.upstreamTasks[0].id).toBe('task_upstream');
     expect(deps.dependencies).toHaveLength(1);
   });
+
+  it('fetches critical path and timeline ladder through client SDK', async () => {
+    const mockFetch = async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+
+      if (urlStr.endsWith('/projects/p1/critical-path')) {
+        return new Response(JSON.stringify({
+          analysis: {
+            projectId: 'p1',
+            calculatedAt: '2026-09-11T10:00:00Z',
+            totalDurationHours: 18,
+            criticalTaskIds: ['t1', 't2'],
+            tasks: []
+          }
+        }), { status: 200 });
+      }
+
+      if (urlStr.includes('/projects/p1/ladder?level=macro')) {
+        return new Response(JSON.stringify({
+          ladder: {
+            projectId: 'p1',
+            generatedAt: '2026-09-11T10:00:00Z',
+            level: 'macro',
+            macro: {
+              projectId: 'p1',
+              projectName: 'Client Project',
+              totalDurationHours: 18,
+              criticalPathDurationHours: 18,
+              overallProgressPercentage: 50,
+              health: 'on_track',
+              totalTasks: 2,
+              completedTasks: 1,
+              inProgressTasks: 1,
+              blockedTasks: 0,
+              totalEstimatedHours: 18,
+              totalLoggedHours: 9,
+              phases: []
+            }
+          }
+        }), { status: 200 });
+      }
+
+      if (urlStr.endsWith('/tasks/t2/ladder')) {
+        return new Response(JSON.stringify({
+          taskLadder: {
+            taskId: 't2',
+            standard: { id: 't2', title: 'Task 2', status: 'in_progress', priority: 'high' },
+            concrete: { taskId: 't2', attachments: [], deliverables: [], todos: [], timeEntries: [], dailyEffortDistribution: [], activities: [] }
+          }
+        }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+    };
+
+    const client = new CriticalPathClient({
+      baseUrl: 'http://localhost:3000/api/critical-path',
+      fetch: mockFetch as typeof fetch
+    });
+
+    const cpm = await client.calculateCriticalPath('p1');
+    expect(cpm.totalDurationHours).toBe(18);
+    expect(cpm.criticalTaskIds).toEqual(['t1', 't2']);
+
+    const ladder = await client.getTimelineLadder('p1', { level: 'macro' });
+    expect(ladder.macro?.projectName).toBe('Client Project');
+    expect(ladder.level).toBe('macro');
+
+    const taskLadder = await client.getTaskLadder('t2');
+    expect(taskLadder.taskId).toBe('t2');
+    expect(taskLadder.standard.title).toBe('Task 2');
+  });
 });
 

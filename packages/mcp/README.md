@@ -159,6 +159,9 @@ handle.unregister();
 | `create_deliverable` | Create a milestone deliverable | `{ projectId?, title, dueDate? }` |
 | `list_comments` | Retrieve task comments | `{ taskId }` |
 | `add_comment` | Post a comment to a task | `{ taskId, content, authorId }` |
+| `calculate_critical_path` | Calculate CPM schedule, float/slack & bottleneck tasks | `{ projectId? }` |
+| `get_timeline_ladder` | Multi-scale Bret Victor Ladder of Abstraction (macro/standard/concrete) | `{ projectId?, level?, containerId?, iterationId? }` |
+| `get_task_ladder` | Single-task ladder view connecting phase, CPM Gantt, and concrete evidence | `{ taskId }` |
 
 ---
 

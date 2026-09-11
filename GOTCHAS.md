@@ -45,3 +45,13 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
   cd apps/docs && npm install --package-lock-only
   ```
 
+### Greedy Subpath Stripping in Server Router with Repeated Route Names
+- **Area / Package**: `@critical-path/server`, `CriticalPathRouter`
+- **Symptom / Behavior**: Requests to endpoints such as `/api/critical-path/projects/:id/critical-path` return 404 Not Found even though the subresource route handler is defined.
+- **Root Cause**: The router stripped the route prefix using a greedy regular expression `pathname.replace(/^.*\/critical-path\/?/, '')`. When the pathname contains the prefix substring again deeper in the route path (e.g. `/api/critical-path/.../critical-path`), the greedy `.*` consumed everything up to the second occurrence, resulting in an empty or corrupt subpath.
+- **Solution / Workaround**: Use a non-greedy wildcard `^.*?\/critical-path\/?` so only the base route prefix is stripped, leaving subsequent path segments intact:
+  ```ts
+  const subpath = pathname.replace(/^.*?\/critical-path\/?/, '').replace(/^\/+/, '');
+  ```
+
+

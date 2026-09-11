@@ -11,7 +11,12 @@ import type {
   DeliverableSummary,
   CreateDeliverableInput,
   StatusDefinition,
-  SemanticStatus
+  SemanticStatus,
+  CriticalPathAnalysis,
+  TimelineLadder,
+  TimelineLadderOptions,
+  TaskLadderView,
+  AbstractionLevel
 } from '@critical-path/core';
 import { resolveStatusDefinition } from '@critical-path/core';
 import { registerWebMcpTools } from '@critical-path/mcp/web';
@@ -906,6 +911,129 @@ export function useTaskActivity(taskId?: string) {
     deleteAttachment,
     addReaction,
     removeReaction
+  };
+}
+
+export function useCriticalPath(projectId: string | undefined) {
+  const client = useCriticalPathClient();
+  const [analysis, setAnalysis] = useState<CriticalPathAnalysis | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchCriticalPath = useCallback(async () => {
+    if (!projectId) {
+      setAnalysis(null);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const data = await client.calculateCriticalPath(projectId);
+      setAnalysis(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, projectId]);
+
+  useEffect(() => {
+    fetchCriticalPath();
+  }, [fetchCriticalPath]);
+
+  return {
+    analysis,
+    loading,
+    error,
+    refresh: fetchCriticalPath
+  };
+}
+
+export function useTimelineLadder(
+  projectId: string | undefined,
+  initialOptions: TimelineLadderOptions = {}
+) {
+  const client = useCriticalPathClient();
+  const [level, setLevel] = useState<AbstractionLevel>(initialOptions.level || 'all');
+  const [ladder, setLadder] = useState<TimelineLadder | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchLadder = useCallback(async () => {
+    if (!projectId) {
+      setLadder(null);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const data = await client.getTimelineLadder(projectId, {
+        ...initialOptions,
+        level
+      });
+      setLadder(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, projectId, level, initialOptions.containerId, initialOptions.iterationId]);
+
+  useEffect(() => {
+    fetchLadder();
+  }, [fetchLadder]);
+
+  return {
+    ladder,
+    level,
+    setLevel,
+    macro: ladder?.macro ?? null,
+    standard: ladder?.standard ?? null,
+    concrete: ladder?.concrete ?? null,
+    loading,
+    error,
+    refresh: fetchLadder
+  };
+}
+
+export function useTaskLadder(taskId: string | undefined) {
+  const client = useCriticalPathClient();
+  const [taskLadder, setTaskLadder] = useState<TaskLadderView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchTaskLadder = useCallback(async () => {
+    if (!taskId) {
+      setTaskLadder(null);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const data = await client.getTaskLadder(taskId);
+      setTaskLadder(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, taskId]);
+
+  useEffect(() => {
+    fetchTaskLadder();
+  }, [fetchTaskLadder]);
+
+  return {
+    taskLadder,
+    macroPhase: taskLadder?.macroPhase ?? null,
+    standard: taskLadder?.standard ?? null,
+    concrete: taskLadder?.concrete ?? null,
+    loading,
+    error,
+    refresh: fetchTaskLadder
   };
 }
 

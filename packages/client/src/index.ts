@@ -19,14 +19,32 @@ import type {
   SemanticStatus,
   StatusDefinition,
   TaskDerivedStatus,
-  TaskLifecycleState
+  TaskLifecycleState,
+  CriticalPathAnalysis,
+  TimelineLadder,
+  TimelineLadderOptions,
+  TaskLadderView,
+  MacroTimelineSummary,
+  MacroPhaseRollup,
+  StandardTaskTimelineItem,
+  ConcreteTaskEvidence,
+  RealityDelta
 } from '@critical-path/core';
 
 export type {
   SemanticStatus,
   StatusDefinition,
   TaskDerivedStatus,
-  TaskLifecycleState
+  TaskLifecycleState,
+  CriticalPathAnalysis,
+  TimelineLadder,
+  TimelineLadderOptions,
+  TaskLadderView,
+  MacroTimelineSummary,
+  MacroPhaseRollup,
+  StandardTaskTimelineItem,
+  ConcreteTaskEvidence,
+  RealityDelta
 };
 
 export interface ClientOptions {
@@ -124,6 +142,29 @@ export class CriticalPathClient {
     return res.project;
   }
 
+  async calculateCriticalPath(projectId: string): Promise<CriticalPathAnalysis> {
+    const res = await this.request<{ analysis: CriticalPathAnalysis }>(
+      `/projects/${encodeURIComponent(projectId)}/critical-path`
+    );
+    return res.analysis;
+  }
+
+  async getTimelineLadder(
+    projectId: string,
+    options: TimelineLadderOptions = {}
+  ): Promise<TimelineLadder> {
+    const params = new URLSearchParams();
+    if (options.level) params.set('level', options.level);
+    if (options.containerId) params.set('containerId', options.containerId);
+    if (options.iterationId) params.set('iterationId', options.iterationId);
+    const qs = params.toString();
+    const query = qs ? `?${qs}` : '';
+    const res = await this.request<{ ladder: TimelineLadder }>(
+      `/projects/${encodeURIComponent(projectId)}/ladder${query}`
+    );
+    return res.ladder;
+  }
+
   // Tasks
   async getTasks(projectId?: string): Promise<Task[]> {
     const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
@@ -134,6 +175,13 @@ export class CriticalPathClient {
   async getTask(id: string): Promise<Task> {
     const res = await this.request<{ task: Task }>(`/tasks/${id}`);
     return res.task;
+  }
+
+  async getTaskLadder(taskId: string): Promise<TaskLadderView> {
+    const res = await this.request<{ taskLadder: TaskLadderView }>(
+      `/tasks/${encodeURIComponent(taskId)}/ladder`
+    );
+    return res.taskLadder;
   }
 
   async createTask(data: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task> {

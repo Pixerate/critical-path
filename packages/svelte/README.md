@@ -138,6 +138,68 @@ Combines threaded comments with inline attachments (`attachment.commentId === co
 {/each}
 ```
 
+### 4. Bret Victor's Ladder of Abstraction (`TimelineLadderState`)
+
+Fluidly traverse between Macro phase health, Standard Gantt tasks with CPM critical paths, and Concrete deliverables/effort using Svelte 5 Runes:
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { createCriticalPathClient, createTimelineLadderState, createCriticalPathState } from '@critical-path/svelte';
+
+  const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
+  const ladderState = createTimelineLadderState(client, 'proj_1', { level: 'all' });
+  const cpmState = createCriticalPathState(client, 'proj_1');
+
+  onMount(() => {
+    ladderState.fetch();
+    cpmState.fetch();
+  });
+</script>
+
+<!-- Level Switcher -->
+<div class="flex gap-2">
+  <button on:click={() => ladderState.setLevel('macro')}>Macro</button>
+  <button on:click={() => ladderState.setLevel('standard')}>Standard Gantt</button>
+  <button on:click={() => ladderState.setLevel('concrete')}>Concrete</button>
+  <button on:click={() => ladderState.setLevel('all')}>All Rungs</button>
+</div>
+
+{#if ladderState.loading}
+  <p>Loading timeline ladder...</p>
+{:else}
+  <!-- Macro Rung -->
+  {#if ladderState.macro}
+    <div class="macro-banner">
+      <h3>Phase Health: {ladderState.macro.health} ({ladderState.macro.overallProgressPercentage}% Complete)</h3>
+      <p>Total Duration: {ladderState.macro.totalDurationHours}h | Critical Path: {ladderState.macro.criticalPathDurationHours}h</p>
+    </div>
+  {/if}
+
+  <!-- Standard Rung -->
+  {#if ladderState.standard}
+    <div class="standard-gantt">
+      <h4>Gantt Schedule</h4>
+      {#each ladderState.standard.tasks as item}
+        <div class:is-critical={item.isCritical}>
+          {item.task.title} (Early Start: {item.schedule.earlyStart}h, Total Slack: {item.schedule.totalSlack}h)
+        </div>
+      {/each}
+    </div>
+  {/if}
+
+  <!-- Concrete Rung -->
+  {#if ladderState.concrete}
+    <div class="concrete-grounding">
+      <h4>Concrete Ground Truth</h4>
+      {#each Object.entries(ladderState.concrete) as [taskId, evidence]}
+        <div>Task {taskId}: {evidence.deliverables.length} deliverables, {evidence.attachments.length} files</div>
+      {/each}
+    </div>
+  {/if}
+{/if}
+```
+
 ---
 
 ## 📄 License

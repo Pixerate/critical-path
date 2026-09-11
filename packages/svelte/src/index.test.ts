@@ -22,10 +22,24 @@ import {
   TaskTransitionsState,
   createTaskTransitionsState,
   WebMcpState,
-  createWebMcpState
+  createWebMcpState,
+  CriticalPathState,
+  createCriticalPathState,
+  TimelineLadderState,
+  createTimelineLadderState
 } from './index.js';
 import type { CriticalPathClient } from '@critical-path/client';
-import type { Project, Task, Workflow, Comment, Attachment, Deliverable, DeliverableSummary } from '@critical-path/core';
+import type {
+  Project,
+  Task,
+  Workflow,
+  Comment,
+  Attachment,
+  Deliverable,
+  DeliverableSummary,
+  CriticalPathAnalysis,
+  TimelineLadder
+} from '@critical-path/core';
 
 describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
   it('exports client factory and Svelte 5 Runes state factories', () => {
@@ -566,6 +580,84 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       expect(mockClient.getDeliverableSummary).toHaveBeenCalledWith('deliv_1');
       expect(summaryState.summary).toEqual(mockSummary);
       expect(summaryState.data).toEqual(mockSummary);
+    });
+  });
+
+  describe('CriticalPathState', () => {
+    it('manages loading, error, and critical path analysis data', async () => {
+      const mockAnalysis: CriticalPathAnalysis = {
+        projectId: 'proj_cpm',
+        calculatedAt: '2026-09-11T12:00:00Z',
+        totalDurationHours: 42,
+        criticalTaskIds: ['t1', 't2'],
+        tasks: []
+      };
+
+      const mockClient = {
+        calculateCriticalPath: vi.fn().mockResolvedValue(mockAnalysis)
+      } as unknown as CriticalPathClient;
+
+      const cpmState = createCriticalPathState(mockClient, 'proj_cpm');
+      expect(cpmState.data).toBeNull();
+      expect(cpmState.loading).toBe(false);
+
+      await cpmState.fetch();
+      expect(mockClient.calculateCriticalPath).toHaveBeenCalledWith('proj_cpm');
+      expect(cpmState.data).toEqual(mockAnalysis);
+      expect(cpmState.loading).toBe(false);
+    });
+  });
+
+  describe('TimelineLadderState', () => {
+    it('manages multi-scale ladder data, levels, and derived rungs', async () => {
+      const mockLadder: TimelineLadder = {
+        projectId: 'proj_ladder',
+        generatedAt: '2026-09-11T12:00:00Z',
+        level: 'all',
+        macro: {
+          projectId: 'proj_ladder',
+          projectName: 'Ladder Proj',
+          totalDurationHours: 50,
+          criticalPathDurationHours: 40,
+          overallProgressPercentage: 60,
+          health: 'on_track',
+          totalTasks: 5,
+          completedTasks: 3,
+          inProgressTasks: 2,
+          blockedTasks: 0,
+          totalEstimatedHours: 50,
+          totalLoggedHours: 25,
+          phases: []
+        },
+        standard: {
+          tasks: [],
+          criticalPathTaskIds: [],
+          dependencies: [],
+          totalDurationHours: 40
+        },
+        concrete: {}
+      };
+
+      const mockClient = {
+        getTimelineLadder: vi.fn().mockResolvedValue(mockLadder)
+      } as unknown as CriticalPathClient;
+
+      const ladderState = createTimelineLadderState(mockClient, 'proj_ladder', { level: 'all' });
+      expect(ladderState.data).toBeNull();
+      expect(ladderState.macro).toBeNull();
+      expect(ladderState.standard).toBeNull();
+      expect(ladderState.concrete).toBeNull();
+
+      await ladderState.fetch();
+      expect(mockClient.getTimelineLadder).toHaveBeenCalledWith('proj_ladder', { level: 'all' });
+      expect(ladderState.data).toEqual(mockLadder);
+      expect(ladderState.macro?.projectName).toBe('Ladder Proj');
+      expect(ladderState.standard?.tasks).toEqual([]);
+      expect(ladderState.concrete).toEqual({});
+
+      await ladderState.setLevel('macro');
+      expect(ladderState.level).toBe('macro');
+      expect(mockClient.getTimelineLadder).toHaveBeenCalledWith('proj_ladder', { level: 'macro' });
     });
   });
 });

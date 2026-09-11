@@ -91,7 +91,7 @@ export interface ActivityRepository {
 
 export interface TimeEntryRepository {
   getTimeEntries(taskId: string): Promise<TimeEntry[]>;
-  logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'>): Promise<TimeEntry>;
+  logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string }): Promise<TimeEntry>;
 }
 
 export interface DependencyRepository {
@@ -512,9 +512,9 @@ export class InMemoryStore implements StorageAdapter {
     return Array.from(this.timeEntries.values()).filter((e) => e.taskId === taskId);
   }
 
-  async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'>): Promise<TimeEntry> {
+  async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string }): Promise<TimeEntry> {
     const id = `time_${Math.random().toString(36).substring(2, 9)}`;
-    const newEntry: TimeEntry = { ...entry, id, loggedAt: new Date().toISOString() };
+    const newEntry: TimeEntry = { ...entry, id, loggedAt: entry.loggedAt || new Date().toISOString() };
     this.timeEntries.set(id, newEntry);
     return newEntry;
   }

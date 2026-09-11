@@ -30,6 +30,9 @@ describe('@critical-path/mcp', () => {
       expect(toolNames).toContain('create_deliverable');
       expect(toolNames).toContain('list_comments');
       expect(toolNames).toContain('add_comment');
+      expect(toolNames).toContain('calculate_critical_path');
+      expect(toolNames).toContain('get_timeline_ladder');
+      expect(toolNames).toContain('get_task_ladder');
     });
 
     it('executes project and task workflows through tool definitions', async () => {
@@ -103,6 +106,51 @@ describe('@critical-path/mcp', () => {
 
       const afterDelete = await listTasksTool.execute({ projectId: project.id }, engine);
       expect(afterDelete).toHaveLength(0);
+    });
+
+    it('calculates critical path and returns timeline ladder via MCP tools', async () => {
+      const createProjTool = TOOL_MAP.get('create_project')!;
+      const project = await createProjTool.execute({ name: 'Bret Victor MCP', key: 'BVM' }, engine);
+
+      const createTaskTool = TOOL_MAP.get('create_task')!;
+      const t1 = await createTaskTool.execute({
+        projectId: project.id,
+        title: 'Step 1: Prototype',
+        status: 'done',
+        estimatedHours: 4
+      }, engine);
+
+      const t2 = await createTaskTool.execute({
+        projectId: project.id,
+        title: 'Step 2: Polish',
+        status: 'in_progress',
+        estimatedHours: 6
+      }, engine);
+
+      await engine.addDependency({
+        taskId: t2.id,
+        dependsOnTaskId: t1.id,
+        type: 'blocking'
+      });
+
+      // 1. calculate_critical_path tool
+      const cpmTool = TOOL_MAP.get('calculate_critical_path')!;
+      const cpmResult = await cpmTool.execute({ projectId: project.id }, engine);
+      expect(cpmResult.totalDurationHours).toBe(10);
+      expect(cpmResult.criticalTaskIds).toEqual([t1.id, t2.id]);
+
+      // 2. get_timeline_ladder tool
+      const ladderTool = TOOL_MAP.get('get_timeline_ladder')!;
+      const ladderResult = await ladderTool.execute({ projectId: project.id, level: 'all' }, engine);
+      expect(ladderResult.macro).toBeDefined();
+      expect(ladderResult.macro.criticalPathDurationHours).toBe(10);
+      expect(ladderResult.standard.tasks).toHaveLength(2);
+
+      // 3. get_task_ladder tool
+      const taskLadderTool = TOOL_MAP.get('get_task_ladder')!;
+      const taskLadderResult = await taskLadderTool.execute({ taskId: t2.id }, engine);
+      expect(taskLadderResult.taskId).toBe(t2.id);
+      expect(taskLadderResult.standard.title).toBe('Step 2: Polish');
     });
   });
 

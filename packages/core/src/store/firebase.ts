@@ -536,9 +536,9 @@ export class FirebaseStore implements StorageAdapter {
     return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
   }
 
-  async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'>): Promise<TimeEntry> {
+  async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string }): Promise<TimeEntry> {
     const docRef = this.db.collection('time_entries').doc();
-    const now = new Date().toISOString();
+    const now = entry.loggedAt || new Date().toISOString();
     const newEntry: TimeEntry = { ...entry, id: docRef.id, loggedAt: now };
     await docRef.set(sanitizeFirestoreData(newEntry));
     return newEntry;

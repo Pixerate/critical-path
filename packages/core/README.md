@@ -32,6 +32,10 @@
   - `DeliverableEntity` aggregate with automatic delivery timestamps (`deliveredAt`) and URL registry (`outputUrls`).
   - `DEFAULT_CREATIVE_WORKFLOW` template tailored for creative agencies and content production pipelines.
   - Rollup calculations via `getDeliverableSummary()` delivering progress percentages, completed tasks, and total estimated/logged hours across assigned tasks.
+- **Bret Victor's Ladder of Abstraction & Critical Path Method (CPM)**:
+  - Multi-scale timeline synthesis: Macro bird's-eye phase rollups (`getTimelineLadder({ level: 'macro' })`), Standard Gantt view with topological CPM forward/backward passes and total float/slack, and Concrete grounding (attachments, deliverables, checklist items, daily effort histograms, and reality deltas).
+  - Single-task contextual drilldown via `getTaskLadder(taskId)`.
+  - Comprehensive CPM analysis via `calculateCriticalPath(projectId)` identifying project bottleneck tasks and critical path duration.
 
 ---
 

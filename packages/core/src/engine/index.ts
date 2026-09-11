@@ -21,7 +21,14 @@ import type {
   Deliverable,
   DeliverableSummary,
   CreateDeliverableInput,
-  TaskLifecycleState
+  TaskLifecycleState,
+  CriticalPathAnalysis,
+  TimelineLadder,
+  TimelineLadderOptions,
+  TaskLadderView,
+  MacroPhaseRollup,
+  StandardTaskTimelineItem,
+  ConcreteTaskEvidence
 } from '../types/index.js';
 import { StorageAdapter, InMemoryStore } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
@@ -68,6 +75,8 @@ import {
 import { validateAttachmentUrl, AttachmentValidationError } from '../domain/entities.js';
 import { validateCustomFieldValues } from '../domain/custom-fields.js';
 import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
+import { calculateCPM } from '../domain/cpm.js';
+import { buildTimelineLadder, aggregateConcreteEvidenceForTask } from '../domain/ladder.js';
 
 export class CriticalPathEngine {
   public readonly store: StorageAdapter;
@@ -709,7 +718,7 @@ export class CriticalPathEngine {
   }
 
   // --- Time Tracking ---
-  async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt' | 'userId'> & { userId?: string }): Promise<TimeEntry> {
+  async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt' | 'userId'> & { userId?: string; loggedAt?: string }): Promise<TimeEntry> {
     if (entry.hours <= 0) {
       throw new Error('Logged hours must be a positive number.');
     }
@@ -726,9 +735,10 @@ export class CriticalPathEngine {
       });
     }
 
-    const fullEntry: Omit<TimeEntry, 'id' | 'loggedAt'> = {
+    const fullEntry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string } = {
       ...entry,
-      userId: entry.userId || task?.assigneeId || 'system'
+      userId: entry.userId || task?.assigneeId || 'system',
+      loggedAt: entry.loggedAt
     };
 
     const created = await this.store.logTime(fullEntry);
@@ -1345,6 +1355,101 @@ export class CriticalPathEngine {
     return this.store.deleteIteration(id);
   }
 
+  // --- Bret Victor's Ladder of Abstraction & Critical Path Method ---
+  async calculateCriticalPath(projectId: string): Promise<CriticalPathAnalysis> {
+    const tasks = await this.store.getTasks(projectId);
+    const allDepArrays = await Promise.all(tasks.map((t) => this.store.getDependencies(t.id)));
+    const seenDepIds = new Set<string>();
+    const dependencies: TaskDependency[] = [];
+    for (const deps of allDepArrays) {
+      for (const d of deps) {
+        if (!seenDepIds.has(d.id)) {
+          seenDepIds.add(d.id);
+          dependencies.push(d);
+        }
+      }
+    }
+    return calculateCPM(projectId, tasks, dependencies);
+  }
+
+  async getTimelineLadder(
+    projectId: string,
+    options: TimelineLadderOptions = {}
+  ): Promise<TimelineLadder> {
+    const project = await this.store.getProject(projectId);
+    if (!project) {
+      throw new Error(`Project with ID "${projectId}" not found.`);
+    }
+
+    let tasks = await this.store.getTasks(projectId);
+    if (options.containerId) {
+      tasks = tasks.filter((t) => t.containerId === options.containerId);
+    }
+    if (options.iterationId) {
+      tasks = tasks.filter((t) => t.iterationId === options.iterationId);
+    }
+
+    const [containers, iterations, deliverables, attachments, activities] = await Promise.all([
+      this.store.getContainers(projectId),
+      this.store.getIterations(projectId),
+      this.store.getDeliverables(projectId),
+      this.store.getAttachments({ projectId }),
+      this.store.getActivities({ projectId })
+    ]);
+
+    const allDepArrays = await Promise.all(tasks.map((t) => this.store.getDependencies(t.id)));
+    const seenDepIds = new Set<string>();
+    const dependencies: TaskDependency[] = [];
+    for (const deps of allDepArrays) {
+      for (const d of deps) {
+        if (!seenDepIds.has(d.id)) {
+          seenDepIds.add(d.id);
+          dependencies.push(d);
+        }
+      }
+    }
+
+    const timeEntriesNested = await Promise.all(tasks.map((t) => this.store.getTimeEntries(t.id)));
+    const timeEntries: TimeEntry[] = timeEntriesNested.flat();
+
+    return buildTimelineLadder(
+      {
+        project,
+        tasks,
+        dependencies,
+        containers,
+        iterations,
+        deliverables,
+        attachments,
+        timeEntries,
+        activities
+      },
+      options
+    );
+  }
+
+  async getTaskLadder(taskId: string): Promise<TaskLadderView | null> {
+    const task = await this.store.getTask(taskId);
+    if (!task) return null;
+
+    const project = await this.store.getProject(task.projectId);
+    if (!project) return null;
+
+    const ladder = await this.getTimelineLadder(task.projectId, { level: 'all' });
+    const standard = ladder.standard?.tasks.find((t) => t.id === taskId);
+    if (!standard) return null;
+
+    const concrete = ladder.concrete?.[taskId] || aggregateConcreteEvidenceForTask(task);
+    const macroPhase = ladder.macro?.phases.find((p) => p.taskIds.includes(taskId));
+
+    return {
+      taskId,
+      macroPhase,
+      standard,
+      concrete
+    };
+  }
+
   private async dispatchWebhook(event: WebhookEvent, payload: Record<string, unknown>): Promise<void> {
     const webhooks = await this.store.getWebhooks();
     const active = webhooks.filter((w) => w.active && w.events.includes(event));
@@ -1360,3 +1465,4 @@ export class CriticalPathEngine {
     }
   }
 }
+

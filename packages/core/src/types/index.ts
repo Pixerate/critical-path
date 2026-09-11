@@ -424,3 +424,141 @@ export interface CriticalPathConfig {
     deliverables?: Deliverable[];
   };
 }
+
+// ==========================================
+// Bret Victor's Ladder of Abstraction Types
+// ==========================================
+
+export type AbstractionLevel = 'macro' | 'standard' | 'concrete' | 'all';
+
+export type MacroPhaseHealth = 'on_track' | 'at_risk' | 'blocked' | 'overdue' | 'completed';
+
+export interface MacroPhaseRollup {
+  id: string; // containerId, iterationId, deliverableId, or 'unassigned'
+  type: 'container' | 'iteration' | 'deliverable' | 'phase';
+  name: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+  durationHours: number;
+  totalTasks: number;
+  completedTasks: number;
+  inProgressTasks: number;
+  blockedTasks: number;
+  progressPercentage: number;
+  totalEstimatedHours: number;
+  totalLoggedHours: number;
+  isCritical: boolean;
+  criticalTaskCount: number;
+  health: MacroPhaseHealth;
+  taskIds: string[];
+}
+
+export interface MacroTimelineSummary {
+  projectId: string;
+  projectName: string;
+  overallStartDate?: string;
+  overallEndDate?: string;
+  projectedFinishDate?: string;
+  totalDurationHours: number;
+  criticalPathDurationHours: number;
+  overallProgressPercentage: number;
+  health: MacroPhaseHealth;
+  totalTasks: number;
+  completedTasks: number;
+  inProgressTasks: number;
+  blockedTasks: number;
+  totalEstimatedHours: number;
+  totalLoggedHours: number;
+  phases: MacroPhaseRollup[];
+}
+
+export interface TaskCriticalPathSchedule {
+  taskId: string;
+  earlyStart: number;
+  earlyFinish: number;
+  lateStart: number;
+  lateFinish: number;
+  totalSlack: number;
+  isCritical: boolean;
+}
+
+export interface CriticalPathAnalysis {
+  projectId: string;
+  calculatedAt: string;
+  totalDurationHours: number;
+  criticalTaskIds: string[];
+  tasks: TaskCriticalPathSchedule[];
+}
+
+export interface ConcreteEvidenceSummary {
+  attachmentCount: number;
+  deliverableCount: number;
+  todoCount: number;
+  completedTodoCount: number;
+  timeEntryCount: number;
+  totalLoggedHours: number;
+  hasVisualAsset: boolean;
+  lastActivityAt?: string;
+}
+
+export interface StandardTaskTimelineItem extends Task {
+  cpm?: TaskCriticalPathSchedule;
+  blockingTaskIds: string[];
+  dependentTaskIds: string[];
+  childTaskIds: string[];
+  concreteEvidenceSummary: ConcreteEvidenceSummary;
+}
+
+export interface RealityDelta {
+  plannedStartDate?: string;
+  actualStartDate?: string;
+  dueDate?: string;
+  actualEndDate?: string;
+  estimatedHours: number;
+  loggedHours: number;
+  varianceHours: number; // loggedHours - estimatedHours
+  scheduleVarianceDays?: number; // days difference between planned/due vs actual
+  isOverdue: boolean;
+  isOverEstimate: boolean;
+}
+
+export interface ConcreteTaskEvidence {
+  taskId: string;
+  attachments: Attachment[];
+  deliverables: Deliverable[];
+  todos: TaskTodoItem[];
+  timeEntries: TimeEntry[];
+  dailyEffortDistribution: Array<{ date: string; hours: number }>;
+  activities: Activity[];
+  realityDelta: RealityDelta;
+  evidenceSummary: ConcreteEvidenceSummary;
+}
+
+export interface TimelineLadderOptions {
+  level?: AbstractionLevel;
+  containerId?: string;
+  iterationId?: string;
+}
+
+export interface TimelineLadder {
+  projectId: string;
+  generatedAt: string;
+  level: AbstractionLevel;
+  macro?: MacroTimelineSummary;
+  standard?: {
+    tasks: StandardTaskTimelineItem[];
+    criticalPathTaskIds: string[];
+    dependencies: TaskDependency[];
+    totalDurationHours: number;
+  };
+  concrete?: Record<string, ConcreteTaskEvidence>;
+}
+
+export interface TaskLadderView {
+  taskId: string;
+  macroPhase?: MacroPhaseRollup;
+  standard: StandardTaskTimelineItem;
+  concrete: ConcreteTaskEvidence;
+}
+

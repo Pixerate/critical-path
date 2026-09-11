@@ -1084,9 +1084,9 @@ export class SQLiteStore implements StorageAdapter {
     return rows.map((r) => ({ ...r, isBillable: r.isBillable !== null ? Boolean(r.isBillable) : undefined }));
   }
 
-  async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'>): Promise<TimeEntry> {
+  async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string }): Promise<TimeEntry> {
     const id = `time_${Math.random().toString(36).substring(2, 9)}`;
-    const now = new Date().toISOString();
+    const now = entry.loggedAt || new Date().toISOString();
     const newEntry: TimeEntry = { ...entry, id, loggedAt: now };
 
     const stmt = this.db.prepare(`

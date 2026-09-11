@@ -295,5 +295,59 @@ describe('@critical-path/server Router Tests', () => {
     const delData = await delRes.json();
     expect(delData.success).toBe(true);
   });
+
+  it('serves Bret Victor Timeline Ladder and Critical Path analysis over HTTP', async () => {
+    const router = new CriticalPathRouter();
+    const project = await router.engine.createProject({ key: 'LAD', name: 'Ladder Project' });
+
+    const t1 = await router.engine.createTask({
+      projectId: project.id,
+      title: 'Foundation Architecture',
+      status: 'done',
+      estimatedHours: 8,
+      progress: 100
+    });
+
+    const t2 = await router.engine.createTask({
+      projectId: project.id,
+      title: 'UI Implementation',
+      status: 'in_progress',
+      estimatedHours: 16,
+      progress: 25
+    });
+
+    await router.engine.addDependency({
+      taskId: t2.id,
+      dependsOnTaskId: t1.id,
+      type: 'blocking'
+    });
+
+    // 1. GET /projects/:id/critical-path
+    const cpmReq = new Request(`http://localhost:3000/api/critical-path/projects/${project.id}/critical-path`);
+    const cpmRes = await router.handleRequest(cpmReq);
+    expect(cpmRes.status).toBe(200);
+    const cpmData = await cpmRes.json();
+    expect(cpmData.analysis.totalDurationHours).toBe(24);
+    expect(cpmData.analysis.criticalTaskIds).toEqual([t1.id, t2.id]);
+
+    // 2. GET /projects/:id/ladder
+    const ladderReq = new Request(`http://localhost:3000/api/critical-path/projects/${project.id}/ladder?level=all`);
+    const ladderRes = await router.handleRequest(ladderReq);
+    expect(ladderRes.status).toBe(200);
+    const ladderData = await ladderRes.json();
+    expect(ladderData.ladder.macro).toBeDefined();
+    expect(ladderData.ladder.macro.criticalPathDurationHours).toBe(24);
+    expect(ladderData.ladder.standard.tasks).toHaveLength(2);
+    expect(ladderData.ladder.concrete[t2.id]).toBeDefined();
+
+    // 3. GET /tasks/:id/ladder
+    const taskLadderReq = new Request(`http://localhost:3000/api/critical-path/tasks/${t2.id}/ladder`);
+    const taskLadderRes = await router.handleRequest(taskLadderReq);
+    expect(taskLadderRes.status).toBe(200);
+    const taskLadderData = await taskLadderRes.json();
+    expect(taskLadderData.taskLadder.taskId).toBe(t2.id);
+    expect(taskLadderData.taskLadder.standard.title).toBe('UI Implementation');
+    expect(taskLadderData.taskLadder.standard.cpm.earlyStart).toBe(8);
+  });
 });
 

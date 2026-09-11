@@ -15,5 +15,7 @@ export * from './deliverable-summary-state.svelte.js';
 export * from './kanban-state.svelte.js';
 export * from './task-transitions-state.svelte.js';
 export * from './webmcp-state.svelte.js';
+export * from './critical-path-state.svelte.js';
+export * from './timeline-ladder-state.svelte.js';
 
 

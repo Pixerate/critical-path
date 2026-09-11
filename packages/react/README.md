@@ -114,6 +114,68 @@ export function ActivityStream({ taskId }: { taskId: string }) {
 }
 ```
 
+### 5. Bret Victor's Ladder of Abstraction (`useTimelineLadder` & `useCriticalPath`)
+
+Fluidly traverse between Macro phase health, Standard Gantt tasks with CPM critical paths, and Concrete deliverables/effort:
+
+```tsx
+'use client';
+
+import { useTimelineLadder, useCriticalPath } from '@critical-path/react';
+
+export function ProjectTimelineView({ projectId }: { projectId: string }) {
+  const { ladder, level, setLevel, macro, standard, concrete, loading } = useTimelineLadder(projectId, { level: 'all' });
+  const { analysis } = useCriticalPath(projectId);
+
+  if (loading) return <div>Synthesizing timeline ladder...</div>;
+
+  return (
+    <div>
+      {/* Abstraction Slider */}
+      <div className="flex gap-2 mb-4">
+        <button onClick={() => setLevel('macro')}>Macro Phases</button>
+        <button onClick={() => setLevel('standard')}>Standard Gantt</button>
+        <button onClick={() => setLevel('concrete')}>Concrete Work</button>
+        <button onClick={() => setLevel('all')}>Full Ladder</button>
+      </div>
+
+      {/* Macro Rung */}
+      {macro && (
+        <div className="macro-phase p-4 bg-slate-900 text-white rounded">
+          <h2>Project Health: {macro.health} ({macro.overallProgressPercentage}% Complete)</h2>
+          <p>Critical Path Duration: {macro.criticalPathDurationHours}h</p>
+        </div>
+      )}
+
+      {/* Standard Rung */}
+      {standard && (
+        <div className="standard-gantt my-4">
+          <h3>Gantt Tasks ({standard.tasks.length})</h3>
+          {standard.tasks.map(item => (
+            <div key={item.task.id} className={item.isCritical ? 'font-bold text-red-500' : ''}>
+              {item.task.title} — ES: {item.schedule.earlyStart}h / EF: {item.schedule.earlyFinish}h (Slack: {item.schedule.totalSlack}h)
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Concrete Grounding Rung */}
+      {concrete && (
+        <div className="concrete-evidence">
+          <h3>Ground Truth & Evidence</h3>
+          {Object.entries(concrete).map(([taskId, evidence]) => (
+            <div key={taskId} className="border p-2 rounded mb-2">
+              <p>Task {taskId}: {evidence.attachments.length} files, {evidence.deliverables.length} deliverables</p>
+              <p>Reality Delta: {evidence.realityDelta.hoursDelta > 0 ? `+${evidence.realityDelta.hoursDelta}h over estimate` : `${evidence.realityDelta.hoursDelta}h`}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
 ---
 
 ## 📄 License

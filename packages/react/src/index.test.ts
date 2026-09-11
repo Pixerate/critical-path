@@ -12,7 +12,10 @@ import {
   useTaskActivity,
   useDeliverables,
   useDeliverableSummary,
-  useWebMCP
+  useWebMCP,
+  useCriticalPath,
+  useTimelineLadder,
+  useTaskLadder
 } from './index.js';
 
 describe('@critical-path/react Exports Test', () => {
@@ -30,6 +33,9 @@ describe('@critical-path/react Exports Test', () => {
     expect(useDeliverables).toBeDefined();
     expect(useDeliverableSummary).toBeDefined();
     expect(useWebMCP).toBeDefined();
+    expect(useCriticalPath).toBeDefined();
+    expect(useTimelineLadder).toBeDefined();
+    expect(useTaskLadder).toBeDefined();
   });
 });
 

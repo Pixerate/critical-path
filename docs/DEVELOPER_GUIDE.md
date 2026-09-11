@@ -20,6 +20,7 @@ Welcome to the **Critical Path** developer documentation. This guide provides an
 10. [Threaded Comments & Attachments (React & Svelte)](#10-threaded-comments--attachments-react--svelte)
 11. [Domain-Driven Design (DDD) & Event-Driven Architecture](#11-domain-driven-design-ddd--event-driven-architecture)
 12. [Model Context Protocol (MCP) & WebMCP Integration](#12-model-context-protocol-mcp--webmcp-integration)
+13. [Bret Victor's Ladder of Abstraction & Critical Path Method (CPM)](#13-bret-victors-ladder-of-abstraction--critical-path-method-cpm)
 
 ---
 
@@ -718,4 +719,71 @@ export function ProjectView({ projectId }: { projectId: string }) {
   <span class="badge">🤖 Copilot active: {mcp.tools.length} tools registered</span>
 {/if}
 ```
+
+---
+
+## 13. Bret Victor's Ladder of Abstraction & Critical Path Method (CPM)
+
+Bret Victor's seminal principle of **moving up and down the ladder of abstraction** emphasizes enabling users to smoothly transition between high-level macro summaries and concrete, granular ground truth without losing context or changing views.
+
+In **Critical Path**, this is materialized as a multi-scale timeline framework combining rigorous **Critical Path Method (CPM)** graph scheduling with tangible evidence grounding.
+
+```
++------------------------------------------------------------------------+
+| 1. Macro Rung (High Abstraction - Bird's Eye View)                    |
+|    - Project & Phase Envelopes (duration, progress %, on_track/at_risk)|
+|    - High-level executive questions: "Are we on track? When is launch?"|
++-----------------------------------▲------------------------------------+
+                                    │
+                                    ▼
++------------------------------------------------------------------------+
+| 2. Standard Rung (Middle Abstraction - CPM Gantt Schedule)            |
+|    - Directed Acyclic Graph (DAG) topological sorting                  |
+|    - Early Start (ES), Early Finish (EF), Late Start (LS), Late Finish |
+|    - Total Float / Slack & Zero-Float Bottleneck Identification        |
+|    - Tactical questions: "How do pieces fit together? Where is danger?"|
++-----------------------------------▲------------------------------------+
+                                    │
+                                    ▼
++------------------------------------------------------------------------+
+| 3. Concrete Rung (Low Abstraction - Tangible Ground Truth)            |
+|    - Physical Deliverables (format specs, resolutions, output URLs)   |
+|    - Real-world Attachments & File Assets (render frames, Figma, docs) |
+|    - Daily Effort Distributions & Timesheet Work Logs                  |
+|    - Reality Delta: Planned vs. Actual duration & schedule drift       |
+|    - Ground-truth questions: "What was actually built? Show me output!"|
++------------------------------------------------------------------------+
+```
+
+### Critical Path Method (CPM) Scheduling
+
+Given a set of tasks with estimated durations and dependencies:
+1. **Forward Pass**: Computes early start ($ES$) and early finish ($EF$) for each task in topological order:
+   $$ES_i = \max_{p \in \text{predecessors}(i)} (EF_p), \quad EF_i = ES_i + \text{duration}_i$$
+2. **Backward Pass**: Computes late start ($LS$) and late finish ($LF$) in reverse topological order:
+   $$LF_i = \min_{s \in \text{successors}(i)} (LS_s), \quad LS_i = LF_i - \text{duration}_i$$
+3. **Total Slack / Float**:
+   $$\text{slack}_i = LS_i - ES_i = LF_i - EF_i$$
+   Tasks where $\text{slack}_i = 0$ constitute the **critical path**. Any delay on a critical task directly pushes out the project completion date.
+
+### REST API Endpoints
+
+- `GET /api/critical-path/projects/:id/critical-path`: Returns CPM schedule analysis, total duration, and bottleneck task IDs.
+- `GET /api/critical-path/projects/:id/ladder?level={all|macro|standard|concrete}`: Returns multi-scale ladder view filtered to requested rungs.
+- `GET /api/critical-path/tasks/:id/ladder`: Returns contextual 3-rung ladder slice for an individual task.
+
+### Client SDK Example
+
+```ts
+import { CriticalPathClient } from '@critical-path/client';
+
+const client = new CriticalPathClient({ baseUrl: '/api/critical-path' });
+
+// Retrieve full 3-rung ladder
+const ladder = await client.getTimelineLadder('project_1', { level: 'all' });
+console.log('Macro phase progress:', ladder.macro?.overallProgressPercentage);
+console.log('Critical path tasks:', ladder.standard?.criticalPathTaskIds);
+console.log('Concrete daily effort:', ladder.concrete);
+```
+
 

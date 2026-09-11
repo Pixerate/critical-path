@@ -403,6 +403,90 @@ export const addCommentTool: ToolDefinition<{ taskId: string; content: string; a
   }
 };
 
+export const calculateCriticalPathTool: ToolDefinition<{ projectId?: string }> = {
+  name: 'calculate_critical_path',
+  title: 'Calculate Critical Path',
+  description: 'Calculate Critical Path Method (CPM) schedule, early/late start and finish, total slack, and critical bottlenecks for a project.',
+  zodSchema: z.object({
+    projectId: z.string().optional().describe('Project ID (falls back to ambient context if omitted)')
+  }),
+  inputSchema: {
+    type: 'object',
+    properties: {
+      projectId: { type: 'string', description: 'Project ID (falls back to ambient context if omitted)' }
+    },
+    additionalProperties: false
+  },
+  annotations: { readOnlyHint: true },
+  execute: async (args, target, ambientContext) => {
+    const projectId = args.projectId || ambientContext?.projectId;
+    if (!projectId) {
+      throw new Error('projectId is required to calculate critical path.');
+    }
+    return (target as any).calculateCriticalPath(projectId);
+  }
+};
+
+export const getTimelineLadderTool: ToolDefinition<{
+  projectId?: string;
+  level?: 'macro' | 'standard' | 'concrete' | 'all';
+  containerId?: string;
+  iterationId?: string;
+}> = {
+  name: 'get_timeline_ladder',
+  title: 'Get Timeline Ladder of Abstraction',
+  description: 'Retrieve Bret Victor Ladder of Abstraction for a project timeline across macro phase envelopes, standard Gantt tasks & CPM, and concrete deliverables/time/attachments.',
+  zodSchema: z.object({
+    projectId: z.string().optional().describe('Project ID (falls back to ambient context if omitted)'),
+    level: z.enum(['macro', 'standard', 'concrete', 'all']).optional().describe('Abstraction level (macro, standard, concrete, or all)'),
+    containerId: z.string().optional().describe('Optional container ID filter'),
+    iterationId: z.string().optional().describe('Optional iteration/sprint ID filter')
+  }),
+  inputSchema: {
+    type: 'object',
+    properties: {
+      projectId: { type: 'string', description: 'Project ID (falls back to ambient context if omitted)' },
+      level: { type: 'string', enum: ['macro', 'standard', 'concrete', 'all'], description: 'Abstraction level' },
+      containerId: { type: 'string', description: 'Optional container ID filter' },
+      iterationId: { type: 'string', description: 'Optional iteration/sprint ID filter' }
+    },
+    additionalProperties: false
+  },
+  annotations: { readOnlyHint: true },
+  execute: async (args, target, ambientContext) => {
+    const projectId = args.projectId || ambientContext?.projectId;
+    if (!projectId) {
+      throw new Error('projectId is required to get timeline ladder.');
+    }
+    return (target as any).getTimelineLadder(projectId, {
+      level: args.level,
+      containerId: args.containerId,
+      iterationId: args.iterationId
+    });
+  }
+};
+
+export const getTaskLadderTool: ToolDefinition<{ taskId: string }> = {
+  name: 'get_task_ladder',
+  title: 'Get Task Ladder View',
+  description: 'Retrieve multi-scale Bret Victor ladder view for a single task, connecting its macro phase, standard CPM timeline position, and concrete work evidence.',
+  zodSchema: z.object({
+    taskId: z.string().describe('The task ID')
+  }),
+  inputSchema: {
+    type: 'object',
+    properties: {
+      taskId: { type: 'string', description: 'The task ID' }
+    },
+    required: ['taskId'],
+    additionalProperties: false
+  },
+  annotations: { readOnlyHint: true },
+  execute: async (args, target) => {
+    return (target as any).getTaskLadder(args.taskId);
+  }
+};
+
 export const ALL_TOOLS: ToolDefinition[] = [
   listProjectsTool,
   getProjectTool,
@@ -415,7 +499,10 @@ export const ALL_TOOLS: ToolDefinition[] = [
   listDeliverablesTool,
   createDeliverableTool,
   listCommentsTool,
-  addCommentTool
+  addCommentTool,
+  calculateCriticalPathTool,
+  getTimelineLadderTool,
+  getTaskLadderTool
 ];
 
 export const TOOL_MAP = new Map<string, ToolDefinition>(

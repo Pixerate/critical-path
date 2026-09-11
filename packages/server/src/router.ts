@@ -17,7 +17,7 @@ export class CriticalPathRouter {
     const method = request.method.toUpperCase();
 
     // Extract subpath after /critical-path/ or /api/critical-path/
-    const subpath = pathname.replace(/^.*\/critical-path\/?/, '').replace(/^\/+/, '');
+    const subpath = pathname.replace(/^.*?\/critical-path\/?/, '').replace(/^\/+/, '');
     const segments = subpath.split('/').filter(Boolean);
 
     try {
@@ -56,6 +56,7 @@ export class CriticalPathRouter {
       // Projects API
       if (segments[0] === 'projects') {
         const projectId = segments[1];
+        const subResource = segments[2];
         if (!projectId) {
           if (method === 'GET') {
             const projects = await this.engine.getProjects();
@@ -65,6 +66,19 @@ export class CriticalPathRouter {
             const body = await request.json();
             const project = await this.engine.createProject(body);
             return this.jsonResponse({ project }, 201);
+          }
+        } else if (subResource === 'critical-path') {
+          if (method === 'GET') {
+            const analysis = await this.engine.calculateCriticalPath(projectId);
+            return this.jsonResponse({ analysis });
+          }
+        } else if (subResource === 'ladder' || subResource === 'timeline-ladder') {
+          if (method === 'GET') {
+            const level = (url.searchParams.get('level') || 'all') as any;
+            const containerId = url.searchParams.get('containerId') || undefined;
+            const iterationId = url.searchParams.get('iterationId') || undefined;
+            const ladder = await this.engine.getTimelineLadder(projectId, { level, containerId, iterationId });
+            return this.jsonResponse({ ladder });
           }
         } else {
           if (method === 'GET') {
@@ -140,6 +154,12 @@ export class CriticalPathRouter {
             const allowedNextStatuses = await this.engine.getAllowedTaskTransitions(taskId);
             const allowedPreviousStatuses = await this.engine.getAllowedPreviousTaskTransitions(taskId);
             return this.jsonResponse({ allowedNextStatuses, allowedPreviousStatuses });
+          }
+        } else if (subResource === 'ladder') {
+          if (method === 'GET') {
+            const taskLadder = await this.engine.getTaskLadder(taskId);
+            if (!taskLadder) return this.jsonResponse({ error: 'Task not found' }, 404);
+            return this.jsonResponse({ taskLadder });
           }
         } else {
           if (method === 'GET') {
