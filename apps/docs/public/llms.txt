@@ -1,0 +1,66 @@
+# Critical Path
+
+> Critical Path is an extensible, headless project management engine and framework for modern web applications.
+
+Critical Path decouples project management logic from the presentation layer. It provides a core DAG/scheduling dependency resolution engine, universal Web Fetch route handlers, pluggable storage adapters (In-Memory, SQLite, Firestore), reactive UI primitives for React and Svelte, and native Model Context Protocol (MCP) and WebMCP tools for autonomous AI coding agents.
+
+- Website: https://criticalpath.pixerate.com
+- GitHub: https://github.com/Pixerate/Critical-Path
+- Full Context: https://criticalpath.pixerate.com/llms-full.txt
+- Sitemap: https://criticalpath.pixerate.com/sitemap.xml
+
+## Start Here
+
+- [Introduction to Critical Path](https://criticalpath.pixerate.com/getting-started/introduction/): Learn why Critical Path was created, its headless philosophy, and how it transforms project management inside web applications.
+- [Quick Start](https://criticalpath.pixerate.com/getting-started/quick-start/): Get up and running with Critical Path in your project in less than 5 minutes.
+- [System Architecture & Concepts](https://criticalpath.pixerate.com/getting-started/architecture/): Detailed architectural breakdown of Critical Path layers, components, and data flow.
+
+## Core Engine
+
+- [Critical Path Engine](https://criticalpath.pixerate.com/core/engine/): Working directly with the CriticalPathEngine class, core methods, and task management.
+- [Data Model & Schema Reference](https://criticalpath.pixerate.com/core/data-model/): Complete specification of tasks, projects, dependencies, priorities, and semantic statuses in Critical Path.
+- [Dependencies & Critical Path Method](https://criticalpath.pixerate.com/core/dependencies/): How Critical Path models task dependencies as a DAG, detects circular loops, and computes the critical path duration.
+- [Lifecycle Hooks & Events](https://criticalpath.pixerate.com/core/lifecycle/): Tap into mutation lifecycle events for validation, webhooks, audit trails, and side effects.
+- [Ladder of Abstraction & CPM](https://criticalpath.pixerate.com/core/ladder-of-abstraction/): Bret Victor's Ladder of Abstraction applied to timelines, Gantt charts, and Critical Path Method (CPM) analysis.
+
+## Storage Adapters
+
+- [In-Memory Storage Adapter](https://criticalpath.pixerate.com/storage/in-memory/): Fast, zero-configuration in-memory store for unit tests, prototyping, and ephemeral workflows.
+- [SQLite Storage Adapter](https://criticalpath.pixerate.com/storage/sqlite/): High-performance embedded SQL storage powered by better-sqlite3 for local development and edge deployments.
+- [Firebase & Cloud Firestore Storage Adapter](https://criticalpath.pixerate.com/storage/firebase/): Scalable serverless NoSQL storage powered by Google Cloud Firestore.
+- [Custom Storage Adapters](https://criticalpath.pixerate.com/storage/custom/): Implement your own custom storage adapter for PostgreSQL, MongoDB, DynamoDB, or Redis.
+
+## Framework Adapters
+
+- [Next.js App Router Integration](https://criticalpath.pixerate.com/frameworks/nextjs/): Mount Critical Path route handlers directly in Next.js 14/15 App Router.
+- [SvelteKit Endpoint Integration](https://criticalpath.pixerate.com/frameworks/sveltekit/): Mount Critical Path route handlers in SvelteKit server endpoints.
+- [Standard Web Handler](https://criticalpath.pixerate.com/frameworks/web-handler/): Using the universal Web Fetch API router with Cloudflare Workers, Hono, Fastify, or Express.
+
+## Frontend UI Libraries
+
+- [React Integration (@critical-path/react)](https://criticalpath.pixerate.com/ui/react/): Building reactive project management interfaces with React hooks and context.
+- [Svelte Integration (@critical-path/svelte)](https://criticalpath.pixerate.com/ui/svelte/): Idiomatic Svelte state primitives and runes for project management.
+
+## Plugins & Extensibility
+
+- [Plugin Architecture & Creation](https://criticalpath.pixerate.com/plugins/creating-plugins/): Build modular plugins to extend the CriticalPathEngine with custom validation, webhooks, and integrations.
+- [Audit Logging Plugin](https://criticalpath.pixerate.com/plugins/audit-log/): Implement comprehensive audit logging for task status changes and assignee reallocations.
+
+## Model Context Protocol (MCP)
+
+- [MCP & WebMCP Overview](https://criticalpath.pixerate.com/mcp/overview/): Dual Model Context Protocol architecture for AI coding agents and in-browser AI copilots in Critical Path.
+- [Standard Server MCP](https://criticalpath.pixerate.com/mcp/server/): Connecting Claude Desktop, Cursor, and autonomous AI agents to Critical Path via stdio and network transports.
+- [Client-Side WebMCP](https://criticalpath.pixerate.com/mcp/webmcp/): In-browser AI Copilots with W3C WebML CG WebMCP, React hooks, and Svelte 5 runes in Critical Path.
+
+## Reference & AI
+
+- [AI Agent Integration Guide](https://criticalpath.pixerate.com/reference/agents/): System prompts, tool schemas, and operational instructions for AI coding agents integrating Critical Path.
+- [HTTP REST API Specification](https://criticalpath.pixerate.com/reference/api/): Complete REST endpoint documentation exposed by @critical-path/server.
+- [TypeScript Type Definitions](https://criticalpath.pixerate.com/reference/types/): Canonical TypeScript types, interfaces, and enums exported by @critical-path/core.
+
+## Optional & External Resources
+
+- [Full Documentation Bundle](https://criticalpath.pixerate.com/llms-full.txt): Complete combined documentation in plain text markdown format.
+- [Developer Guide](https://github.com/Pixerate/Critical-Path/blob/main/docs/DEVELOPER_GUIDE.md): Monorepo setup, contributing guide, and testing workflow.
+- [Gotchas & Workarounds](https://github.com/Pixerate/Critical-Path/blob/main/GOTCHAS.md): Known issues, pitfalls, and established workarounds.
+- [GitHub Repository](https://github.com/Pixerate/Critical-Path): Source code, issues, and discussions.

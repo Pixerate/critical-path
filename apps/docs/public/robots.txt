@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://criticalpath.pixerate.com/sitemap-index.xml
+Sitemap: https://criticalpath.pixerate.com/sitemap.xml

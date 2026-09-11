@@ -1,0 +1,2086 @@
+# Critical Path — Full Documentation Bundle
+
+> Critical Path is an enterprise-ready headless project management engine for modern web applications.
+> Source: https://criticalpath.pixerate.com
+> Documentation generated on: 2026-09-11T16:23:09.031Z
+
+================================================================================
+
+
+# SECTION: START HERE
+================================================================================
+
+## Introduction to Critical Path
+URL: https://criticalpath.pixerate.com/getting-started/introduction/
+Description: Learn why Critical Path was created, its headless philosophy, and how it transforms project management inside web applications.
+
+**Critical Path** is an enterprise-ready, **headless project management framework** designed specifically for modern web applications.
+
+Traditional project management tools (like Jira, Linear, Asana, or Monday.com) are built as monolithic SaaS applications. Integrating them into your product means forcing your users into clunky iframe embeds, fighting third-party authentication, paying exorbitant per-seat subscription fees, and tolerating slow API roundtrips.
+
+Critical Path flips this model on its head: **it provides the core engine, dependency resolver, pluggable storage adapters, and UI hooks, leaving complete control of the user interface and data storage to you.**
+
+---
+
+## Why "Headless"?
+
+Just as Headless CMS (like Strapi, Sanity, or Contentful) decoupled content management from frontend rendering, Critical Path decouples:
+- **State & Workflow Logic** (`@critical-path/core`)
+- **Backend Route Handlers** (`@critical-path/server`)
+- **Client SDKs** (`@critical-path/client`)
+- **Frontend UI Adapters** (`@critical-path/react`, `@critical-path/svelte`)
+
+You get a headless engine that runs directly in your existing application runtime (Node.js, Next.js, SvelteKit, Express, or Serverless Edge).
+
+---
+
+## Key Highlights
+
+- ⚡ **Real-Time Critical Path Math**: Calculates task sequences, float/slack time, bottlenecks, and the true critical path duration in sub-millisecond times using topological DAG analysis.
+- 🔗 **Dynamic Blocker Resolution**: Completing or transitioning a prerequisite task automatically recalculates downstream blockers and dispatches reactive state updates.
+- 🗄️ **Zero Storage Lock-In**: Includes production-ready adapters for **SQLite** (local/edge) and **Google Cloud Firestore**, alongside an **In-Memory Store** for fast unit testing.
+- 🛡️ **Semantic Status Mapping**: Enforces customizable custom statuses (e.g. `needs_review`, `qa_testing`) while maintaining semantic categories (`not_started`, `in_progress`, `completed`, `canceled`).
+- 🤖 **AI-Native & Agentic**: Designed with deterministic JSON interfaces, strict typing, and lifecycle hooks so AI coding agents and autonomous workflows can orchestrate projects without human intervention.
+- 📦 **Monorepo Ecosystem**: Pre-built packages for React hooks, Svelte runes, and Next.js / SvelteKit routing.
+
+---
+
+## Package Ecosystem
+
+| Package | Role |
+| :--- | :--- |
+| [`@critical-path/core`](/core/engine/) | Core engine, dependency algorithms, pluggable stores, and plugins |
+| [`@critical-path/server`](/frameworks/web-handler/) | Universal Web Fetch route handler for Next.js and SvelteKit |
+| [`@critical-path/client`](/reference/api/) | Type-safe HTTP client SDK with promise-based methods |
+| [`@critical-path/react`](/ui/react/) | React provider, `useTasks`, `useProjects`, `useKanban` hooks |
+| [`@critical-path/svelte`](/ui/svelte/) | Svelte runes & reactive stores (`createTaskState`, `createProjectState`) |
+| [`create-critical-path`](/getting-started/quick-start/) | Interactive scaffolding CLI to spin up new apps instantly |
+
+---
+
+## Next Steps
+
+- Jump straight into the [Quick Start Guide](/getting-started/quick-start/) to get up and running in under 5 minutes.
+- Understand the [System Architecture](/getting-started/architecture/) and component interaction.
+
+--------------------------------------------------------------------------------
+
+## Quick Start
+URL: https://criticalpath.pixerate.com/getting-started/quick-start/
+Description: Get up and running with Critical Path in your project in less than 5 minutes.
+
+This guide walks you through installing Critical Path and setting up an end-to-end task management workflow with SQLite storage and Next.js / SvelteKit.
+
+---
+
+## 1. Installation
+
+Install the core engine and client SDK:
+
+```bash
+# Using pnpm
+pnpm add @critical-path/core @critical-path/client
+
+# Using npm
+npm install @critical-path/core @critical-path/client
+
+# Using yarn
+yarn add @critical-path/core @critical-path/client
+```
+
+Depending on your UI stack, install the companion framework package:
+
+```bash
+# For React / Next.js
+pnpm add @critical-path/react @critical-path/server
+
+# For Svelte / SvelteKit
+pnpm add @critical-path/svelte @critical-path/server
+```
+
+---
+
+## 2. Initialize the Backend Route Handler
+
+Critical Path uses the standard Web Fetch API (`Request` &rarr; `Response`), making it universally compatible with modern meta-frameworks.
+
+### Next.js App Router
+
+Create a catch-all route at `app/api/critical-path/[...path]/route.ts`:
+
+```typescript
+import { createNextHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
+
+// Initialize the storage adapter (file or :memory:)
+const store = new SQLiteStore({ filename: 'critical-path.db' });
+
+// Create the universal HTTP handler
+const handler = createNextHandler({ store });
+
+export {
+  handler as GET,
+  handler as POST,
+  handler as PUT,
+  handler as PATCH,
+  handler as DELETE,
+  handler as OPTIONS,
+};
+```
+
+### SvelteKit
+
+Create a catch-all server endpoint at `src/routes/api/critical-path/[...path]/+server.ts`:
+
+```typescript
+import { createSvelteKitHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
+
+const store = new SQLiteStore({ filename: 'critical-path.db' });
+const handler = createSvelteKitHandler({ store });
+
+export const GET = handler;
+export const POST = handler;
+export const PUT = handler;
+export const PATCH = handler;
+export const DELETE = handler;
+export const OPTIONS = handler;
+```
+
+---
+
+## 3. Render Frontend State
+
+### React Component
+
+Wrap your app or dashboard view with `CriticalPathProvider` and consume tasks:
+
+```tsx
+import React from 'react';
+import { CriticalPathProvider, useTasks, useProjects } from '@critical-path/react';
+
+function TaskList({ projectId }: { projectId: string }) {
+  const { tasks, loading, error, createTask, updateTaskStatus } = useTasks({ projectId });
+
+  if (loading) return <div>Loading tasks...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+
+  return (
+    <div className="space-y-4">
+      <button
+        onClick={() => createTask({ title: 'New Feature Task', priority: 'high' })}
+        className="px-4 py-2 bg-blue-600 text-white rounded"
+      >
+        + Add Task
+      </button>
+
+      <ul className="divide-y divide-gray-200">
+        {tasks.map((task) => (
+          <li key={task.id} className="py-2 flex justify-between items-center">
+            <span className={task.status === 'done' ? 'line-through text-gray-400' : ''}>
+              {task.title}
+            </span>
+            <button
+              onClick={() => updateTaskStatus(task.id, task.status === 'done' ? 'todo' : 'done')}
+              className="text-xs px-2 py-1 border rounded"
+            >
+              Toggle
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <CriticalPathProvider baseUrl="/api/critical-path">
+      <main className="p-8 max-w-2xl mx-auto">
+        <h1 className="text-2xl font-bold mb-4">Project Tasks</h1>
+        <TaskList projectId="project-1" />
+      </main>
+    </CriticalPathProvider>
+  );
+}
+```
+
+---
+
+## 4. Compute the Critical Path Programmatically
+
+You can also use the engine directly without HTTP handlers:
+
+```typescript
+import { CriticalPathEngine, InMemoryStore } from '@critical-path/core';
+
+const engine = new CriticalPathEngine({
+  store: new InMemoryStore(),
+});
+
+// Create project
+const project = await engine.createProject({ name: 'Website Redesign' });
+
+// Add tasks with dependencies
+const t1 = await engine.createTask({
+  projectId: project.id,
+  title: 'Wireframes',
+  estimatedHours: 8,
+  status: 'todo',
+  priority: 'high',
+});
+
+const t2 = await engine.createTask({
+  projectId: project.id,
+  title: 'Backend API',
+  estimatedHours: 16,
+  status: 'todo',
+  priority: 'high',
+});
+
+// Link t2 -> depends on t1
+await engine.addDependency({
+  projectId: project.id,
+  sourceTaskId: t1.id,
+  targetTaskId: t2.id,
+  type: 'finish_to_start',
+});
+
+// Compute the critical path
+const analysis = await engine.calculateCriticalPath(project.id);
+console.log('Total Duration:', analysis.totalDurationHours);
+console.log('Critical Tasks:', analysis.criticalTaskIds);
+```
+
+Congratulations! You are now running Critical Path in your application. Check out the [Data Model Guide](/core/data-model/) to learn about the underlying schemas.
+
+--------------------------------------------------------------------------------
+
+## System Architecture & Concepts
+URL: https://criticalpath.pixerate.com/getting-started/architecture/
+Description: Detailed architectural breakdown of Critical Path layers, components, and data flow.
+
+Critical Path adopts a strictly layered, decoupled architecture designed to operate seamlessly across edge runtimes, serverless functions, and long-running Node.js processes.
+
+```mermaid
+graph TD
+    subgraph UI Layer
+        React[React Hooks & Provider]
+        Svelte[Svelte Runes & State]
+        CustomUI[Custom UI / CLI]
+    end
+
+    subgraph Client SDK Layer
+        ClientSDK["CriticalPathClient (Type-Safe HTTP SDK)"]
+    end
+
+    subgraph Route Adapter Layer
+        NextHandler["createNextHandler (App Router)"]
+        SvelteKitHandler["createSvelteKitHandler"]
+        Router["Universal Router (Web Fetch API)"]
+    end
+
+    subgraph Core Engine Layer
+        Engine[CriticalPathEngine]
+        DAG[DAG Resolver & Cycle Detector]
+        CPM[Critical Path Method Calculator]
+        PluginBus[Event Bus & Plugins]
+    end
+
+    subgraph Storage Layer
+        StoreInterface["CriticalPathStore (Interface)"]
+        MemoryStore["InMemoryStore"]
+        SQLiteStore["SQLiteStore (better-sqlite3)"]
+        FirebaseStore["FirebaseStore (Firestore)"]
+    end
+
+    UI Layer --> ClientSDK
+    ClientSDK --> Route Adapter Layer
+    Route Adapter Layer --> Router
+    Router --> Engine
+    Engine --> DAG
+    Engine --> CPM
+    Engine --> PluginBus
+    Engine --> StoreInterface
+    StoreInterface --> MemoryStore
+    StoreInterface --> SQLiteStore
+    StoreInterface --> FirebaseStore
+```
+
+---
+
+## The Five Core Layers
+
+### 1. Storage Layer (`CriticalPathStore`)
+The storage abstraction defines a standard contract for persisting projects, tasks, dependencies, custom statuses, and audit events.
+- **`InMemoryStore`**: Ultra-fast key-value memory map ideal for testing and ephemeral execution.
+- **`SQLiteStore`**: High-performance local file or memory storage via `better-sqlite3`.
+- **`FirebaseStore`**: Scalable Google Cloud Firestore document storage.
+
+### 2. Core Engine Layer (`CriticalPathEngine`)
+The engine is the pure TypeScript brain of the framework. It handles:
+- Validation of business logic and constraints.
+- Real-time dependency graph maintenance.
+- Topological sort & cycle detection (preventing deadlocks like A &rarr; B &rarr; A).
+- Critical Path Method (Early Start, Early Finish, Late Start, Late Finish, Total Slack).
+- Automatic unblocking: When a task is marked `completed`, dependent downstream tasks automatically transition from `blocked` to `todo`/`in_progress`.
+
+### 3. Universal Router (`@critical-path/server`)
+A lightweight, zero-dependency router that receives standard Web `Request` objects and outputs standard `Response` objects. Framework adapters wrap this router for Next.js, SvelteKit, and standard serverless endpoints.
+
+### 4. Client SDK (`@critical-path/client`)
+A type-safe client that speaks JSON to the server router. It includes retry mechanisms, error parsing, and full TypeScript typings for all request/response bodies.
+
+### 5. UI Adapters (`@critical-path/react`, `@critical-path/svelte`)
+State-management primitives that bridge the client SDK to reactive component systems:
+- In React: Context Provider, custom hooks (`useTasks`, `useProjects`, `useKanban`).
+- In Svelte: Svelte 5 runes and reactive stores (`createTaskState`, `createProjectState`).
+
+--------------------------------------------------------------------------------
+
+
+# SECTION: CORE ENGINE
+================================================================================
+
+## Critical Path Engine
+URL: https://criticalpath.pixerate.com/core/engine/
+Description: Working directly with the CriticalPathEngine class, core methods, and task management.
+
+The `CriticalPathEngine` class is the central orchestrator of Critical Path. It is responsible for business logic validation, state changes, dependency checks, and dispatching events to plugins.
+
+---
+
+## Initialization
+
+```typescript
+import { CriticalPathEngine, SQLiteStore } from '@critical-path/core';
+
+const store = new SQLiteStore({ filename: './prod.db' });
+const engine = new CriticalPathEngine({
+  store,
+  plugins: [], // Optional array of CriticalPathPlugin
+});
+```
+
+---
+
+## Core Methods
+
+### Project Operations
+
+```typescript
+// Create a project
+const project = await engine.createProject({
+  name: 'Mobile App V2',
+  key: 'MOB',
+  description: 'Complete overhaul of the mobile client',
+});
+
+// Retrieve a project
+const found = await engine.getProject(project.id);
+
+// List projects
+const allProjects = await engine.listProjects();
+
+// Update a project
+await engine.updateProject(project.id, {
+  name: 'Mobile App V2 (Beta)',
+});
+
+// Delete a project
+await engine.deleteProject(project.id);
+```
+
+### Task Operations
+
+```typescript
+// Create a task
+const task = await engine.createTask({
+  projectId: project.id,
+  title: 'Implement OAuth Sign-In',
+  description: 'Support Google and GitHub OAuth 2.0 flows',
+  priority: 'high',
+  estimatedHours: 12,
+  status: 'todo',
+  tags: ['auth', 'security'],
+});
+
+// Update task status
+const updated = await engine.updateTask(task.id, {
+  status: 'in_progress',
+});
+
+// Filter tasks
+const urgentTasks = await engine.listTasks({
+  projectId: project.id,
+  priority: 'urgent',
+  status: 'in_progress',
+});
+```
+
+---
+
+## Automatic Unblocking
+
+When a task's status is updated to a `completed` semantic status (e.g. `done`), the engine automatically queries all dependent downstream tasks:
+
+```typescript
+// Task B depends on Task A
+// Marking Task A as 'done' automatically unblocks Task B:
+await engine.updateTask(taskA.id, { status: 'done' });
+
+// Query blockers for Task B
+const blockers = await engine.getTaskBlockers(taskB.id);
+console.log(blockers); // [] -> No remaining blockers!
+```
+
+--------------------------------------------------------------------------------
+
+## Data Model & Schema Reference
+URL: https://criticalpath.pixerate.com/core/data-model/
+Description: Complete specification of tasks, projects, dependencies, priorities, and semantic statuses in Critical Path.
+
+Critical Path is built on a clean, strictly typed schema. All entities use ISO-8601 UTC date strings and UUID identifiers.
+
+---
+
+## Task Entity
+
+The `Task` interface represents an actionable work unit inside a project.
+
+```typescript
+type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
+
+type SemanticStatus = 'not_started' | 'in_progress' | 'completed' | 'canceled';
+
+type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled' | (string & {});
+
+interface Task {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  semanticStatus?: SemanticStatus;
+  priority: Priority;
+  assigneeId?: string;
+  reporterId?: string;
+  sprintId?: string;
+  dueDate?: string;            // ISO-8601 string (e.g. 2026-09-15T00:00:00Z)
+  estimatedHours?: number;     // Used for Critical Path calculations
+  loggedHours?: number;
+  tags?: string[];
+  customFields?: Record<string, unknown>;
+  parentId?: string;           // Subtasks support
+  createdAt: string;           // ISO-8601
+  updatedAt: string;           // ISO-8601
+}
+```
+
+### Semantic Status Mapping
+
+In many organizations, teams use custom statuses like `qa_in_review`, `waiting_on_client`, or `deployed_to_staging`. To keep the critical path engine robust without sacrificing user customization, every status maps to a `SemanticStatus`:
+
+| Semantic Status | Category Behavior | Default Statuses |
+| :--- | :--- | :--- |
+| `not_started` | Tasks that have not commenced work | `backlog`, `todo` |
+| `in_progress` | Active work underway | `in_progress`, `in_review` |
+| `completed` | Successfully resolved; unblocks downstream tasks | `done`, `closed` |
+| `canceled` | Abandoned or discarded; bypasses blockers | `canceled` |
+
+---
+
+## Project Entity
+
+The `Project` interface represents the top-level container holding tasks and configuration.
+
+```typescript
+interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  key?: string;                // e.g. "PRJ", "DEV"
+  status?: string;
+  statuses?: StatusDefinition[];
+  customFieldsSchema?: Record<string, CustomFieldDefinition>;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+---
+
+## Dependency Entity
+
+Dependencies form a Directed Acyclic Graph (DAG) linking tasks together.
+
+```typescript
+type DependencyType = 
+  | 'finish_to_start'  // Standard: Task B cannot start until Task A finishes
+  | 'start_to_start'   // Task B cannot start until Task A starts
+  | 'finish_to_finish' // Task B cannot finish until Task A finishes
+  | 'start_to_finish'; // Task B cannot finish until Task A starts
+
+interface Dependency {
+  id: string;
+  projectId: string;
+  sourceTaskId: string; // Prerequisite task
+  targetTaskId: string; // Dependent task
+  type: DependencyType;
+  lagHours?: number;    // Optional delay or buffer in hours
+  createdAt: string;
+}
+```
+
+---
+
+## Critical Path Result
+
+The result generated by `engine.calculateCriticalPath(projectId)`:
+
+```typescript
+interface CriticalPathAnalysis {
+  projectId: string;
+  calculatedAt: string;
+  totalDurationHours: number;
+  criticalTaskIds: string[];
+  tasks: Array<{
+    taskId: string;
+    earlyStart: number;
+    earlyFinish: number;
+    lateStart: number;
+    lateFinish: number;
+    totalSlack: number;
+    isCritical: boolean;
+  }>;
+}
+```
+Tasks where `totalSlack === 0` lie on the critical path. Any delay in these tasks directly delays the overall project completion date.
+
+--------------------------------------------------------------------------------
+
+## Dependencies & Critical Path Method
+URL: https://criticalpath.pixerate.com/core/dependencies/
+Description: How Critical Path models task dependencies as a DAG, detects circular loops, and computes the critical path duration.
+
+Task dependencies in Critical Path are modeled as a **Directed Acyclic Graph (DAG)**.
+
+---
+
+## Adding Dependencies
+
+A dependency indicates that a **target task** depends on a **source task** (the prerequisite).
+
+```typescript
+await engine.addDependency({
+  projectId: 'proj-1',
+  sourceTaskId: 'task-wireframes',
+  targetTaskId: 'task-frontend-ui',
+  type: 'finish_to_start',
+  lagHours: 0,
+});
+```
+
+---
+
+## Cycle Detection & Prevention
+
+Circular dependencies cause infinite loops and project deadlocks (e.g. Task A depends on Task B, which depends on Task A).
+
+Critical Path performs an automatic topological cycle check before adding or updating any dependency edge:
+
+```typescript
+try {
+  // If task-a already depends on task-b:
+  await engine.addDependency({
+    projectId: 'proj-1',
+    sourceTaskId: 'task-b',
+    targetTaskId: 'task-a',
+    type: 'finish_to_start',
+  });
+} catch (error) {
+  console.error(error.message);
+  // Throws: "Circular dependency detected: task-a -> task-b -> task-a"
+}
+```
+
+---
+
+## The Critical Path Method (CPM)
+
+The **Critical Path** is the sequence of dependent tasks that determines the minimum total time required to complete the project. Any delay on the critical path directly pushes back the project deadline.
+
+### Algorithm Steps:
+1. **Forward Pass**: Calculates the earliest possible start time (`earlyStart`) and finish time (`earlyFinish`) for every task.
+2. **Backward Pass**: Calculates the latest allowable start time (`lateStart`) and finish time (`lateFinish`) without delaying project completion.
+3. **Total Slack**: The difference between `lateFinish` and `earlyFinish` (`slack = lateFinish - earlyFinish`).
+4. **Critical Path Identification**: Tasks with `totalSlack === 0` form the Critical Path.
+
+```typescript
+const result = await engine.calculateCriticalPath('proj-1');
+
+console.log(`Project Completion Time: ${result.totalDurationHours} hours`);
+console.log(`Bottleneck Tasks:`, result.criticalTaskIds);
+```
+
+--------------------------------------------------------------------------------
+
+## Lifecycle Hooks & Events
+URL: https://criticalpath.pixerate.com/core/lifecycle/
+Description: Tap into mutation lifecycle events for validation, webhooks, audit trails, and side effects.
+
+Critical Path includes an asynchronous lifecycle event system that enables plugins and custom code to hook into task and project mutations.
+
+---
+
+## Supported Lifecycle Hooks
+
+| Hook Name | Parameters | Purpose |
+| :--- | :--- | :--- |
+| `beforeTaskCreate` | `(task: Partial<Task>)` | Intercept, validate, or enrich a task before insertion |
+| `afterTaskCreate` | `(task: Task)` | Post-creation side effects (e.g. notify Slack) |
+| `beforeTaskUpdate` | `(task: Task, updates: Partial<Task>)` | Intercept or disallow unauthorized field updates |
+| `afterTaskUpdate` | `(task: Task, previous: Task)` | Detect status transitions, trigger unblock checks |
+| `beforeTaskDelete` | `(taskId: string)` | Verify permissions before deletion |
+| `afterTaskDelete` | `(taskId: string)` | Clean up related dependencies |
+
+---
+
+## Example: Enforcing Tags with `beforeTaskCreate`
+
+```typescript
+import type { CriticalPathPlugin } from '@critical-path/core';
+
+export const tagValidatorPlugin: CriticalPathPlugin = {
+  id: 'tag-validator',
+  name: 'Tag Validator Plugin',
+  version: '1.0.0',
+  hooks: {
+    beforeTaskCreate: async (task) => {
+      // Auto-assign default environment tag if missing
+      const tags = task.tags || [];
+      if (!tags.includes('ENVIRONMENT:WEB')) {
+        return { ...task, tags: [...tags, 'ENVIRONMENT:WEB'] };
+      }
+      return task;
+    },
+  },
+};
+```
+
+--------------------------------------------------------------------------------
+
+## Ladder of Abstraction & CPM
+URL: https://criticalpath.pixerate.com/core/ladder-of-abstraction/
+Description: Bret Victor's Ladder of Abstraction applied to timelines, Gantt charts, and Critical Path Method (CPM) analysis.
+
+Bret Victor's principle of **moving up and down the ladder of abstraction** emphasizes enabling users to smoothly transition between high-level macro summaries and concrete, granular ground truth without losing context or changing views.
+
+In **Critical Path**, this is materialized as a multi-scale timeline framework combining rigorous **Critical Path Method (CPM)** graph scheduling with tangible evidence grounding.
+
+---
+
+## The Three Rungs
+
+```
++------------------------------------------------------------------------+
+| 1. Macro Rung (High Abstraction - Bird's Eye View)                    |
+|    - Project & Phase Envelopes (duration, progress %, on_track/at_risk)|
+|    - High-level executive questions: "Are we on track? When is launch?"|
++-----------------------------------▲------------------------------------+
+                                    │
+                                    ▼
++------------------------------------------------------------------------+
+| 2. Standard Rung (Middle Abstraction - CPM Gantt Schedule)            |
+|    - Directed Acyclic Graph (DAG) topological sorting                  |
+|    - Early Start (ES), Early Finish (EF), Late Start (LS), Late Finish |
+|    - Total Float / Slack & Zero-Float Bottleneck Identification        |
+|    - Tactical questions: "How do pieces fit together? Where is danger?"|
++-----------------------------------▲------------------------------------+
+                                    │
+                                    ▼
++------------------------------------------------------------------------+
+| 3. Concrete Rung (Low Abstraction - Tangible Ground Truth)            |
+|    - Physical Deliverables (format specs, resolutions, output URLs)   |
+|    - Real-world Attachments & File Assets (render frames, Figma, docs) |
+|    - Daily Effort Distributions & Timesheet Work Logs                  |
+|    - Reality Delta: Planned vs. Actual duration & schedule drift       |
+|    - Ground-truth questions: "What was actually built? Show me output!"|
++------------------------------------------------------------------------+
+```
+
+### 1. Macro Rung: Phase Rollups & High-Level Health
+Answers executive questions: *Are we on track? What is the projected completion?*
+- Automatic phase synthesis grouped by parent tasks, deliverable containers, or sprints.
+- Health states: `on_track`, `at_risk`, `delayed`, `completed`.
+- Total estimated hours vs. logged hours, overall percentage progress, and bottleneck critical path duration.
+
+### 2. Standard Rung: Topological CPM Gantt
+Answers tactical questions: *How do parts connect, and where are the real bottlenecks?*
+- Graph topological sort of task dependencies.
+- Forward pass computing **Early Start ($ES$)** and **Early Finish ($EF$)**.
+- Backward pass computing **Late Start ($LS$)** and **Late Finish ($LF$)**.
+- **Total Slack / Float**: Identifies tasks where $\text{slack} = 0$ (the critical path).
+
+### 3. Concrete Rung: Tangible Ground Truth & Reality Delta
+Answers empirical questions: *What was actually built? Where is the real work?*
+- Links tasks to concrete deliverables (render specs, resolution, output URLs).
+- Aggregates file attachments and uploaded assets.
+- Timesheet log breakdown by day (`dailyEffort`).
+- **Reality Delta**: Calculates exact variance between planned estimates and actual logged hours (`hoursDelta`, `scheduleStatus`).
+
+---
+
+## Engine Usage
+
+```typescript
+import { CriticalPathEngine, SQLiteStore } from '@critical-path/core';
+
+const engine = new CriticalPathEngine({
+  store: new SQLiteStore({ filename: './projects.db' })
+});
+
+// Calculate CPM schedule and critical bottleneck tasks
+const cpm = await engine.calculateCriticalPath('project_1');
+console.log('Bottleneck tasks:', cpm.criticalTaskIds);
+console.log('Total project duration:', cpm.totalDurationHours);
+
+// Retrieve multi-scale timeline ladder
+const ladder = await engine.getTimelineLadder('project_1', { level: 'all' });
+console.log('Macro phase rollups:', ladder.macro?.phases);
+console.log('Standard Gantt items:', ladder.standard?.tasks);
+console.log('Concrete evidence:', ladder.concrete);
+
+// Drill down into single task ladder slice
+const taskLadder = await engine.getTaskLadder('task_123');
+```
+
+---
+
+## Frontend Integration
+
+### React (`@critical-path/react`)
+
+```tsx
+import { useTimelineLadder, useCriticalPath } from '@critical-path/react';
+
+export function TimelineView({ projectId }: { projectId: string }) {
+  const { ladder, level, setLevel, macro, standard, concrete } = useTimelineLadder(projectId);
+  const { analysis } = useCriticalPath(projectId);
+
+  return (
+    <div>
+      <div className="controls">
+        <button onClick={() => setLevel('macro')}>Macro</button>
+        <button onClick={() => setLevel('standard')}>Standard</button>
+        <button onClick={() => setLevel('concrete')}>Concrete</button>
+      </div>
+
+      {macro && <div className="banner">Health: {macro.health}</div>}
+      {standard && <div className="gantt">Tasks: {standard.tasks.length}</div>}
+      {concrete && <div className="evidence">Ground Truth Evidence Loaded</div>}
+    </div>
+  );
+}
+```
+
+### Svelte 5 (`@critical-path/svelte`)
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { createCriticalPathClient, createTimelineLadderState } from '@critical-path/svelte';
+
+  const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
+  const ladderState = createTimelineLadderState(client, 'proj_1');
+
+  onMount(() => {
+    ladderState.fetch();
+  });
+</script>
+
+{#if ladderState.macro}
+  <div class="macro">Status: {ladderState.macro.health}</div>
+{/if}
+```
+
+--------------------------------------------------------------------------------
+
+
+# SECTION: STORAGE ADAPTERS
+================================================================================
+
+## In-Memory Storage Adapter
+URL: https://criticalpath.pixerate.com/storage/in-memory/
+Description: Fast, zero-configuration in-memory store for unit tests, prototyping, and ephemeral workflows.
+
+The `InMemoryStore` adapter stores all projects, tasks, and dependencies in local memory maps.
+
+```typescript
+import { CriticalPathEngine, InMemoryStore } from '@critical-path/core';
+
+const store = new InMemoryStore();
+const engine = new CriticalPathEngine({ store });
+```
+
+---
+
+## When to Use
+
+- **Unit Testing**: Instant test execution with zero external database dependencies or teardown scripts.
+- **Local Prototyping**: Experiment with Critical Path APIs without installing database drivers.
+- **Ephemeral Sandbox Workflows**: In-memory simulations of project plans and critical path calculations.
+
+---
+
+## Limitations
+
+- Data is volatile and lost upon process termination.
+- Not suited for multi-instance production environments without external synchronization.
+
+--------------------------------------------------------------------------------
+
+## SQLite Storage Adapter
+URL: https://criticalpath.pixerate.com/storage/sqlite/
+Description: High-performance embedded SQL storage powered by better-sqlite3 for local development and edge deployments.
+
+The `SQLiteStore` adapter provides embedded, persistent relational storage with zero operational overhead.
+
+---
+
+## Installation & Setup
+
+```typescript
+import { CriticalPathEngine, SQLiteStore } from '@critical-path/core';
+
+// Persistent file-backed SQLite database
+const store = new SQLiteStore({
+  filename: './critical-path.db',
+});
+
+const engine = new CriticalPathEngine({ store });
+```
+
+---
+
+## In-Memory SQLite Mode
+
+You can also run SQLite completely in memory while maintaining full SQL transaction semantics:
+
+```typescript
+const inMemorySqlite = new SQLiteStore({
+  filename: ':memory:',
+});
+```
+
+---
+
+## Auto-Migration
+
+`SQLiteStore` automatically checks and initializes required schema tables (`projects`, `tasks`, `dependencies`, `custom_statuses`, `audit_logs`) upon instantiation, so no external migration step is needed.
+
+--------------------------------------------------------------------------------
+
+## Firebase & Cloud Firestore Storage Adapter
+URL: https://criticalpath.pixerate.com/storage/firebase/
+Description: Scalable serverless NoSQL storage powered by Google Cloud Firestore.
+
+The `FirebaseStore` adapter persists tasks, projects, and dependencies directly to **Google Cloud Firestore**.
+
+---
+
+## Setup with Firebase Admin SDK
+
+Install `firebase-admin`:
+
+```bash
+pnpm add firebase-admin
+```
+
+Initialize Firestore and instantiate `FirebaseStore`:
+
+```typescript
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { CriticalPathEngine, FirebaseStore } from '@critical-path/core';
+
+// Initialize Firebase App with default credentials (or service account)
+initializeApp();
+
+const db = getFirestore();
+
+const store = new FirebaseStore({
+  db,
+  collectionPrefix: 'cp_', // Optional prefix for collections
+});
+
+const engine = new CriticalPathEngine({ store });
+```
+
+---
+
+## Firestore Collection Structure
+
+`FirebaseStore` organizes data into clean top-level collections or sub-collections:
+
+```
+cp_projects/{projectId}
+cp_tasks/{taskId}
+cp_dependencies/{dependencyId}
+cp_audit_logs/{logId}
+```
+
+Queries automatically leverage Firestore compound indexes for fast filtering by `projectId`, `status`, and `priority`.
+
+--------------------------------------------------------------------------------
+
+## Custom Storage Adapters
+URL: https://criticalpath.pixerate.com/storage/custom/
+Description: Implement your own custom storage adapter for PostgreSQL, MongoDB, DynamoDB, or Redis.
+
+Critical Path makes zero assumptions about your persistence layer. Any class implementing `CriticalPathStore` can be passed to `CriticalPathEngine`.
+
+---
+
+## The `CriticalPathStore` Interface
+
+```typescript
+import type { Task, Project, Dependency, StatusDefinition } from '@critical-path/core';
+
+export interface CriticalPathStore {
+  // Project Methods
+  createProject(project: Project): Promise<Project>;
+  getProject(id: string): Promise<Project | null>;
+  listProjects(): Promise<Project[]>;
+  updateProject(id: string, updates: Partial<Project>): Promise<Project>;
+  deleteProject(id: string): Promise<void>;
+
+  // Task Methods
+  createTask(task: Task): Promise<Task>;
+  getTask(id: string): Promise<Task | null>;
+  listTasks(filter?: { projectId?: string; status?: string }): Promise<Task[]>;
+  updateTask(id: string, updates: Partial<Task>): Promise<Task>;
+  deleteTask(id: string): Promise<void>;
+
+  // Dependency Methods
+  addDependency(dep: Dependency): Promise<Dependency>;
+  listDependencies(projectId: string): Promise<Dependency[]>;
+  deleteDependency(id: string): Promise<void>;
+}
+```
+
+--------------------------------------------------------------------------------
+
+
+# SECTION: FRAMEWORK ADAPTERS
+================================================================================
+
+## Next.js App Router Integration
+URL: https://criticalpath.pixerate.com/frameworks/nextjs/
+Description: Mount Critical Path route handlers directly in Next.js 14/15 App Router.
+
+Critical Path includes an out-of-the-box adapter for the Next.js App Router via `@critical-path/server`.
+
+---
+
+## Catch-All Route Setup
+
+Create a file at `app/api/critical-path/[...path]/route.ts`:
+
+```typescript
+import { createNextHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
+
+const store = new SQLiteStore({ filename: 'app.db' });
+const handler = createNextHandler({ store });
+
+export {
+  handler as GET,
+  handler as POST,
+  handler as PUT,
+  handler as PATCH,
+  handler as DELETE,
+  handler as OPTIONS,
+};
+```
+
+---
+
+## Authentication & Context Injection
+
+You can inject request context, such as the authenticated user ID or tenant ID:
+
+```typescript
+import { createNextHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
+import { auth } from '@/lib/auth'; // Your auth solution
+
+const store = new SQLiteStore({ filename: 'app.db' });
+
+const handler = createNextHandler({
+  store,
+  getContext: async (req) => {
+    const session = await auth();
+    return {
+      userId: session?.user?.id,
+      tenantId: session?.user?.tenantId,
+    };
+  },
+});
+```
+
+--------------------------------------------------------------------------------
+
+## SvelteKit Endpoint Integration
+URL: https://criticalpath.pixerate.com/frameworks/sveltekit/
+Description: Mount Critical Path route handlers in SvelteKit server endpoints.
+
+Integrating Critical Path into SvelteKit is straightforward using `createSvelteKitHandler`.
+
+---
+
+## Server Endpoint Setup
+
+Create `src/routes/api/critical-path/[...path]/+server.ts`:
+
+```typescript
+import { createSvelteKitHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
+
+const store = new SQLiteStore({ filename: 'app.db' });
+const handler = createSvelteKitHandler({ store });
+
+export const GET = handler;
+export const POST = handler;
+export const PUT = handler;
+export const PATCH = handler;
+export const DELETE = handler;
+export const OPTIONS = handler;
+```
+
+---
+
+## Using with Locals & Session
+
+```typescript
+import { createSvelteKitHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
+
+const store = new SQLiteStore({ filename: 'app.db' });
+
+const handler = createSvelteKitHandler({
+  store,
+  getContext: async (event) => {
+    return {
+      userId: event.locals.user?.id,
+    };
+  },
+});
+```
+
+--------------------------------------------------------------------------------
+
+## Standard Web Handler
+URL: https://criticalpath.pixerate.com/frameworks/web-handler/
+Description: Using the universal Web Fetch API router with Cloudflare Workers, Hono, Fastify, or Express.
+
+Critical Path's router operates directly on standard Web `Request` and `Response` objects.
+
+---
+
+## Universal Handler Usage
+
+```typescript
+import { createUniversalHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
+
+const store = new SQLiteStore({ filename: 'app.db' });
+const handleRequest = createUniversalHandler({ store });
+
+// In any Fetch-compliant environment:
+export default {
+  async fetch(request: Request): Promise<Response> {
+    return handleRequest(request);
+  },
+};
+```
+
+--------------------------------------------------------------------------------
+
+
+# SECTION: FRONTEND UI LIBRARIES
+================================================================================
+
+## React Integration (@critical-path/react)
+URL: https://criticalpath.pixerate.com/ui/react/
+Description: Building reactive project management interfaces with React hooks and context.
+
+The `@critical-path/react` package provides ready-to-use hooks for tasks, projects, and Kanban boards.
+
+---
+
+## Setup: Provider
+
+Wrap your app or page subtree with `CriticalPathProvider`:
+
+```tsx
+import { CriticalPathProvider } from '@critical-path/react';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <CriticalPathProvider options={{ baseUrl: '/api/critical-path' }}>
+      {children}
+    </CriticalPathProvider>
+  );
+}
+```
+
+---
+
+## Available Hooks
+
+### `useTasks`
+Manages task retrieval, filtering, and CRUD operations with optimistic rollback:
+
+```tsx
+import { useTasks } from '@critical-path/react';
+
+function TaskView({ projectId }: { projectId: string }) {
+  const { tasks, loading, error, createTask, updateTask, updateTaskStatus, deleteTask } = useTasks(projectId);
+
+  const handleUpdate = async (taskId: string) => {
+    await updateTask(taskId, { priority: 'urgent' });
+  };
+
+  return (/* JSX */);
+}
+```
+
+### `useProjects`
+Manages project listing and creation:
+
+```tsx
+import { useProjects } from '@critical-path/react';
+
+function ProjectSelector() {
+  const { projects, loading, createProject } = useProjects();
+  return (/* JSX */);
+}
+```
+
+### `useKanban`
+Organizes tasks into workflow or semantic Kanban columns with reordering and drag-and-drop support:
+
+```tsx
+import { useKanban } from '@critical-path/react';
+
+function KanbanBoard({ projectId }: { projectId: string }) {
+  const { columns, moveTask, loading } = useKanban(projectId, { groupBy: 'workflow' });
+
+  if (loading) return <div>Loading board...</div>;
+
+  return (
+    <div className="flex gap-4">
+      {Object.entries(columns).map(([columnName, tasks]) => (
+        <div key={columnName} className="w-72 bg-gray-100 p-4 rounded">
+          <h3 className="font-bold">{columnName} ({tasks.length})</h3>
+          {tasks.map(task => (
+            <div key={task.id} className="p-2 bg-white rounded shadow my-2">
+              <span>{task.title}</span>
+              <button onClick={() => moveTask(task.id, 'done')}>Done</button>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+### `useTaskActivity`
+Combines threaded discussions with inline attachments and emoji reactions:
+
+```tsx
+import { useTaskActivity } from '@critical-path/react';
+
+function TaskActivity({ taskId }: { taskId: string }) {
+  const { threads, standaloneAttachments, addComment, addReaction } = useTaskActivity(taskId);
+
+  return (
+    <div>
+      {threads.map(thread => (
+        <div key={thread.id}>
+          <p>{thread.content}</p>
+          <button onClick={() => addReaction(thread.id, '👍', 'user_1')}>👍</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+### `useTaskTransitions`
+Fetches allowed state transitions for a task governed by workflow definitions:
+
+```tsx
+import { useTaskTransitions } from '@critical-path/react';
+
+function TaskStatusPicker({ taskId }: { taskId: string }) {
+  const { allowedTransitions, loading } = useTaskTransitions(taskId);
+
+  return (
+    <select>
+      {allowedTransitions.map(status => (
+        <option key={status} value={status}>{status}</option>
+      ))}
+    </select>
+  );
+}
+```
+
+### `useWebMCP`
+Registers client-side WebMCP tools into the browser context (`document.modelContext`) for AI copilots, automatically scoped to the active project:
+
+```tsx
+import { useWebMCP } from '@critical-path/react';
+
+function CopilotIntegration({ projectId }: { projectId: string }) {
+  const { registered, tools, error } = useWebMCP({
+    projectId,
+    tools: ['create_task', 'list_tasks', 'update_task', 'add_comment']
+  });
+
+  if (!registered) return null;
+
+  return (
+    <div className="copilot-badge">
+      🤖 AI Assistant Active ({tools.length} actions available)
+    </div>
+  );
+}
+```
+
+--------------------------------------------------------------------------------
+
+## Svelte Integration (@critical-path/svelte)
+URL: https://criticalpath.pixerate.com/ui/svelte/
+Description: Idiomatic Svelte state primitives and runes for project management.
+
+The `@critical-path/svelte` package offers native reactive state containers tailored for Svelte.
+
+---
+
+## Client & State Initialization
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import {
+    createCriticalPathClient,
+    createProjectState,
+    createTaskState
+  } from '@critical-path/svelte';
+
+  const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
+  const projectState = createProjectState(client);
+  const taskState = createTaskState(client, 'proj-123');
+
+  onMount(() => {
+    projectState.fetch();
+    taskState.fetch();
+  });
+</script>
+
+<div class="container">
+  <h2>Tasks ({taskState.data.length})</h2>
+
+  {#if taskState.loading}
+    <p>Loading...</p>
+  {:else}
+    <ul>
+      {#each taskState.data as task (task.id)}
+        <li>
+          <span>{task.title}</span>
+          <span class="badge">{task.status}</span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</div>
+```
+
+---
+
+## Reactive Kanban Board (`createKanbanState`)
+
+Buckets tasks reactively with Svelte 5 `$derived.by` into workflow or semantic status columns:
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { createCriticalPathClient, createKanbanState } from '@critical-path/svelte';
+
+  const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
+  const kanban = createKanbanState(client, 'proj-123', { groupBy: 'workflow' });
+
+  onMount(() => {
+    kanban.fetch();
+  });
+</script>
+
+<div class="kanban-grid" style="display: flex; gap: 16px;">
+  {#each Object.entries(kanban.columns) as [status, tasks]}
+    <div class="column">
+      <h3>{status} ({tasks.length})</h3>
+      {#each tasks as task (task.id)}
+        <div class="card">
+          <p>{task.title}</p>
+          <button on:click={() => kanban.moveTask(task.id, 'done')}>Done</button>
+        </div>
+      {/each}
+    </div>
+  {/each}
+</div>
+```
+
+---
+
+## Unified Task Activity (`createTaskActivityState`)
+
+Combines threaded comments with inline attachments and emoji reactions:
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { createCriticalPathClient, createTaskActivityState } from '@critical-path/svelte';
+
+  const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
+  const activity = createTaskActivityState(client, 'task-123');
+
+  onMount(() => {
+    activity.fetch();
+  });
+</script>
+
+<div class="activity-feed">
+  {#each activity.threads as thread (thread.id)}
+    <div class="thread">
+      <p><strong>{thread.authorId}</strong>: {thread.content}</p>
+      <button on:click={() => activity.addReaction(thread.id, '👍', 'user_1')}>👍</button>
+      {#each thread.attachments as att}
+        <a href={att.url} target="_blank">{att.filename}</a>
+      {/each}
+    </div>
+  {/each}
+</div>
+```
+
+---
+
+## Svelte 5 Runes WebMCP State (`createWebMcpState`)
+
+Expose client-side WebMCP tools to in-browser AI assistants with reactive Svelte 5 Runes (`$state`):
+
+```svelte
+<script lang="ts">
+  import {
+    createCriticalPathClient,
+    createWebMcpState
+  } from '@critical-path/svelte';
+
+  const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
+
+  // WebMcpState leverages Svelte 5 runes ($state)
+  const mcp = createWebMcpState(client, {
+    projectId: 'proj-123',
+    tools: ['create_task', 'list_tasks', 'update_task', 'add_comment']
+  });
+
+  function handleProjectChange(newProjectId: string) {
+    mcp.setProjectId(newProjectId); // Dynamically updates ambient scope
+  }
+</script>
+
+<div class="copilot-panel">
+  {#if mcp.registered}
+    <div class="ai-status">
+      🟢 AI Assistant Enabled ({mcp.tools.length} tools registered for {mcp.activeProjectId})
+    </div>
+  {/if}
+
+  {#if mcp.error}
+    <div class="error">{mcp.error.message}</div>
+  {/if}
+</div>
+```
+
+--------------------------------------------------------------------------------
+
+
+# SECTION: PLUGINS & EXTENSIBILITY
+================================================================================
+
+## Plugin Architecture & Creation
+URL: https://criticalpath.pixerate.com/plugins/creating-plugins/
+Description: Build modular plugins to extend the CriticalPathEngine with custom validation, webhooks, and integrations.
+
+Plugins in Critical Path are defined as objects adhering to the `CriticalPathPlugin` interface.
+
+```typescript
+export interface CriticalPathPlugin {
+  id: string;
+  name: string;
+  version: string;
+  hooks?: {
+    beforeTaskCreate?: (task: Partial<Task>) => Promise<Partial<Task>> | Partial<Task>;
+    afterTaskCreate?: (task: Task) => Promise<void> | void;
+    beforeTaskUpdate?: (task: Task, updates: Partial<Task>) => Promise<Partial<Task>> | Partial<Task>;
+    afterTaskUpdate?: (task: Task, previous: Task) => Promise<void> | void;
+    beforeTaskDelete?: (taskId: string) => Promise<void> | void;
+    afterTaskDelete?: (taskId: string) => Promise<void> | void;
+  };
+}
+```
+
+---
+
+## Registering Plugins
+
+Pass plugins during `CriticalPathEngine` instantiation:
+
+```typescript
+import { CriticalPathEngine, SQLiteStore } from '@critical-path/core';
+import { myCustomPlugin } from './my-plugin';
+
+const engine = new CriticalPathEngine({
+  store: new SQLiteStore({ filename: 'app.db' }),
+  plugins: [myCustomPlugin],
+});
+```
+
+--------------------------------------------------------------------------------
+
+## Audit Logging Plugin
+URL: https://criticalpath.pixerate.com/plugins/audit-log/
+Description: Implement comprehensive audit logging for task status changes and assignee reallocations.
+
+Here is a complete, production-ready audit logger plugin:
+
+```typescript
+import type { CriticalPathPlugin } from '@critical-path/core';
+
+export const auditLogPlugin: CriticalPathPlugin = {
+  id: 'audit-logger',
+  name: 'Audit Logger Plugin',
+  version: '1.0.0',
+  hooks: {
+    beforeTaskCreate: async (task) => {
+      // Auto-tag all created tasks
+      return {
+        ...task,
+        tags: [...(task.tags || []), 'AUDITED'],
+      };
+    },
+    afterTaskUpdate: async (task, previous) => {
+      if (previous.status !== task.status) {
+        console.log(
+          `[Audit] Task "${task.id}" transitioned status: "${previous.status}" -> "${task.status}"`
+        );
+      }
+      if (previous.assigneeId !== task.assigneeId) {
+        console.log(
+          `[Audit] Task "${task.id}" reassigned from ${previous.assigneeId ?? 'unassigned'} to ${task.assigneeId}`
+        );
+      }
+    },
+  },
+};
+```
+
+--------------------------------------------------------------------------------
+
+
+# SECTION: MODEL CONTEXT PROTOCOL (MCP)
+================================================================================
+
+## MCP & WebMCP Overview
+URL: https://criticalpath.pixerate.com/mcp/overview/
+Description: Dual Model Context Protocol architecture for AI coding agents and in-browser AI copilots in Critical Path.
+
+Critical Path provides native, first-class AI integration through the **Model Context Protocol (MCP)** via `@critical-path/mcp`.
+
+Rather than treating AI as an external consumer that must screen-scrape UIs or guess REST endpoints, Critical Path exposes a **unified tool definition registry** that powers two distinct environments:
+
+1. **Standard Server MCP** (`@critical-path/mcp/server`): Stdio or network transport connecting IDE agents (Claude Desktop, Cursor, Antigravity, cline) directly to local SQLite databases or remote Critical Path APIs.
+2. **Client-Side WebMCP** (`@critical-path/mcp/web`): In-browser tool registration following the **W3C Web Machine Learning Community Group (WebML CG)** WebMCP specification, enabling browser copilots to interact with project state using ambient project scoping.
+
+---
+
+## 🏛️ Architecture
+
+```mermaid
+graph TD
+  subgraph Agent Environments
+    Claude[Claude Desktop / Cursor]
+    BrowserAgent[Browser Copilot / Extension]
+  end
+
+  subgraph Critical Path MCP Layer
+    ToolDefs[12 Unified Tool Definitions<br/>Zod Schemas & Executors]
+    StdioServer[createCriticalPathMcpServer<br/>Stdio Transport]
+    WebMcp[registerWebMcpTools<br/>document.modelContext]
+  end
+
+  subgraph Core & Frameworks
+    Engine[CriticalPathEngine<br/>SQLite / Firestore]
+    Client[CriticalPathClient<br/>HTTP REST API]
+    React[useWebMCP Hook]
+    Svelte[createWebMcpState Rune]
+  end
+
+  Claude --> StdioServer
+  BrowserAgent --> WebMcp
+
+  StdioServer --> ToolDefs
+  WebMcp --> ToolDefs
+
+  ToolDefs --> Engine
+  ToolDefs --> Client
+
+  WebMcp -.-> React
+  WebMcp -.-> Svelte
+```
+
+---
+
+## 🛠️ Complete Tool Registry
+
+`@critical-path/mcp` provides 12 strongly-typed tools covering project management, task tracking, deliverable rollups, and threaded conversations:
+
+| Tool Name | Description | Key Arguments |
+| :--- | :--- | :--- |
+| `list_projects` | List all projects with optional query filter | `query`, `limit` |
+| `get_project` | Get detailed project information by ID or slug | `id` |
+| `create_project` | Create a new project workspace | `name`, `key`, `description` |
+| `list_tasks` | List tasks filtered by project, status, priority, or assignee | `projectId`, `status`, `assigneeId` |
+| `get_task` | Fetch full task details including dependencies | `id` |
+| `create_task` | Create a new task within a project | `projectId`, `title`, `status`, `priority` |
+| `update_task` | Update title, status, priority, description, or custom fields | `id`, `status`, `priority`, `title` |
+| `delete_task` | Remove a task permanently | `id` |
+| `list_deliverables` | List deliverables for a project with format and container specs | `projectId` |
+| `create_deliverable`| Create a high-level creative deliverable | `projectId`, `title`, `format` |
+| `list_comments` | Retrieve threaded discussion comments for a task | `taskId` |
+| `add_comment` | Post a discussion comment or agent reply | `taskId`, `content`, `authorId` |
+
+---
+
+## 🎯 Ambient Project Scoping
+
+When building frontend applications (e.g. viewing a project dashboard at `/projects/design-system`), user agents should not have to ask the user "Which project ID are you referring to?".
+
+WebMCP supports **ambient scoping**:
+```ts
+registerWebMcpTools({
+  client,
+  projectId: 'proj_marketing_q3', // Ambient context
+  tools: ['create_task', 'list_tasks']
+});
+```
+When an LLM calls `create_task({ title: "Draft banner copy" })`, `projectId` is automatically resolved and injected without requiring the model to specify it.
+
+---
+
+## 📦 Installation
+
+```bash
+# Add to your project or monorepo
+pnpm add @critical-path/mcp
+```
+
+- When using in server environments or Node CLIs, import from `@critical-path/mcp` or `@critical-path/mcp/server`.
+- When bundling for the browser (Vite, Next.js client, SvelteKit), import from `@critical-path/mcp/web` to avoid bundling Node stdio transports.
+
+--------------------------------------------------------------------------------
+
+## Standard Server MCP
+URL: https://criticalpath.pixerate.com/mcp/server/
+Description: Connecting Claude Desktop, Cursor, and autonomous AI agents to Critical Path via stdio and network transports.
+
+The standard MCP server implementation in `@critical-path/mcp/server` exposes project management tools, live resources, and prompt templates to AI coding environments using the [Model Context Protocol](https://modelcontextprotocol.io).
+
+---
+
+## 🚀 Quick Start with the CLI
+
+Run the MCP server directly using `npx`:
+
+### Local SQLite Database
+```bash
+npx @critical-path/mcp --db ./my-project.db
+```
+
+### Remote API (Next.js / SvelteKit / Express)
+```bash
+npx @critical-path/mcp --api http://localhost:3000/api/critical-path
+```
+
+### In-Memory Fallback (Testing & Scratchpads)
+```bash
+npx @critical-path/mcp
+```
+
+---
+
+## 🖥️ Claude Desktop Integration
+
+Add Critical Path to your Claude Desktop configuration file:
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "critical-path": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@critical-path/mcp",
+        "--db",
+        "/absolute/path/to/critical-path.db"
+      ]
+    }
+  }
+}
+```
+
+Once saved and restarted, Claude will have access to all 12 project tools, prompt templates, and project resources.
+
+---
+
+## 💻 Cursor Integration
+
+In Cursor:
+1. Open **Cursor Settings** (`Cmd+,` or `Ctrl+,`).
+2. Navigate to **Features** → **MCP**.
+3. Click **+ Add New MCP Server**.
+4. Set:
+   - **Type**: `command`
+   - **Command**: `npx -y @critical-path/mcp --api http://localhost:3000/api/critical-path`
+
+---
+
+## 🧑‍💻 Programmatic Server Creation
+
+You can embed the MCP server in your own Node.js backend services:
+
+```typescript
+import { createCriticalPathMcpServer, startStdioServer } from '@critical-path/mcp/server';
+import { CriticalPathEngine, SQLiteStore } from '@critical-path/core';
+
+// 1. Initialize your data store
+const store = new SQLiteStore({ filename: 'production.db' });
+const engine = new CriticalPathEngine({ store });
+
+// 2. Create the MCP Server instance
+const server = createCriticalPathMcpServer({
+  engine,
+  serverInfo: {
+    name: 'custom-critical-path-mcp',
+    version: '1.0.0'
+  }
+});
+
+// 3. Connect to stdio transport
+await startStdioServer(server);
+```
+
+---
+
+## 📂 MCP Resources & Prompts
+
+In addition to tools, the server exposes:
+
+### Resources
+- `criticalpath://projects`: Dynamic JSON resource listing all active projects.
+- `criticalpath://tasks`: Dynamic JSON list of all tasks.
+- `criticalpath://tasks/{id}`: Live snapshot of a specific task with dependencies.
+
+### Prompts
+- `summarize_project`: Automatically formats an executive summary prompt with total tasks, status breakdowns, and deliverables for a target `projectId`.
+- `triage_task`: Generates an actionable triage review prompt for a given `taskId`.
+
+--------------------------------------------------------------------------------
+
+## Client-Side WebMCP
+URL: https://criticalpath.pixerate.com/mcp/webmcp/
+Description: In-browser AI Copilots with W3C WebML CG WebMCP, React hooks, and Svelte 5 runes in Critical Path.
+
+**WebMCP** brings structured tool execution into browser applications. Following the **W3C Web Machine Learning Community Group (WebML CG)** WebMCP specification draft, `@critical-path/mcp/web` exposes project management tools directly onto the DOM context (`document.modelContext` / `navigator.modelContext`).
+
+---
+
+## 💡 Why WebMCP?
+
+Traditional AI web assistants rely on brittle DOM inspection, scraping CSS selectors, or guessing HTTP requests. With WebMCP:
+
+1. **Deterministic Execution**: The AI copilot receives strictly validated JSON schema tool signatures.
+2. **Context Awareness**: Tools can be scoped to the active project (`ambient scoping`).
+3. **Zero Leaked Secrets**: Browser tools interact with your authenticated client SDK session (`CriticalPathClient`), honoring cookie auth and sessions without exposing raw database credentials.
+
+---
+
+## ⚛️ React Integration (`useWebMCP`)
+
+The `@critical-path/react` package includes the `useWebMCP` hook:
+
+```tsx
+import { CriticalPathProvider, useWebMCP, useTasks } from '@critical-path/react';
+import { CriticalPathClient } from '@critical-path/client';
+
+const client = new CriticalPathClient({ baseUrl: '/api/critical-path' });
+
+function ProjectDashboard({ projectId }: { projectId: string }) {
+  // Register ambient tools for the AI Copilot on mount
+  const { registered, tools } = useWebMCP({
+    projectId,
+    tools: ['create_task', 'list_tasks', 'update_task', 'add_comment']
+  });
+
+  return (
+    <div className="project-view">
+      <header>
+        <h1>Project Dashboard</h1>
+        {registered && (
+          <span className="badge">
+            🤖 AI Copilot Active ({tools.length} tools registered)
+          </span>
+        )}
+      </header>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <CriticalPathProvider client={client}>
+      <ProjectDashboard projectId="proj_launch_2026" />
+    </CriticalPathProvider>
+  );
+}
+```
+
+The hook automatically cleans up and unregisters all tools when the component unmounts via `AbortController`.
+
+---
+
+## 🍊 Svelte 5 Integration (`WebMcpState` & `createWebMcpState`)
+
+For Svelte 5 applications, `@critical-path/svelte` provides first-class Runes state:
+
+```svelte
+<script lang="ts">
+  import { createCriticalPathClient, createWebMcpState } from '@critical-path/svelte';
+
+  const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
+
+  // Reactive state utilizing Svelte 5 Runes ($state)
+  const mcp = createWebMcpState(client, {
+    projectId: 'proj_marketing_2026',
+    tools: ['create_task', 'list_tasks', 'add_comment']
+  });
+
+  function switchProject(newId: string) {
+    // Dynamic project switching updates ambient scope instantly
+    mcp.setProjectId(newId);
+  }
+</script>
+
+<div class="container">
+  {#if mcp.registered}
+    <div class="ai-status">
+      🟢 AI Copilot Ready (Project: {mcp.activeProjectId})
+    </div>
+  {/if}
+
+  {#if mcp.error}
+    <div class="error-banner">{mcp.error.message}</div>
+  {/if}
+</div>
+```
+
+---
+
+## 🌐 Vanilla JS / Direct Registration
+
+You can also use `@critical-path/mcp/web` directly in any framework:
+
+```typescript
+import { registerWebMcpTools } from '@critical-path/mcp/web';
+import { CriticalPathClient } from '@critical-path/client';
+
+const client = new CriticalPathClient({ baseUrl: '/api/critical-path' });
+const controller = new AbortController();
+
+const { tools, unregister } = registerWebMcpTools({
+  client,
+  projectId: 'proj_123',
+  signal: controller.signal
+});
+
+// Access registered tools globally:
+// window.__CRITICAL_PATH_WEBMCP__.tools
+// document.modelContext.tools
+
+// Teardown when done:
+// controller.abort(); OR unregister();
+```
+
+--------------------------------------------------------------------------------
+
+
+# SECTION: REFERENCE & AI
+================================================================================
+
+## AI Agent Integration Guide
+URL: https://criticalpath.pixerate.com/reference/agents/
+Description: System prompts, tool schemas, and operational instructions for AI coding agents integrating Critical Path.
+
+Critical Path is built from the ground up to be seamlessly operable by AI Coding Agents (such as Antigravity, Claude, Cursor, Copilot, or OpenAI Swarms).
+
+---
+
+## Agent System Prompt Prompt Snippet
+
+When equipping an LLM or autonomous agent to interact with Critical Path, provide the following prompt context:
+
+```text
+You are interacting with a project managed via the Critical Path headless framework.
+- Core rules:
+  1. Always import from canonical package scopes:
+     - @critical-path/core for Engine, Plugins, and Storage Adapters
+     - @critical-path/server for Web Fetch route handlers
+     - @critical-path/client for HTTP SDK calls
+     - @critical-path/mcp for Model Context Protocol & WebMCP tools
+     - @critical-path/react or @critical-path/svelte for UI state
+  2. Every task status must map to a valid SemanticStatus:
+     'not_started' | 'in_progress' | 'completed' | 'canceled'.
+  3. When completing a task, check for downstream unblocked tasks before closing the loop.
+```
+
+---
+
+## Model Context Protocol (MCP) Integration
+
+The easiest and most reliable way to connect AI agents to Critical Path is through [`@critical-path/mcp`](../mcp/overview/):
+
+### External / IDE Agents (Claude Desktop, Cursor, CLI)
+```bash
+npx @critical-path/mcp --db ./app.db
+# or connect to remote web handler:
+npx @critical-path/mcp --api http://localhost:3000/api/critical-path
+```
+
+### In-Browser Copilots (WebMCP)
+```typescript
+import { registerWebMcpTools } from '@critical-path/mcp/web';
+registerWebMcpTools({ client, projectId: 'current-project-id' });
+```
+
+---
+
+## Operational Workflow for Coding Agents
+
+1. **Verify CI/CD Pipelines**: Always check GitHub Actions run logs and ensure all test matrices pass before marking tasks as complete.
+2. **Deterministic Schemas**: Treat all API payloads as strict TypeScript contracts. Never send unstructured strings for priority or status fields.
+3. **Documentation Parity & Astro Site Updates**: Whenever adding new features, update markdown documentation simultaneously, including the Astro documentation site (`apps/docs`).
+
+--------------------------------------------------------------------------------
+
+## HTTP REST API Specification
+URL: https://criticalpath.pixerate.com/reference/api/
+Description: Complete REST endpoint documentation exposed by @critical-path/server.
+
+The `@critical-path/server` router exposes the following REST endpoints under the configured base path (e.g. `/api/critical-path`).
+
+---
+
+## Projects Endpoints
+
+### `GET /projects`
+List all projects.
+
+**Response**: `200 OK`
+```json
+[
+  {
+    "id": "proj-123",
+    "name": "Design System",
+    "createdAt": "2026-09-08T12:00:00Z",
+    "updatedAt": "2026-09-08T12:00:00Z"
+  }
+]
+```
+
+### `POST /projects`
+Create a new project.
+
+**Body**:
+```json
+{
+  "name": "E-Commerce Replatform",
+  "description": "Migration to headless architecture"
+}
+```
+
+### `GET /projects/:projectId`
+Retrieve single project by ID.
+
+### `PATCH /projects/:projectId`
+Update project fields.
+
+### `DELETE /projects/:projectId`
+Delete a project and its associated tasks and dependencies.
+
+---
+
+## Tasks Endpoints
+
+### `GET /tasks?projectId=:projectId&status=:status`
+List tasks with optional filtering by project, assignee, or status.
+
+### `POST /tasks`
+Create a new task.
+
+**Body**:
+```json
+{
+  "projectId": "proj-123",
+  "title": "Migrate Cart Store",
+  "priority": "high",
+  "status": "todo",
+  "estimatedHours": 8
+}
+```
+
+### `PATCH /tasks/:taskId`
+Update a task's title, status, priority, or custom fields.
+
+### `DELETE /tasks/:taskId`
+Delete a task.
+
+---
+
+## Critical Path & Dependencies
+
+### `GET /projects/:projectId/critical-path`
+Calculates and returns the critical path analysis for the specified project.
+
+**Response**:
+```json
+{
+  "projectId": "proj-123",
+  "totalDurationHours": 24,
+  "criticalTaskIds": ["task-1", "task-3"],
+  "tasks": [
+    {
+      "taskId": "task-1",
+      "earlyStart": 0,
+      "earlyFinish": 8,
+      "lateStart": 0,
+      "lateFinish": 8,
+      "totalSlack": 0,
+      "isCritical": true
+    }
+  ]
+}
+```
+
+### `POST /dependencies`
+Create a dependency between two tasks.
+```json
+{
+  "projectId": "proj-123",
+  "sourceTaskId": "task-1",
+  "targetTaskId": "task-2",
+  "type": "finish_to_start"
+}
+```
+
+--------------------------------------------------------------------------------
+
+## TypeScript Type Definitions
+URL: https://criticalpath.pixerate.com/reference/types/
+Description: Canonical TypeScript types, interfaces, and enums exported by @critical-path/core.
+
+```typescript
+export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
+
+export type SemanticStatus = 'not_started' | 'in_progress' | 'completed' | 'canceled';
+
+export type TaskStatus =
+  | 'backlog'
+  | 'todo'
+  | 'in_progress'
+  | 'in_review'
+  | 'done'
+  | 'canceled'
+  | (string & {});
+
+export interface StatusDefinition {
+  key: string;
+  label: string;
+  category: SemanticStatus;
+}
+
+export interface Task {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  semanticStatus?: SemanticStatus;
+  priority: Priority;
+  assigneeId?: string;
+  reporterId?: string;
+  sprintId?: string;
+  dueDate?: string;
+  estimatedHours?: number;
+  loggedHours?: number;
+  tags?: string[];
+  customFields?: Record<string, unknown>;
+  parentId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  key?: string;
+  status?: string;
+  statuses?: StatusDefinition[];
+  customFieldsSchema?: Record<string, CustomFieldDefinition>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DependencyType =
+  | 'finish_to_start'
+  | 'start_to_start'
+  | 'finish_to_finish'
+  | 'start_to_finish';
+
+export interface Dependency {
+  id: string;
+  projectId: string;
+  sourceTaskId: string;
+  targetTaskId: string;
+  type: DependencyType;
+  lagHours?: number;
+  createdAt: string;
+}
+```
+
+--------------------------------------------------------------------------------
