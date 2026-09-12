@@ -21,7 +21,7 @@ Critical Path decouples project management logic from the presentation layer. It
 - [Data Model & Schema Reference](https://criticalpath.pixerate.com/core/data-model/): Complete specification of tasks, projects, dependencies, priorities, and semantic statuses in Critical Path.
 - [Dependencies & Critical Path Method](https://criticalpath.pixerate.com/core/dependencies/): How Critical Path models task dependencies as a DAG, detects circular loops, and computes the critical path duration.
 - [Lifecycle Hooks & Events](https://criticalpath.pixerate.com/core/lifecycle/): Tap into mutation lifecycle events for validation, webhooks, audit trails, and side effects.
-- [Ladder of Abstraction & CPM](https://criticalpath.pixerate.com/core/ladder-of-abstraction/): Bret Victor's Ladder of Abstraction applied to timelines, Gantt charts, and Critical Path Method (CPM) analysis.
+- [Ladder of Abstraction & CPM](https://criticalpath.pixerate.com/core/ladder-of-abstraction/): Ladder of Abstraction applied to timelines, Gantt charts, and Critical Path Method (CPM) analysis.
 
 ## Storage Adapters
 

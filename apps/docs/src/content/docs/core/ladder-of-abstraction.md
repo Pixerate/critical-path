@@ -1,9 +1,9 @@
 ---
 title: Ladder of Abstraction & CPM
-description: Bret Victor's Ladder of Abstraction applied to timelines, Gantt charts, and Critical Path Method (CPM) analysis.
+description: Ladder of Abstraction applied to timelines, Gantt charts, and Critical Path Method (CPM) analysis.
 ---
 
-Bret Victor's principle of **moving up and down the ladder of abstraction** emphasizes enabling users to smoothly transition between high-level macro summaries and concrete, granular ground truth without losing context or changing views.
+The principle of **moving up and down the ladder of abstraction** emphasizes enabling users to smoothly transition between high-level macro summaries and concrete, granular ground truth without losing context or changing views.
 
 In **Critical Path**, this is materialized as a multi-scale timeline framework combining rigorous **Critical Path Method (CPM)** graph scheduling with tangible evidence grounding.
 

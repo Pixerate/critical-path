@@ -426,7 +426,7 @@ export interface CriticalPathConfig {
 }
 
 // ==========================================
-// Bret Victor's Ladder of Abstraction Types
+// Ladder of Abstraction Types
 // ==========================================
 
 export type AbstractionLevel = 'macro' | 'standard' | 'concrete' | 'all';

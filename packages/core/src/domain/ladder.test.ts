@@ -7,7 +7,7 @@ import {
 } from './ladder.js';
 import type { Task, TaskContainer, Attachment, Deliverable, TimeEntry } from '../types/index.js';
 
-describe("Bret Victor's Ladder of Abstraction Domain Logic", () => {
+describe('Ladder of Abstraction Domain Logic', () => {
   const now = '2026-09-11T10:00:00.000Z';
 
   it('aggregates concrete evidence, daily effort distribution, and reality delta for a task', () => {
@@ -166,7 +166,7 @@ describe("Bret Victor's Ladder of Abstraction Domain Logic", () => {
 
   it('integrates seamlessly with CriticalPathEngine APIs', async () => {
     const engine = new CriticalPathEngine();
-    const project = await engine.createProject({ name: 'Bret Victor Project' });
+    const project = await engine.createProject({ name: 'Timeline Ladder Project' });
 
     const c1 = await engine.store.createContainer({
       projectId: project.id,
@@ -216,7 +216,7 @@ describe("Bret Victor's Ladder of Abstraction Domain Logic", () => {
     // 2. Query full Timeline Ladder
     const ladder = await engine.getTimelineLadder(project.id);
     expect(ladder.macro).toBeDefined();
-    expect(ladder.macro?.projectName).toBe('Bret Victor Project');
+    expect(ladder.macro?.projectName).toBe('Timeline Ladder Project');
     expect(ladder.macro?.criticalPathDurationHours).toBe(20);
     expect(ladder.macro?.phases).toHaveLength(1);
     expect(ladder.macro?.phases[0].name).toBe('Phase 1: Design');

@@ -296,7 +296,7 @@ describe('@critical-path/server Router Tests', () => {
     expect(delData.success).toBe(true);
   });
 
-  it('serves Bret Victor Timeline Ladder and Critical Path analysis over HTTP', async () => {
+  it('serves Timeline Ladder and Critical Path analysis over HTTP', async () => {
     const router = new CriticalPathRouter();
     const project = await router.engine.createProject({ key: 'LAD', name: 'Ladder Project' });
 

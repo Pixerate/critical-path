@@ -20,7 +20,7 @@ Welcome to the **Critical Path** developer documentation. This guide provides an
 10. [Threaded Comments & Attachments (React & Svelte)](#10-threaded-comments--attachments-react--svelte)
 11. [Domain-Driven Design (DDD) & Event-Driven Architecture](#11-domain-driven-design-ddd--event-driven-architecture)
 12. [Model Context Protocol (MCP) & WebMCP Integration](#12-model-context-protocol-mcp--webmcp-integration)
-13. [Bret Victor's Ladder of Abstraction & Critical Path Method (CPM)](#13-bret-victors-ladder-of-abstraction--critical-path-method-cpm)
+13. [Ladder of Abstraction & Critical Path Method (CPM)](#13-ladder-of-abstraction--critical-path-method-cpm)
 
 ---
 
@@ -722,9 +722,9 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
 ---
 
-## 13. Bret Victor's Ladder of Abstraction & Critical Path Method (CPM)
+## 13. Ladder of Abstraction & Critical Path Method (CPM)
 
-Bret Victor's seminal principle of **moving up and down the ladder of abstraction** emphasizes enabling users to smoothly transition between high-level macro summaries and concrete, granular ground truth without losing context or changing views.
+The principle of **moving up and down the ladder of abstraction** emphasizes enabling users to smoothly transition between high-level macro summaries and concrete, granular ground truth without losing context or changing views.
 
 In **Critical Path**, this is materialized as a multi-scale timeline framework combining rigorous **Critical Path Method (CPM)** graph scheduling with tangible evidence grounding.
 

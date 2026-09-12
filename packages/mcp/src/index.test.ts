@@ -110,7 +110,7 @@ describe('@critical-path/mcp', () => {
 
     it('calculates critical path and returns timeline ladder via MCP tools', async () => {
       const createProjTool = TOOL_MAP.get('create_project')!;
-      const project = await createProjTool.execute({ name: 'Bret Victor MCP', key: 'BVM' }, engine);
+      const project = await createProjTool.execute({ name: 'Timeline Ladder MCP', key: 'TLM' }, engine);
 
       const createTaskTool = TOOL_MAP.get('create_task')!;
       const t1 = await createTaskTool.execute({

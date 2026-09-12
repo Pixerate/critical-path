@@ -138,7 +138,7 @@ Combines threaded comments with inline attachments (`attachment.commentId === co
 {/each}
 ```
 
-### 4. Bret Victor's Ladder of Abstraction (`TimelineLadderState`)
+### 4. Ladder of Abstraction (`TimelineLadderState`)
 
 Fluidly traverse between Macro phase health, Standard Gantt tasks with CPM critical paths, and Concrete deliverables/effort using Svelte 5 Runes:
 

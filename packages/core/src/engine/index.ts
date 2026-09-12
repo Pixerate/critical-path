@@ -1355,7 +1355,7 @@ export class CriticalPathEngine {
     return this.store.deleteIteration(id);
   }
 
-  // --- Bret Victor's Ladder of Abstraction & Critical Path Method ---
+  // --- Ladder of Abstraction & Critical Path Method ---
   async calculateCriticalPath(projectId: string): Promise<CriticalPathAnalysis> {
     const tasks = await this.store.getTasks(projectId);
     const allDepArrays = await Promise.all(tasks.map((t) => this.store.getDependencies(t.id)));

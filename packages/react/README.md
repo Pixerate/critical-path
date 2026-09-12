@@ -114,7 +114,7 @@ export function ActivityStream({ taskId }: { taskId: string }) {
 }
 ```
 
-### 5. Bret Victor's Ladder of Abstraction (`useTimelineLadder` & `useCriticalPath`)
+### 5. Ladder of Abstraction (`useTimelineLadder` & `useCriticalPath`)
 
 Fluidly traverse between Macro phase health, Standard Gantt tasks with CPM critical paths, and Concrete deliverables/effort:
 

@@ -435,7 +435,7 @@ export const getTimelineLadderTool: ToolDefinition<{
 }> = {
   name: 'get_timeline_ladder',
   title: 'Get Timeline Ladder of Abstraction',
-  description: 'Retrieve Bret Victor Ladder of Abstraction for a project timeline across macro phase envelopes, standard Gantt tasks & CPM, and concrete deliverables/time/attachments.',
+  description: 'Retrieve Ladder of Abstraction for a project timeline across macro phase envelopes, standard Gantt tasks & CPM, and concrete deliverables/time/attachments.',
   zodSchema: z.object({
     projectId: z.string().optional().describe('Project ID (falls back to ambient context if omitted)'),
     level: z.enum(['macro', 'standard', 'concrete', 'all']).optional().describe('Abstraction level (macro, standard, concrete, or all)'),
@@ -469,7 +469,7 @@ export const getTimelineLadderTool: ToolDefinition<{
 export const getTaskLadderTool: ToolDefinition<{ taskId: string }> = {
   name: 'get_task_ladder',
   title: 'Get Task Ladder View',
-  description: 'Retrieve multi-scale Bret Victor ladder view for a single task, connecting its macro phase, standard CPM timeline position, and concrete work evidence.',
+  description: 'Retrieve multi-scale ladder view for a single task, connecting its macro phase, standard CPM timeline position, and concrete work evidence.',
   zodSchema: z.object({
     taskId: z.string().describe('The task ID')
   }),

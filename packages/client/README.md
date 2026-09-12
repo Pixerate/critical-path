@@ -77,7 +77,7 @@ const cpmAnalysis = await client.calculateCriticalPath('proj_1');
 console.log('Total project duration:', cpmAnalysis.totalDurationHours);
 console.log('Bottleneck tasks:', cpmAnalysis.criticalTaskIds);
 
-// Bret Victor Ladder of Abstraction (macro, standard, concrete rungs)
+// Ladder of Abstraction (macro, standard, concrete rungs)
 const ladder = await client.getTimelineLadder('proj_1', { level: 'all' });
 console.log('Macro phase progress:', ladder.macro?.overallProgressPercentage);
 console.log('Standard Gantt items:', ladder.standard?.tasks.length);

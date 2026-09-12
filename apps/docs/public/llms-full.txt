@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.pixerate.com
-> Documentation generated on: 2026-09-11T16:24:16.016Z
+> Documentation generated on: 2026-09-12T10:02:27.008Z
 
 ================================================================================
 
@@ -672,9 +672,9 @@ export const tagValidatorPlugin: CriticalPathPlugin = {
 
 ## Ladder of Abstraction & CPM
 URL: https://criticalpath.pixerate.com/core/ladder-of-abstraction/
-Description: Bret Victor's Ladder of Abstraction applied to timelines, Gantt charts, and Critical Path Method (CPM) analysis.
+Description: Ladder of Abstraction applied to timelines, Gantt charts, and Critical Path Method (CPM) analysis.
 
-Bret Victor's principle of **moving up and down the ladder of abstraction** emphasizes enabling users to smoothly transition between high-level macro summaries and concrete, granular ground truth without losing context or changing views.
+The principle of **moving up and down the ladder of abstraction** emphasizes enabling users to smoothly transition between high-level macro summaries and concrete, granular ground truth without losing context or changing views.
 
 In **Critical Path**, this is materialized as a multi-scale timeline framework combining rigorous **Critical Path Method (CPM)** graph scheduling with tangible evidence grounding.
 
