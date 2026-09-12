@@ -39,6 +39,7 @@ export interface User {
   email: string;
   avatarUrl?: string;
   role: Role;
+  weeklyCapacityHours?: number;
   createdAt: string;
 }
 
@@ -48,6 +49,7 @@ export interface Team {
   description?: string;
   leaderId?: string;
   memberIds: string[];
+  weeklyCapacityHours?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -628,5 +630,44 @@ export interface TaskLadderView {
   standard: StandardTaskTimelineItem;
   concrete: ConcreteTaskEvidence;
   metrics?: TaskMetrics;
+}
+
+export type WorkloadInterval = 'day' | 'week' | 'month';
+export type WorkloadGroupBy = 'assignee' | 'team' | 'taskType' | 'priority' | 'status';
+export type WorkloadMetric = 'scheduled' | 'logged' | 'remaining' | 'blended';
+
+export interface WorkloadBucket {
+  date: string; // ISO date string e.g. "2026-09-14" (start of bucket)
+  timestamp: number; // Unix timestamp in ms
+  totalHours: number;
+  values: Record<string, number>; // Dimension key to hours: { [dimensionKey]: hours }
+  capacity?: Record<string, number>; // Dimension key to available capacity hours: { [dimensionKey]: capacityHours }
+  totalCapacity?: number;
+  utilizationRatio?: number; // totalHours / totalCapacity
+}
+
+export interface WorkloadDistribution {
+  projectId?: string;
+  startDate: string;
+  endDate: string;
+  interval: WorkloadInterval;
+  groupBy: WorkloadGroupBy;
+  metric: WorkloadMetric;
+  seriesKeys: string[]; // Unique series keys sorted across all buckets
+  seriesLabels: Record<string, string>; // Human-readable labels e.g. { [key]: "Alice" }
+  buckets: WorkloadBucket[];
+  totalHours: number;
+  totalCapacity?: number;
+  averageUtilization?: number;
+}
+
+export interface WorkloadDistributionOptions {
+  startDate?: string;
+  endDate?: string;
+  interval?: WorkloadInterval; // default: 'week'
+  groupBy?: WorkloadGroupBy; // default: 'assignee'
+  metric?: WorkloadMetric; // default: 'blended'
+  defaultWeeklyCapacityHours?: number; // default: 40
+  capacityOverrides?: Record<string, number>; // e.g. { [assigneeOrTeamId]: weeklyCapacityHours }
 }
 

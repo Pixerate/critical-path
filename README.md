@@ -147,7 +147,7 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 
 ### Time & Resource Management
 - [x] **Time Tracking**: Logged hours, estimated hours, and `TimeEntry` models
-- [ ] **Resource Allocation**: *(Planned)*
+- [x] **Resource Allocation & Capacity Distribution**: Headless time-series contiguous bucketing, effort spreading, and capacity utilization for streamgraphs and stacked area charts
 - [ ] **Budget Tracking**: *(Planned)*
 
 ### Reporting & Analytics

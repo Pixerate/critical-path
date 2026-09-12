@@ -367,6 +367,26 @@ describe('@critical-path/server Router Tests', () => {
     const historyData = await historyRes.json();
     expect(historyData.progressHistory.taskId).toBe(t2.id);
     expect(historyData.progressHistory.points.length).toBeGreaterThanOrEqual(1);
+
+    // 6. GET /projects/:id/workload
+    const projectWorkloadReq = new Request(
+      `http://localhost:3000/api/critical-path/projects/${project.id}/workload?interval=week&metric=scheduled`
+    );
+    const projectWorkloadRes = await router.handleRequest(projectWorkloadReq);
+    expect(projectWorkloadRes.status).toBe(200);
+    const projectWorkloadData = await projectWorkloadRes.json();
+    expect(projectWorkloadData.workload.projectId).toBe(project.id);
+    expect(projectWorkloadData.workload.buckets.length).toBeGreaterThan(0);
+    expect(projectWorkloadData.workload.totalHours).toBeGreaterThan(0);
+
+    // 7. GET /workload (global)
+    const globalWorkloadReq = new Request(
+      `http://localhost:3000/api/critical-path/workload?interval=day`
+    );
+    const globalWorkloadRes = await router.handleRequest(globalWorkloadReq);
+    expect(globalWorkloadRes.status).toBe(200);
+    const globalWorkloadData = await globalWorkloadRes.json();
+    expect(globalWorkloadData.workload.buckets.length).toBeGreaterThan(0);
   });
 });
 

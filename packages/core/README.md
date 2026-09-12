@@ -36,6 +36,10 @@
   - Multi-scale timeline synthesis: Macro bird's-eye phase rollups (`getTimelineLadder({ level: 'macro' })`), Standard Gantt view with topological CPM forward/backward passes and total float/slack, and Concrete grounding (attachments, deliverables, checklist items, daily effort histograms, and reality deltas).
   - Single-task contextual drilldown via `getTaskLadder(taskId)`.
   - Comprehensive CPM analysis via `calculateCriticalPath(projectId)` identifying project bottleneck tasks and critical path duration.
+- **Headless Workload & Capacity Distribution (Streamgraphs & Capacity Planning)**:
+  - Time-series aggregations across customizable intervals (`day`, `week`, `month`) and dimensions (`assignee`, `team`, `taskType`, `priority`, `status`).
+  - Pluggable effort distribution metrics (`scheduled`, `logged`, `remaining`, `blended`) with contiguous, gap-free calendar buckets and zero-filled tabular series matrices ready for D3 (`d3.stack().offset(d3.stackOffsetWiggle)`).
+  - Dynamic capacity modeling per person and team, reporting bucket-level capacity thresholds and utilization ratios (`totalHours / totalCapacity`).
 
 ---
 
@@ -172,6 +176,30 @@ console.log('Earned Value Management:', metrics?.evm);
 const history = await engine.getTaskProgressHistory('task_123');
 console.log('Curve Profile:', history?.curveProfile);
 // 's_curve' | 'linear' | 'early_surge' | 'late_rush' | 'stalled'
+```
+
+### 7. Headless Workload & Capacity Distribution (Streamgraphs)
+
+```ts
+// Calculate weekly capacity and workload distribution across assignees
+const workload = await engine.getWorkloadDistribution('proj_123', {
+  interval: 'week',
+  groupBy: 'assignee',
+  metric: 'blended'
+});
+
+console.log('Series Keys (Assignee IDs):', workload.seriesKeys);
+console.log('Contiguous Weekly Buckets:', workload.buckets);
+// Each bucket contains zero-filled numeric values for all seriesKeys:
+// {
+//   date: '2026-09-01',
+//   timestamp: 1788220800000,
+//   values: { alice: 32, bob: 18, unassigned: 0 },
+//   capacity: { alice: 40, bob: 40 },
+//   totalHours: 50,
+//   totalCapacity: 80,
+//   utilizationRatio: 0.625
+// }
 ```
 
 ---

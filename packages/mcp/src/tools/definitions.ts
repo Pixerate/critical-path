@@ -529,6 +529,54 @@ export const getTaskProgressHistoryTool: ToolDefinition<{ taskId: string }> = {
   }
 };
 
+export const getWorkloadDistributionTool: ToolDefinition<{
+  projectId?: string;
+  startDate?: string;
+  endDate?: string;
+  interval?: 'day' | 'week' | 'month';
+  groupBy?: 'assignee' | 'team' | 'taskType' | 'priority' | 'status';
+  metric?: 'scheduled' | 'logged' | 'remaining' | 'blended';
+  defaultWeeklyCapacityHours?: number;
+}> = {
+  name: 'get_workload_distribution',
+  title: 'Get Workload Distribution',
+  description: 'Retrieve time-series workload and capacity distribution suitable for streamgraphs, stacked charts, and team capacity planning.',
+  zodSchema: z.object({
+    projectId: z.string().optional().describe('Project ID (optional, defaults to workspace-wide or ambient project)'),
+    startDate: z.string().optional().describe('Start date ISO (YYYY-MM-DD)'),
+    endDate: z.string().optional().describe('End date ISO (YYYY-MM-DD)'),
+    interval: z.enum(['day', 'week', 'month']).optional().describe('Bucket interval (day, week, month)'),
+    groupBy: z.enum(['assignee', 'team', 'taskType', 'priority', 'status']).optional().describe('Dimension to segment by'),
+    metric: z.enum(['scheduled', 'logged', 'remaining', 'blended']).optional().describe('Effort metric mode'),
+    defaultWeeklyCapacityHours: z.number().optional().describe('Default weekly capacity hours per person (default 40)')
+  }),
+  inputSchema: {
+    type: 'object',
+    properties: {
+      projectId: { type: 'string', description: 'Project ID (optional, defaults to workspace-wide or ambient project)' },
+      startDate: { type: 'string', description: 'Start date ISO (YYYY-MM-DD)' },
+      endDate: { type: 'string', description: 'End date ISO (YYYY-MM-DD)' },
+      interval: { type: 'string', enum: ['day', 'week', 'month'], description: 'Bucket interval' },
+      groupBy: { type: 'string', enum: ['assignee', 'team', 'taskType', 'priority', 'status'], description: 'Dimension to segment by' },
+      metric: { type: 'string', enum: ['scheduled', 'logged', 'remaining', 'blended'], description: 'Effort metric mode' },
+      defaultWeeklyCapacityHours: { type: 'number', description: 'Default weekly capacity hours per person' }
+    },
+    additionalProperties: false
+  },
+  annotations: { readOnlyHint: true },
+  execute: async (args, target, ambientContext) => {
+    const projectId = args.projectId || ambientContext?.projectId;
+    return (target as any).getWorkloadDistribution(projectId, {
+      startDate: args.startDate,
+      endDate: args.endDate,
+      interval: args.interval,
+      groupBy: args.groupBy,
+      metric: args.metric,
+      defaultWeeklyCapacityHours: args.defaultWeeklyCapacityHours
+    });
+  }
+};
+
 export const ALL_TOOLS: ToolDefinition[] = [
   listProjectsTool,
   getProjectTool,
@@ -546,7 +594,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   getTimelineLadderTool,
   getTaskLadderTool,
   getTaskMetricsTool,
-  getTaskProgressHistoryTool
+  getTaskProgressHistoryTool,
+  getWorkloadDistributionTool
 ];
 
 export const TOOL_MAP = new Map<string, ToolDefinition>(

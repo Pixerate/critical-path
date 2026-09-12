@@ -22,6 +22,7 @@ Welcome to the **Critical Path** developer documentation. This guide provides an
 12. [Model Context Protocol (MCP) & WebMCP Integration](#12-model-context-protocol-mcp--webmcp-integration)
 13. [Ladder of Abstraction & Critical Path Method (CPM)](#13-ladder-of-abstraction--critical-path-method-cpm)
 14. [Task Metrics, Inferred Actuals, EVM & Progress Curves](#14-task-metrics-inferred-actuals-evm--progress-curves)
+15. [Workload & Capacity Distribution (Streamgraphs)](#15-workload--capacity-distribution-streamgraphs)
 
 ---
 
@@ -815,6 +816,38 @@ console.log('Cost Performance Index (CPI):', metrics.evm.costPerformanceIndex);
 // Fetch time-series progress points and curve classification
 const history = await client.getTaskProgressHistory('task_123');
 console.log('Detected curve profile:', history.curveProfile);
+```
+
+---
+
+## 15. Workload & Capacity Distribution (Streamgraphs)
+
+Critical Path includes a headless time-series calculation engine that aggregates effort and models resource capacity across continuous calendar buckets.
+
+### Key Capabilities
+1. **Contiguous Buckets**: Generates gap-free buckets (`day`, `week`, `month`) without temporal discontinuities.
+2. **Tabular Zero-Filled Matrix**: Ensures every bucket contains numeric values for all dimension keys in `seriesKeys`, preventing `NaN` in continuous stacked layouts like D3 wiggle streamgraphs (`d3.stackOffsetWiggle`).
+3. **Multi-Dimension Grouping**: Group effort by `assignee`, `team`, `taskType`, `priority`, or `status`.
+4. **Effort Metrics**: Pluggable distribution logic for `scheduled` (linear spreading across duration), `logged` (time entries), `remaining`, and `blended`.
+5. **Capacity Modeling**: Computes bucket capacity and utilization ratios against `User.weeklyCapacityHours` or `Team.weeklyCapacityHours`.
+
+### Usage Example
+
+```ts
+import { CriticalPathClient } from '@critical-path/client';
+
+const client = new CriticalPathClient({ baseUrl: '/api/critical-path' });
+
+const distribution = await client.getWorkloadDistribution('proj_123', {
+  interval: 'week',
+  groupBy: 'assignee',
+  metric: 'blended'
+});
+
+console.log('Series keys:', distribution.seriesKeys);
+console.log('Total hours:', distribution.totalHours);
+console.log('Capacity:', distribution.totalCapacity);
+console.log('Average utilization:', distribution.averageUtilization);
 ```
 
 

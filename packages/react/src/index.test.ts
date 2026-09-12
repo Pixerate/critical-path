@@ -15,7 +15,9 @@ import {
   useWebMCP,
   useCriticalPath,
   useTimelineLadder,
-  useTaskLadder
+  useTaskLadder,
+  useTaskMetrics,
+  useWorkloadDistribution
 } from './index.js';
 
 describe('@critical-path/react Exports Test', () => {
@@ -36,6 +38,8 @@ describe('@critical-path/react Exports Test', () => {
     expect(useCriticalPath).toBeDefined();
     expect(useTimelineLadder).toBeDefined();
     expect(useTaskLadder).toBeDefined();
+    expect(useTaskMetrics).toBeDefined();
+    expect(useWorkloadDistribution).toBeDefined();
   });
 });
 

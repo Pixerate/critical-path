@@ -54,4 +54,10 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
   const subpath = pathname.replace(/^.*?\/critical-path\/?/, '').replace(/^\/+/, '');
   ```
 
+### Continuous Stacked Layouts & Streamgraphs Require Tabular Zero-Filling
+- **Area / Package**: `@critical-path/core`, `@critical-path/react`, `@critical-path/svelte`, D3 (`d3.stack`, `d3.stackOffsetWiggle`)
+- **Symptom / Behavior**: Streamgraph or stacked area SVG path `d` attributes evaluate to `NaN` or fail to render entirely when certain series (assignees, teams, task types) have no activity in particular time buckets.
+- **Root Cause**: D3 baseline offset algorithms (notably `d3.stackOffsetWiggle` and `d3.stackOffsetSilhouette`) calculate weighted baselines across all layers simultaneously. If any key in `seriesKeys` is `undefined` in any bucket `values`, D3 arithmetic results in `NaN`, which poisons the entire path calculation.
+- **Solution / Workaround**: In `calculateWorkloadDistribution`, the engine collects all unique `seriesKeys` across the entire queried timeline upfront and initializes every bucket's `values` dictionary with `0` for every key. When writing custom aggregators for continuous stacked visualizations, always ensure every series key is explicitly zero-filled in every bucket.
+
 

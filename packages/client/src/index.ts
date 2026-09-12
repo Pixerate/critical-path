@@ -35,7 +35,13 @@ import type {
   TaskEVM,
   TaskInferredActuals,
   ProgressInferenceSource,
-  ProgressCurveProfile
+  ProgressCurveProfile,
+  WorkloadDistribution,
+  WorkloadBucket,
+  WorkloadDistributionOptions,
+  WorkloadInterval,
+  WorkloadGroupBy,
+  WorkloadMetric
 } from '@critical-path/core';
 
 export type {
@@ -58,7 +64,13 @@ export type {
   TaskEVM,
   TaskInferredActuals,
   ProgressInferenceSource,
-  ProgressCurveProfile
+  ProgressCurveProfile,
+  WorkloadDistribution,
+  WorkloadBucket,
+  WorkloadDistributionOptions,
+  WorkloadInterval,
+  WorkloadGroupBy,
+  WorkloadMetric
 };
 
 export interface ClientOptions {
@@ -177,6 +189,30 @@ export class CriticalPathClient {
       `/projects/${encodeURIComponent(projectId)}/ladder${query}`
     );
     return res.ladder;
+  }
+
+  async getWorkloadDistribution(
+    projectId?: string,
+    options: WorkloadDistributionOptions = {}
+  ): Promise<WorkloadDistribution> {
+    const params = new URLSearchParams();
+    if (options.startDate) params.set('startDate', options.startDate);
+    if (options.endDate) params.set('endDate', options.endDate);
+    if (options.interval) params.set('interval', options.interval);
+    if (options.groupBy) params.set('groupBy', options.groupBy);
+    if (options.metric) params.set('metric', options.metric);
+    if (typeof options.defaultWeeklyCapacityHours === 'number') {
+      params.set('defaultWeeklyCapacityHours', options.defaultWeeklyCapacityHours.toString());
+    }
+
+    const path = projectId
+      ? `/projects/${encodeURIComponent(projectId)}/workload`
+      : '/workload';
+    const qs = params.toString();
+    const query = qs ? `?${qs}` : '';
+
+    const res = await this.request<{ workload: WorkloadDistribution }>(`${path}${query}`);
+    return res.workload;
   }
 
   // Tasks

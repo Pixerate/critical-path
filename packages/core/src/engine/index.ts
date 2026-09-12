@@ -30,7 +30,9 @@ import type {
   StandardTaskTimelineItem,
   ConcreteTaskEvidence,
   TaskMetrics,
-  TaskProgressHistory
+  TaskProgressHistory,
+  WorkloadDistribution,
+  WorkloadDistributionOptions
 } from '../types/index.js';
 import { StorageAdapter, InMemoryStore } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
@@ -84,6 +86,7 @@ import {
   reconstructTaskProgressHistory,
   type MetricOptions
 } from '../domain/metrics.js';
+import { calculateWorkloadDistribution } from '../domain/workload.js';
 
 export class CriticalPathEngine {
   public readonly store: StorageAdapter;
@@ -1507,6 +1510,27 @@ export class CriticalPathEngine {
       customStatusDefinitions,
       ...options
     });
+  }
+
+  async getWorkloadDistribution(
+    projectId?: string,
+    options: WorkloadDistributionOptions = {}
+  ): Promise<WorkloadDistribution> {
+    const tasks = await this.store.getTasks(projectId);
+    const teams = await this.store.getTeams();
+
+    const timeEntriesNested = await Promise.all(tasks.map((t) => this.store.getTimeEntries(t.id)));
+    const timeEntries: TimeEntry[] = timeEntriesNested.flat();
+
+    return calculateWorkloadDistribution(
+      {
+        tasks,
+        timeEntries,
+        teams,
+        projectId
+      },
+      options
+    );
   }
 
   private async dispatchWebhook(event: WebhookEvent, payload: Record<string, unknown>): Promise<void> {

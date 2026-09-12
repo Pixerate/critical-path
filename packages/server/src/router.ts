@@ -80,6 +80,27 @@ export class CriticalPathRouter {
             const ladder = await this.engine.getTimelineLadder(projectId, { level, containerId, iterationId });
             return this.jsonResponse({ ladder });
           }
+        } else if (subResource === 'workload' || subResource === 'workload-distribution') {
+          if (method === 'GET') {
+            const startDate = url.searchParams.get('startDate') || undefined;
+            const endDate = url.searchParams.get('endDate') || undefined;
+            const interval = (url.searchParams.get('interval') || undefined) as any;
+            const groupBy = (url.searchParams.get('groupBy') || undefined) as any;
+            const metric = (url.searchParams.get('metric') || undefined) as any;
+            const defaultWeeklyCapacityHours = url.searchParams.get('defaultWeeklyCapacityHours')
+              ? parseFloat(url.searchParams.get('defaultWeeklyCapacityHours')!)
+              : undefined;
+
+            const workload = await this.engine.getWorkloadDistribution(projectId, {
+              startDate,
+              endDate,
+              interval,
+              groupBy,
+              metric,
+              defaultWeeklyCapacityHours
+            });
+            return this.jsonResponse({ workload });
+          }
         } else {
           if (method === 'GET') {
             const project = await this.engine.getProject(projectId);
@@ -456,6 +477,31 @@ export class CriticalPathRouter {
           const body = await request.json();
           const entry = await this.engine.store.logTime(body);
           return this.jsonResponse({ timeEntry: entry }, 201);
+        }
+      }
+
+      // Workload & Capacity API
+      if (segments[0] === 'workload') {
+        if (method === 'GET') {
+          const projectId = url.searchParams.get('projectId') || undefined;
+          const startDate = url.searchParams.get('startDate') || undefined;
+          const endDate = url.searchParams.get('endDate') || undefined;
+          const interval = (url.searchParams.get('interval') || undefined) as any;
+          const groupBy = (url.searchParams.get('groupBy') || undefined) as any;
+          const metric = (url.searchParams.get('metric') || undefined) as any;
+          const defaultWeeklyCapacityHours = url.searchParams.get('defaultWeeklyCapacityHours')
+            ? parseFloat(url.searchParams.get('defaultWeeklyCapacityHours')!)
+            : undefined;
+
+          const workload = await this.engine.getWorkloadDistribution(projectId, {
+            startDate,
+            endDate,
+            interval,
+            groupBy,
+            metric,
+            defaultWeeklyCapacityHours
+          });
+          return this.jsonResponse({ workload });
         }
       }
 

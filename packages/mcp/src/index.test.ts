@@ -33,6 +33,7 @@ describe('@critical-path/mcp', () => {
       expect(toolNames).toContain('calculate_critical_path');
       expect(toolNames).toContain('get_timeline_ladder');
       expect(toolNames).toContain('get_task_ladder');
+      expect(toolNames).toContain('get_workload_distribution');
     });
 
     it('executes project and task workflows through tool definitions', async () => {
@@ -166,6 +167,13 @@ describe('@critical-path/mcp', () => {
       const taskHistoryResult = await taskHistoryTool.execute({ taskId: t2.id }, engine);
       expect(taskHistoryResult.taskId).toBe(t2.id);
       expect(taskHistoryResult.points.length).toBeGreaterThanOrEqual(1);
+
+      // 6. get_workload_distribution tool
+      const workloadTool = TOOL_MAP.get('get_workload_distribution')!;
+      const workloadResult = await workloadTool.execute({ projectId: project.id, interval: 'week' }, engine);
+      expect(workloadResult.projectId).toBe(project.id);
+      expect(workloadResult.buckets.length).toBeGreaterThan(0);
+      expect(workloadResult.totalHours).toBeGreaterThan(0);
     });
   });
 

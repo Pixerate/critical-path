@@ -28,7 +28,9 @@ import {
   TimelineLadderState,
   createTimelineLadderState,
   TaskMetricsState,
-  createTaskMetricsState
+  createTaskMetricsState,
+  WorkloadState,
+  createWorkloadState
 } from './index.js';
 import type { CriticalPathClient } from '@critical-path/client';
 import type {
@@ -40,7 +42,8 @@ import type {
   Deliverable,
   DeliverableSummary,
   CriticalPathAnalysis,
-  TimelineLadder
+  TimelineLadder,
+  WorkloadDistribution
 } from '@critical-path/core';
 
 describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
@@ -733,6 +736,86 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       expect(state.progress?.progressPercentage).toBe(75);
       expect(state.evm?.costPerformanceIndex).toBe(1.0);
       expect(state.curveProfile).toBe('linear');
+    });
+  });
+
+  describe('WorkloadState & createWorkloadState', () => {
+    it('initializes with default options and fetches workload distribution', async () => {
+      const mockDistribution: WorkloadDistribution = {
+        projectId: 'proj_wl',
+        startDate: '2026-09-01',
+        endDate: '2026-09-14',
+        interval: 'week',
+        groupBy: 'assignee',
+        metric: 'blended',
+        seriesKeys: ['u1', 'u2'],
+        seriesLabels: { u1: 'Alice', u2: 'Bob' },
+        buckets: [
+          {
+            date: '2026-09-01',
+            timestamp: 1788220800000,
+            totalHours: 40,
+            values: { u1: 25, u2: 15 },
+            capacity: { u1: 35, u2: 40 },
+            totalCapacity: 75,
+            utilizationRatio: 0.533
+          }
+        ],
+        totalHours: 40,
+        totalCapacity: 75,
+        averageUtilization: 0.533
+      };
+
+      const mockClient = {
+        getWorkloadDistribution: vi.fn().mockResolvedValue(mockDistribution)
+      } as unknown as CriticalPathClient;
+
+      const state = createWorkloadState(mockClient, 'proj_wl', {
+        interval: 'week',
+        groupBy: 'assignee',
+        metric: 'blended'
+      });
+
+      expect(state.data).toBeNull();
+      expect(state.buckets).toEqual([]);
+      expect(state.seriesKeys).toEqual([]);
+      expect(state.totalHours).toBe(0);
+
+      await state.fetch();
+
+      expect(mockClient.getWorkloadDistribution).toHaveBeenCalledWith('proj_wl', {
+        interval: 'week',
+        groupBy: 'assignee',
+        metric: 'blended'
+      });
+      expect(state.data).toEqual(mockDistribution);
+      expect(state.buckets).toHaveLength(1);
+      expect(state.seriesKeys).toEqual(['u1', 'u2']);
+      expect(state.totalHours).toBe(40);
+      expect(state.totalCapacity).toBe(75);
+      expect(state.averageUtilization).toBe(0.533);
+    });
+
+    it('updates interval and re-fetches', async () => {
+      const mockClient = {
+        getWorkloadDistribution: vi.fn().mockResolvedValue({
+          buckets: [],
+          seriesKeys: [],
+          seriesLabels: {},
+          totalHours: 0,
+          totalCapacity: 0
+        })
+      } as unknown as CriticalPathClient;
+
+      const state = new WorkloadState(mockClient, 'proj_wl');
+      expect(state.interval).toBe('week');
+
+      await state.setInterval('day');
+      expect(state.interval).toBe('day');
+      expect(mockClient.getWorkloadDistribution).toHaveBeenCalledWith(
+        'proj_wl',
+        expect.objectContaining({ interval: 'day' })
+      );
     });
   });
 });

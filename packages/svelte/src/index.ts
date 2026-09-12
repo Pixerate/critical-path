@@ -18,5 +18,6 @@ export * from './webmcp-state.svelte.js';
 export * from './critical-path-state.svelte.js';
 export * from './timeline-ladder-state.svelte.js';
 export * from './task-metrics-state.svelte.js';
+export * from './workload-state.svelte.js';
 
 

@@ -317,6 +317,25 @@ describe('@critical-path/client Tests', () => {
         }), { status: 200 });
       }
 
+      if (urlStr.includes('/projects/p1/workload')) {
+        return new Response(JSON.stringify({
+          workload: {
+            projectId: 'p1',
+            startDate: '2026-09-01',
+            endDate: '2026-09-14',
+            interval: 'week',
+            groupBy: 'assignee',
+            metric: 'blended',
+            seriesKeys: ['u1', 'u2'],
+            seriesLabels: { u1: 'Alice', u2: 'Bob' },
+            buckets: [
+              { date: '2026-09-01', timestamp: 1788220800000, totalHours: 20, values: { u1: 12, u2: 8 } }
+            ],
+            totalHours: 20
+          }
+        }), { status: 200 });
+      }
+
       return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
     };
 
@@ -336,6 +355,12 @@ describe('@critical-path/client Tests', () => {
     const taskLadder = await client.getTaskLadder('t2');
     expect(taskLadder.taskId).toBe('t2');
     expect(taskLadder.standard.title).toBe('Task 2');
+
+    const workload = await client.getWorkloadDistribution('p1', { interval: 'week', metric: 'blended' });
+    expect(workload.projectId).toBe('p1');
+    expect(workload.totalHours).toBe(20);
+    expect(workload.seriesKeys).toEqual(['u1', 'u2']);
+    expect(workload.buckets[0].values.u1).toBe(12);
   });
 });
 

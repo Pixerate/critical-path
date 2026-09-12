@@ -18,7 +18,12 @@ import type {
   TaskLadderView,
   AbstractionLevel,
   TaskMetrics,
-  TaskProgressHistory
+  TaskProgressHistory,
+  WorkloadDistribution,
+  WorkloadDistributionOptions,
+  WorkloadInterval,
+  WorkloadGroupBy,
+  WorkloadMetric
 } from '@critical-path/core';
 import { resolveStatusDefinition } from '@critical-path/core';
 import { registerWebMcpTools } from '@critical-path/mcp/web';
@@ -1085,6 +1090,69 @@ export function useTaskMetrics(taskId: string | undefined) {
     loading,
     error,
     refresh: fetchMetrics
+  };
+}
+
+export function useWorkloadDistribution(
+  projectId?: string,
+  initialOptions: WorkloadDistributionOptions = {}
+) {
+  const client = useCriticalPathClient();
+  const [interval, setInterval] = useState<WorkloadInterval>(initialOptions.interval || 'week');
+  const [groupBy, setGroupBy] = useState<WorkloadGroupBy>(initialOptions.groupBy || 'assignee');
+  const [metric, setMetric] = useState<WorkloadMetric>(initialOptions.metric || 'blended');
+  const [workload, setWorkload] = useState<WorkloadDistribution | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchWorkload = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await client.getWorkloadDistribution(projectId, {
+        ...initialOptions,
+        interval,
+        groupBy,
+        metric
+      });
+      setWorkload(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    client,
+    projectId,
+    interval,
+    groupBy,
+    metric,
+    initialOptions.startDate,
+    initialOptions.endDate,
+    initialOptions.defaultWeeklyCapacityHours
+  ]);
+
+  useEffect(() => {
+    fetchWorkload();
+  }, [fetchWorkload]);
+
+  return {
+    workload,
+    interval,
+    setInterval,
+    groupBy,
+    setGroupBy,
+    metric,
+    setMetric,
+    buckets: workload?.buckets ?? [],
+    seriesKeys: workload?.seriesKeys ?? [],
+    seriesLabels: workload?.seriesLabels ?? {},
+    totalHours: workload?.totalHours ?? 0,
+    totalCapacity: workload?.totalCapacity ?? 0,
+    averageUtilization: workload?.averageUtilization,
+    loading,
+    error,
+    refresh: fetchWorkload
   };
 }
 
