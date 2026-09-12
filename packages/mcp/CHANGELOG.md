@@ -1,5 +1,11 @@
 # @critical-path/mcp
 
+## 0.3.1
+
+### Patch Changes
+
+- b4b2c98: Generalize tool descriptions for timeline ladder of abstraction tools.
+
 ## 0.3.0
 
 ### Minor Changes
