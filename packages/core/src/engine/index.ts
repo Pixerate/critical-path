@@ -28,7 +28,9 @@ import type {
   TaskLadderView,
   MacroPhaseRollup,
   StandardTaskTimelineItem,
-  ConcreteTaskEvidence
+  ConcreteTaskEvidence,
+  TaskMetrics,
+  TaskProgressHistory
 } from '../types/index.js';
 import { StorageAdapter, InMemoryStore } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
@@ -77,6 +79,11 @@ import { validateCustomFieldValues } from '../domain/custom-fields.js';
 import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
 import { calculateCPM } from '../domain/cpm.js';
 import { buildTimelineLadder, aggregateConcreteEvidenceForTask } from '../domain/ladder.js';
+import {
+  calculateTaskMetrics,
+  reconstructTaskProgressHistory,
+  type MetricOptions
+} from '../domain/metrics.js';
 
 export class CriticalPathEngine {
   public readonly store: StorageAdapter;
@@ -451,6 +458,19 @@ export class CriticalPathEngine {
       );
       processedUpdates.semanticStatus = processedUpdates.semanticStatus ?? statusDef.category;
       const now = new Date().toISOString();
+
+      const existingStatusDef = resolveStatusDefinition(
+        existing.status,
+        project?.statusDefinitions || workflow?.statuses
+      );
+      if (
+        (existingStatusDef.category === 'completed' || existingStatusDef.category === 'canceled') &&
+        (statusDef.category === 'in_progress' || statusDef.category === 'not_started') &&
+        processedUpdates.actualEndDate === undefined
+      ) {
+        processedUpdates.actualEndDate = undefined;
+      }
+
       if (statusDef.category === 'in_progress' && !existing.actualStartDate && !processedUpdates.actualStartDate) {
         processedUpdates.actualStartDate = now;
       }
@@ -1441,13 +1461,52 @@ export class CriticalPathEngine {
 
     const concrete = ladder.concrete?.[taskId] || aggregateConcreteEvidenceForTask(task);
     const macroPhase = ladder.macro?.phases.find((p) => p.taskIds.includes(taskId));
+    const metrics = await this.getTaskMetrics(taskId);
 
     return {
       taskId,
       macroPhase,
       standard,
-      concrete
+      concrete,
+      metrics: metrics || undefined
     };
+  }
+
+  async getTaskMetrics(taskId: string, options?: MetricOptions): Promise<TaskMetrics | null> {
+    const task = await this.store.getTask(taskId);
+    if (!task) return null;
+
+    const [activities, timeEntries, project, workflow] = await Promise.all([
+      this.store.getActivities({ taskId }),
+      this.store.getTimeEntries(taskId),
+      this.store.getProject(task.projectId),
+      this.resolveProjectWorkflow(task.projectId)
+    ]);
+
+    const customStatusDefinitions = project?.statusDefinitions || workflow?.statuses;
+
+    return calculateTaskMetrics(task, activities, timeEntries, {
+      customStatusDefinitions,
+      ...options
+    });
+  }
+
+  async getTaskProgressHistory(taskId: string, options?: MetricOptions): Promise<TaskProgressHistory | null> {
+    const task = await this.store.getTask(taskId);
+    if (!task) return null;
+
+    const [activities, project, workflow] = await Promise.all([
+      this.store.getActivities({ taskId }),
+      this.store.getProject(task.projectId),
+      this.resolveProjectWorkflow(task.projectId)
+    ]);
+
+    const customStatusDefinitions = project?.statusDefinitions || workflow?.statuses;
+
+    return reconstructTaskProgressHistory(task, activities, {
+      customStatusDefinitions,
+      ...options
+    });
   }
 
   private async dispatchWebhook(event: WebhookEvent, payload: Record<string, unknown>): Promise<void> {

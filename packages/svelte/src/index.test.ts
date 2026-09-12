@@ -26,7 +26,9 @@ import {
   CriticalPathState,
   createCriticalPathState,
   TimelineLadderState,
-  createTimelineLadderState
+  createTimelineLadderState,
+  TaskMetricsState,
+  createTaskMetricsState
 } from './index.js';
 import type { CriticalPathClient } from '@critical-path/client';
 import type {
@@ -658,6 +660,79 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       await ladderState.setLevel('macro');
       expect(ladderState.level).toBe('macro');
       expect(mockClient.getTimelineLadder).toHaveBeenCalledWith('proj_ladder', { level: 'macro' });
+    });
+  });
+
+  describe('TaskMetricsState', () => {
+    it('fetches metrics and progress history and derives subfields', async () => {
+      const mockMetrics = {
+        taskId: 'task_1',
+        inferredActuals: {
+          actualStartDate: '2026-09-01T00:00:00Z',
+          actualEndDate: '2026-09-05T00:00:00Z',
+          isStartDateInferred: false,
+          isEndDateInferred: true,
+          activeWorkingHours: 96
+        },
+        realityDelta: {
+          estimatedHours: 20,
+          loggedHours: 15,
+          varianceHours: -5,
+          effortVarianceHours: -5,
+          accuracyRatio: 0.75,
+          isOverdue: false,
+          isOverEstimate: false
+        },
+        progress: {
+          progressPercentage: 75,
+          source: 'explicit' as const,
+          isExplicit: true,
+          breakdown: { explicitProgress: 75 }
+        },
+        evm: {
+          plannedValue: 20,
+          earnedValue: 15,
+          actualCost: 15,
+          costVariance: 0,
+          scheduleVariance: -5,
+          costPerformanceIndex: 1.0,
+          schedulePerformanceIndex: 0.75
+        }
+      };
+
+      const mockHistory = {
+        taskId: 'task_1',
+        points: [
+          { timestamp: '2026-09-01T00:00:00Z', progress: 0, status: 'todo', semanticStatus: 'not_started' as const, action: 'task.created' },
+          { timestamp: '2026-09-05T00:00:00Z', progress: 75, status: 'in_progress', semanticStatus: 'in_progress' as const, action: 'task.updated' }
+        ],
+        curveProfile: 'linear' as const
+      };
+
+      const mockClient = {
+        getTaskMetrics: vi.fn().mockResolvedValue(mockMetrics),
+        getTaskProgressHistory: vi.fn().mockResolvedValue(mockHistory)
+      } as unknown as CriticalPathClient;
+
+      const state = createTaskMetricsState(mockClient, 'task_1');
+      expect(state.metrics).toBeNull();
+      expect(state.history).toBeNull();
+      expect(state.inferredActuals).toBeNull();
+      expect(state.realityDelta).toBeNull();
+      expect(state.progress).toBeNull();
+      expect(state.evm).toBeNull();
+      expect(state.curveProfile).toBeNull();
+
+      await state.fetchAll();
+      expect(mockClient.getTaskMetrics).toHaveBeenCalledWith('task_1');
+      expect(mockClient.getTaskProgressHistory).toHaveBeenCalledWith('task_1');
+      expect(state.metrics).toEqual(mockMetrics);
+      expect(state.history).toEqual(mockHistory);
+      expect(state.inferredActuals?.activeWorkingHours).toBe(96);
+      expect(state.realityDelta?.effortVarianceHours).toBe(-5);
+      expect(state.progress?.progressPercentage).toBe(75);
+      expect(state.evm?.costPerformanceIndex).toBe(1.0);
+      expect(state.curveProfile).toBe('linear');
     });
   });
 });

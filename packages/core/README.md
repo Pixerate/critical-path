@@ -153,6 +153,27 @@ if (state?.isPaceWarning) {
 }
 ```
 
+### 6. Task Metrics, Inferred Actuals & EVM
+
+```ts
+// Calculate comprehensive task metrics
+const metrics = await engine.getTaskMetrics('task_123');
+
+console.log('Inferred Actuals:', metrics?.inferredActuals);
+// { actualStartDate: '...', isStartDateInferred: false, activeWorkingHours: 18.5 }
+
+console.log('Progress Inference:', metrics?.progress);
+// { progressPercentage: 80, source: 'todos', breakdown: { todoProgress: 80 } }
+
+console.log('Earned Value Management:', metrics?.evm);
+// { plannedValue: 20, earnedValue: 16, actualCost: 18, cpi: 0.89, spi: 0.8 }
+
+// Reconstruct historical progress time-series and curve profile
+const history = await engine.getTaskProgressHistory('task_123');
+console.log('Curve Profile:', history?.curveProfile);
+// 's_curve' | 'linear' | 'early_surge' | 'late_rush' | 'stalled'
+```
+
 ---
 
 ## 🔌 Creating a Custom Plugin

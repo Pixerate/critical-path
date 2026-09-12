@@ -151,6 +151,21 @@ describe('@critical-path/mcp', () => {
       const taskLadderResult = await taskLadderTool.execute({ taskId: t2.id }, engine);
       expect(taskLadderResult.taskId).toBe(t2.id);
       expect(taskLadderResult.standard.title).toBe('Step 2: Polish');
+      expect(taskLadderResult.metrics).toBeDefined();
+
+      // 4. get_task_metrics tool
+      const taskMetricsTool = TOOL_MAP.get('get_task_metrics')!;
+      const taskMetricsResult = await taskMetricsTool.execute({ taskId: t2.id }, engine);
+      expect(taskMetricsResult.taskId).toBe(t2.id);
+      expect(taskMetricsResult.realityDelta.estimatedHours).toBe(6);
+      expect(taskMetricsResult.progress).toBeDefined();
+      expect(taskMetricsResult.evm).toBeDefined();
+
+      // 5. get_task_progress_history tool
+      const taskHistoryTool = TOOL_MAP.get('get_task_progress_history')!;
+      const taskHistoryResult = await taskHistoryTool.execute({ taskId: t2.id }, engine);
+      expect(taskHistoryResult.taskId).toBe(t2.id);
+      expect(taskHistoryResult.points.length).toBeGreaterThanOrEqual(1);
     });
   });
 

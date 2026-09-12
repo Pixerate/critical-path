@@ -487,6 +487,48 @@ export const getTaskLadderTool: ToolDefinition<{ taskId: string }> = {
   }
 };
 
+export const getTaskMetricsTool: ToolDefinition<{ taskId: string }> = {
+  name: 'get_task_metrics',
+  title: 'Get Task Metrics',
+  description: 'Retrieve multi-dimensional task metrics including inferred actuals, active working duration, effort/duration/schedule variances, progress inference, and Earned Value Management (EVM) metrics.',
+  zodSchema: z.object({
+    taskId: z.string().describe('The task ID')
+  }),
+  inputSchema: {
+    type: 'object',
+    properties: {
+      taskId: { type: 'string', description: 'The task ID' }
+    },
+    required: ['taskId'],
+    additionalProperties: false
+  },
+  annotations: { readOnlyHint: true },
+  execute: async (args, target) => {
+    return (target as any).getTaskMetrics(args.taskId);
+  }
+};
+
+export const getTaskProgressHistoryTool: ToolDefinition<{ taskId: string }> = {
+  name: 'get_task_progress_history',
+  title: 'Get Task Progress History',
+  description: 'Retrieve time-series progress data points and curve shape classification (linear, s_curve, early_surge, late_rush, stalled) for a task.',
+  zodSchema: z.object({
+    taskId: z.string().describe('The task ID')
+  }),
+  inputSchema: {
+    type: 'object',
+    properties: {
+      taskId: { type: 'string', description: 'The task ID' }
+    },
+    required: ['taskId'],
+    additionalProperties: false
+  },
+  annotations: { readOnlyHint: true },
+  execute: async (args, target) => {
+    return (target as any).getTaskProgressHistory(args.taskId);
+  }
+};
+
 export const ALL_TOOLS: ToolDefinition[] = [
   listProjectsTool,
   getProjectTool,
@@ -502,7 +544,9 @@ export const ALL_TOOLS: ToolDefinition[] = [
   addCommentTool,
   calculateCriticalPathTool,
   getTimelineLadderTool,
-  getTaskLadderTool
+  getTaskLadderTool,
+  getTaskMetricsTool,
+  getTaskProgressHistoryTool
 ];
 
 export const TOOL_MAP = new Map<string, ToolDefinition>(

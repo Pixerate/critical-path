@@ -518,9 +518,76 @@ export interface RealityDelta {
   estimatedHours: number;
   loggedHours: number;
   varianceHours: number; // loggedHours - estimatedHours
+  effortVarianceHours?: number; // loggedHours - estimatedHours (effort variance)
+  durationVarianceHours?: number; // actual duration hours - planned duration hours
   scheduleVarianceDays?: number; // days difference between planned/due vs actual
+  accuracyRatio?: number; // loggedHours / estimatedHours (estimation accuracy ratio)
   isOverdue: boolean;
   isOverEstimate: boolean;
+}
+
+export type ProgressInferenceSource = 'explicit' | 'todos' | 'time_effort' | 'schedule_elapsed' | 'blended';
+
+export interface TaskProgressInference {
+  progressPercentage: number;
+  source: ProgressInferenceSource;
+  isExplicit: boolean;
+  breakdown: {
+    explicitProgress?: number;
+    todoProgress?: number;
+    effortProgress?: number;
+    scheduleProgress?: number;
+  };
+}
+
+export type ProgressCurveProfile =
+  | 'linear'
+  | 's_curve'
+  | 'early_surge'
+  | 'late_rush'
+  | 'stalled'
+  | 'insufficient_data';
+
+export interface TaskProgressHistoryPoint {
+  timestamp: string;
+  progress: number;
+  inferredProgress?: number;
+  status: TaskStatus;
+  semanticStatus?: SemanticStatus;
+  action: string;
+}
+
+export interface TaskProgressHistory {
+  taskId: string;
+  points: TaskProgressHistoryPoint[];
+  curveProfile: ProgressCurveProfile;
+}
+
+export interface TaskEVM {
+  plannedValue: number; // PV (expected hours)
+  earnedValue: number; // EV (earned hours)
+  actualCost: number; // AC (logged hours)
+  costVariance: number; // CV = EV - AC
+  scheduleVariance: number; // SV = EV - PV
+  costPerformanceIndex: number; // CPI = EV / AC
+  schedulePerformanceIndex: number; // SPI = EV / PV
+}
+
+export interface TaskInferredActuals {
+  actualStartDate?: string;
+  actualEndDate?: string;
+  isStartDateInferred: boolean;
+  isEndDateInferred: boolean;
+  activeWorkingHours?: number;
+}
+
+export interface TaskMetrics {
+  taskId: string;
+  inferredActuals: TaskInferredActuals;
+  realityDelta: RealityDelta;
+  progress: TaskProgressInference;
+  evm: TaskEVM;
+  progressHistory: TaskProgressHistory;
 }
 
 export interface ConcreteTaskEvidence {
@@ -560,5 +627,6 @@ export interface TaskLadderView {
   macroPhase?: MacroPhaseRollup;
   standard: StandardTaskTimelineItem;
   concrete: ConcreteTaskEvidence;
+  metrics?: TaskMetrics;
 }
 

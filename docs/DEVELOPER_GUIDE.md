@@ -21,6 +21,7 @@ Welcome to the **Critical Path** developer documentation. This guide provides an
 11. [Domain-Driven Design (DDD) & Event-Driven Architecture](#11-domain-driven-design-ddd--event-driven-architecture)
 12. [Model Context Protocol (MCP) & WebMCP Integration](#12-model-context-protocol-mcp--webmcp-integration)
 13. [Ladder of Abstraction & Critical Path Method (CPM)](#13-ladder-of-abstraction--critical-path-method-cpm)
+14. [Task Metrics, Inferred Actuals, EVM & Progress Curves](#14-task-metrics-inferred-actuals-evm--progress-curves)
 
 ---
 
@@ -784,6 +785,36 @@ const ladder = await client.getTimelineLadder('project_1', { level: 'all' });
 console.log('Macro phase progress:', ladder.macro?.overallProgressPercentage);
 console.log('Critical path tasks:', ladder.standard?.criticalPathTaskIds);
 console.log('Concrete daily effort:', ladder.concrete);
+```
+
+---
+
+## 14. Task Metrics, Inferred Actuals, EVM & Progress Curves
+
+Critical Path equips every task with deep analytical measurement that reconciles planned schedule estimates against empirical reality:
+
+### Features & Computations
+1. **Inferred Actuals**: Auto-stamped `actualStartDate` and `actualEndDate` on transitions, with automatic `actualEndDate` clearing when re-opening completed tasks. Fallback inference extracts timestamps from historical activity logs.
+2. **Reality Delta**: Variance between estimated and logged effort (`effortVarianceHours`, `durationVarianceHours`, `accuracyRatio`, `isOverdue`, `isOverEstimate`).
+3. **Smart Progress Inference**: Priority waterfall evaluating explicit progress (>0%) > todo/checklist completion ratio > logged effort vs. estimate > elapsed schedule time.
+4. **Earned Value Management (EVM)**: Task-level $PV$, $EV$, $AC$, $CV$, $SV$, $CPI$, and $SPI$.
+5. **Progress History & Curves**: Reconstructs time-series progress points from activities, and classifies curve profile (`linear`, `s_curve`, `early_surge`, `late_rush`, `stalled`) via piecewise quartile interpolation.
+
+### Usage Example
+
+```ts
+import { CriticalPathClient } from '@critical-path/client';
+
+const client = new CriticalPathClient({ baseUrl: '/api/critical-path' });
+
+// Fetch comprehensive task metrics
+const metrics = await client.getTaskMetrics('task_123');
+console.log('Progress source:', metrics.progress.source);
+console.log('Cost Performance Index (CPI):', metrics.evm.costPerformanceIndex);
+
+// Fetch time-series progress points and curve classification
+const history = await client.getTaskProgressHistory('task_123');
+console.log('Detected curve profile:', history.curveProfile);
 ```
 
 

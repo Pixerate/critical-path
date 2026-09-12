@@ -16,7 +16,9 @@ import type {
   TimelineLadder,
   TimelineLadderOptions,
   TaskLadderView,
-  AbstractionLevel
+  AbstractionLevel,
+  TaskMetrics,
+  TaskProgressHistory
 } from '@critical-path/core';
 import { resolveStatusDefinition } from '@critical-path/core';
 import { registerWebMcpTools } from '@critical-path/mcp/web';
@@ -1031,9 +1033,58 @@ export function useTaskLadder(taskId: string | undefined) {
     macroPhase: taskLadder?.macroPhase ?? null,
     standard: taskLadder?.standard ?? null,
     concrete: taskLadder?.concrete ?? null,
+    metrics: taskLadder?.metrics ?? null,
     loading,
     error,
     refresh: fetchTaskLadder
+  };
+}
+
+export function useTaskMetrics(taskId: string | undefined) {
+  const client = useCriticalPathClient();
+  const [metrics, setMetrics] = useState<TaskMetrics | null>(null);
+  const [history, setHistory] = useState<TaskProgressHistory | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchMetrics = useCallback(async () => {
+    if (!taskId) {
+      setMetrics(null);
+      setHistory(null);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const [m, h] = await Promise.all([
+        client.getTaskMetrics(taskId),
+        client.getTaskProgressHistory(taskId)
+      ]);
+      setMetrics(m);
+      setHistory(h);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, taskId]);
+
+  useEffect(() => {
+    fetchMetrics();
+  }, [fetchMetrics]);
+
+  return {
+    metrics,
+    history,
+    inferredActuals: metrics?.inferredActuals ?? null,
+    realityDelta: metrics?.realityDelta ?? null,
+    progress: metrics?.progress ?? null,
+    evm: metrics?.evm ?? null,
+    curveProfile: history?.curveProfile ?? null,
+    loading,
+    error,
+    refresh: fetchMetrics
   };
 }
 

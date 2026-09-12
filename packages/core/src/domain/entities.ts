@@ -189,6 +189,12 @@ export class TaskEntity extends BaseEntity {
     const statusDef = resolveStatusDefinition(newStatus, options?.statusDefs || workflow?.statuses);
     this.semanticStatus = statusDef.category;
 
+    const prevStatusDef = resolveStatusDefinition(previousStatus, options?.statusDefs || workflow?.statuses);
+    if ((prevStatusDef.category === 'completed' || prevStatusDef.category === 'canceled') &&
+        (statusDef.category === 'in_progress' || statusDef.category === 'not_started')) {
+      this.actualEndDate = undefined;
+    }
+
     if (statusDef.category === 'in_progress' && !this.actualStartDate) {
       this.actualStartDate = now;
     }

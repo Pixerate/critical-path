@@ -76,6 +76,19 @@ export function aggregateConcreteEvidenceForTask(
     scheduleVarianceDays = Math.round((actualTime - dueTime) / (1000 * 60 * 60 * 24));
   }
 
+  let durationVarianceHours: number | undefined;
+  if (task.actualStartDate && task.actualEndDate && task.plannedStartDate && task.dueDate) {
+    const actualDuration = (new Date(task.actualEndDate).getTime() - new Date(task.actualStartDate).getTime()) / (1000 * 60 * 60);
+    const plannedDuration = (new Date(task.dueDate).getTime() - new Date(task.plannedStartDate).getTime()) / (1000 * 60 * 60);
+    if (!isNaN(actualDuration) && !isNaN(plannedDuration)) {
+      durationVarianceHours = Math.round((actualDuration - plannedDuration) * 100) / 100;
+    }
+  }
+
+  const accuracyRatio = estimatedHours > 0
+    ? Math.round((effectiveLoggedHours / estimatedHours) * 100) / 100
+    : undefined;
+
   const realityDelta: RealityDelta = {
     plannedStartDate: task.plannedStartDate,
     actualStartDate: task.actualStartDate,
@@ -84,7 +97,10 @@ export function aggregateConcreteEvidenceForTask(
     estimatedHours: Math.round(estimatedHours * 100) / 100,
     loggedHours: Math.round(effectiveLoggedHours * 100) / 100,
     varianceHours,
+    effortVarianceHours: varianceHours,
+    durationVarianceHours,
     scheduleVarianceDays,
+    accuracyRatio,
     isOverdue,
     isOverEstimate
   };

@@ -28,7 +28,14 @@ import type {
   MacroPhaseRollup,
   StandardTaskTimelineItem,
   ConcreteTaskEvidence,
-  RealityDelta
+  RealityDelta,
+  TaskMetrics,
+  TaskProgressHistory,
+  TaskProgressInference,
+  TaskEVM,
+  TaskInferredActuals,
+  ProgressInferenceSource,
+  ProgressCurveProfile
 } from '@critical-path/core';
 
 export type {
@@ -44,7 +51,14 @@ export type {
   MacroPhaseRollup,
   StandardTaskTimelineItem,
   ConcreteTaskEvidence,
-  RealityDelta
+  RealityDelta,
+  TaskMetrics,
+  TaskProgressHistory,
+  TaskProgressInference,
+  TaskEVM,
+  TaskInferredActuals,
+  ProgressInferenceSource,
+  ProgressCurveProfile
 };
 
 export interface ClientOptions {
@@ -182,6 +196,20 @@ export class CriticalPathClient {
       `/tasks/${encodeURIComponent(taskId)}/ladder`
     );
     return res.taskLadder;
+  }
+
+  async getTaskMetrics(taskId: string): Promise<TaskMetrics> {
+    const res = await this.request<{ metrics: TaskMetrics }>(
+      `/tasks/${encodeURIComponent(taskId)}/metrics`
+    );
+    return res.metrics;
+  }
+
+  async getTaskProgressHistory(taskId: string): Promise<TaskProgressHistory> {
+    const res = await this.request<{ progressHistory: TaskProgressHistory }>(
+      `/tasks/${encodeURIComponent(taskId)}/progress-history`
+    );
+    return res.progressHistory;
   }
 
   async createTask(data: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task> {

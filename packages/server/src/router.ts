@@ -161,6 +161,18 @@ export class CriticalPathRouter {
             if (!taskLadder) return this.jsonResponse({ error: 'Task not found' }, 404);
             return this.jsonResponse({ taskLadder });
           }
+        } else if (subResource === 'metrics') {
+          if (method === 'GET') {
+            const metrics = await this.engine.getTaskMetrics(taskId);
+            if (!metrics) return this.jsonResponse({ error: 'Task not found' }, 404);
+            return this.jsonResponse({ metrics });
+          }
+        } else if (subResource === 'progress-history') {
+          if (method === 'GET') {
+            const progressHistory = await this.engine.getTaskProgressHistory(taskId);
+            if (!progressHistory) return this.jsonResponse({ error: 'Task not found' }, 404);
+            return this.jsonResponse({ progressHistory });
+          }
         } else {
           if (method === 'GET') {
             const task = await this.engine.getTask(taskId);

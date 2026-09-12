@@ -348,6 +348,25 @@ describe('@critical-path/server Router Tests', () => {
     expect(taskLadderData.taskLadder.taskId).toBe(t2.id);
     expect(taskLadderData.taskLadder.standard.title).toBe('UI Implementation');
     expect(taskLadderData.taskLadder.standard.cpm.earlyStart).toBe(8);
+    expect(taskLadderData.taskLadder.metrics).toBeDefined();
+
+    // 4. GET /tasks/:id/metrics
+    const metricsReq = new Request(`http://localhost:3000/api/critical-path/tasks/${t2.id}/metrics`);
+    const metricsRes = await router.handleRequest(metricsReq);
+    expect(metricsRes.status).toBe(200);
+    const metricsData = await metricsRes.json();
+    expect(metricsData.metrics.taskId).toBe(t2.id);
+    expect(metricsData.metrics.realityDelta.estimatedHours).toBe(16);
+    expect(metricsData.metrics.progress).toBeDefined();
+    expect(metricsData.metrics.evm).toBeDefined();
+
+    // 5. GET /tasks/:id/progress-history
+    const historyReq = new Request(`http://localhost:3000/api/critical-path/tasks/${t2.id}/progress-history`);
+    const historyRes = await router.handleRequest(historyReq);
+    expect(historyRes.status).toBe(200);
+    const historyData = await historyRes.json();
+    expect(historyData.progressHistory.taskId).toBe(t2.id);
+    expect(historyData.progressHistory.points.length).toBeGreaterThanOrEqual(1);
   });
 });
 
