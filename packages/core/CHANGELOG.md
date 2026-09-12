@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.18.0
+
+### Minor Changes
+
+- adf44f6: Add headless workload and capacity distribution engine for streamgraphs, stacked area charts, and team capacity planning. Features include contiguous calendar bucketing (`day`, `week`, `month`), multi-dimension grouping (`assignee`, `team`, `taskType`, `priority`, `status`), effort metric distribution (`scheduled`, `logged`, `remaining`, `blended`), tabular zero-filled series matrix for D3 stack layouts, and capacity/utilization thresholds.
+
 ## 0.17.0
 
 ### Minor Changes

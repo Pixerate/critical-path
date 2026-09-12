@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.pixerate.com
-> Documentation generated on: 2026-09-12T15:13:22.694Z
+> Documentation generated on: 2026-09-12T15:18:50.560Z
 
 ================================================================================
 
