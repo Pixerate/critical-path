@@ -4,7 +4,7 @@
 > *Embed enterprise-grade project tracking, agile workflows, and task engines into any Web application in minutes.*
 
 [![CI](https://github.com/Pixerate/Critical-Path/actions/workflows/ci.yml/badge.svg)](https://github.com/Pixerate/Critical-Path/actions/workflows/ci.yml)
-[![Website](https://img.shields.io/badge/Docs-criticalpath.pixerate.com-38bdf8.svg)](https://criticalpath.pixerate.com)
+[![Website](https://img.shields.io/badge/Docs-criticalpath.uchiage.app-38bdf8.svg)](https://criticalpath.uchiage.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-24%2B-brightgreen.svg)](https://nodejs.org)
 [![pnpm](https://img.shields.io/badge/pnpm-10%2B-orange.svg)](https://pnpm.io)

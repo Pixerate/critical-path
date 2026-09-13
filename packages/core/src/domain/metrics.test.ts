@@ -148,6 +148,8 @@ describe('Task Metrics Domain', () => {
   });
 
   describe('reconstructTaskProgressHistory & Curve Profile', () => {
+    const referenceDate = new Date('2026-09-09T12:00:00Z');
+
     it('detects linear progress', () => {
       const activities: Activity[] = [
         { id: 'a1', taskId: 'task-1', actorId: 'u1', action: 'task.updated', details: { progress: 25 }, createdAt: '2026-09-02T10:00:00Z' },
@@ -156,7 +158,7 @@ describe('Task Metrics Domain', () => {
         { id: 'a4', taskId: 'task-1', actorId: 'u1', action: 'task.updated', details: { progress: 100 }, createdAt: '2026-09-08T10:00:00Z' }
       ];
       const task: Task = { ...baseTask, progress: 100, updatedAt: '2026-09-08T10:00:00Z' };
-      const history = reconstructTaskProgressHistory(task, activities);
+      const history = reconstructTaskProgressHistory(task, activities, { referenceDate });
 
       expect(history.points.length).toBeGreaterThanOrEqual(4);
       expect(history.curveProfile).toBe('linear');
@@ -170,7 +172,7 @@ describe('Task Metrics Domain', () => {
         { id: 'a4', taskId: 'task-1', actorId: 'u1', action: 'task.updated', details: { progress: 95 }, createdAt: '2026-09-09T10:00:00Z' }
       ];
       const task: Task = { ...baseTask, progress: 95, updatedAt: '2026-09-09T10:00:00Z' };
-      const history = reconstructTaskProgressHistory(task, activities);
+      const history = reconstructTaskProgressHistory(task, activities, { referenceDate });
 
       expect(history.curveProfile).toBe('s_curve');
     });
@@ -182,7 +184,7 @@ describe('Task Metrics Domain', () => {
         { id: 'a3', taskId: 'task-1', actorId: 'u1', action: 'task.updated', details: { progress: 78 }, createdAt: '2026-09-08T10:00:00Z' }
       ];
       const task: Task = { ...baseTask, progress: 78, updatedAt: '2026-09-08T10:00:00Z' };
-      const history = reconstructTaskProgressHistory(task, activities);
+      const history = reconstructTaskProgressHistory(task, activities, { referenceDate });
 
       expect(history.curveProfile).toBe('early_surge');
     });
@@ -194,7 +196,7 @@ describe('Task Metrics Domain', () => {
         { id: 'a3', taskId: 'task-1', actorId: 'u1', action: 'task.updated', details: { progress: 90 }, createdAt: '2026-09-08T10:00:00Z' }
       ];
       const task: Task = { ...baseTask, progress: 90, updatedAt: '2026-09-08T10:00:00Z' };
-      const history = reconstructTaskProgressHistory(task, activities);
+      const history = reconstructTaskProgressHistory(task, activities, { referenceDate });
 
       expect(history.curveProfile).toBe('late_rush');
     });

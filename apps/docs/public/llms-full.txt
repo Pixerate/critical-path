@@ -1,8 +1,8 @@
 # Critical Path — Full Documentation Bundle
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
-> Source: https://criticalpath.pixerate.com
-> Documentation generated on: 2026-09-12T15:18:50.560Z
+> Source: https://criticalpath.uchiage.app
+> Documentation generated on: 2026-09-13T12:38:55.386Z
 
 ================================================================================
 
@@ -11,7 +11,7 @@
 ================================================================================
 
 ## Introduction to Critical Path
-URL: https://criticalpath.pixerate.com/getting-started/introduction/
+URL: https://criticalpath.uchiage.app/getting-started/introduction/
 Description: Learn why Critical Path was created, its headless philosophy, and how it transforms project management inside web applications.
 
 **Critical Path** is an enterprise-ready, **headless project management framework** designed specifically for modern web applications.
@@ -66,7 +66,7 @@ You get a headless engine that runs directly in your existing application runtim
 --------------------------------------------------------------------------------
 
 ## Quick Start
-URL: https://criticalpath.pixerate.com/getting-started/quick-start/
+URL: https://criticalpath.uchiage.app/getting-started/quick-start/
 Description: Get up and running with Critical Path in your project in less than 5 minutes.
 
 This guide walks you through installing Critical Path and setting up an end-to-end task management workflow with SQLite storage and Next.js / SvelteKit.
@@ -257,7 +257,7 @@ Congratulations! You are now running Critical Path in your application. Check ou
 --------------------------------------------------------------------------------
 
 ## System Architecture & Concepts
-URL: https://criticalpath.pixerate.com/getting-started/architecture/
+URL: https://criticalpath.uchiage.app/getting-started/architecture/
 Description: Detailed architectural breakdown of Critical Path layers, components, and data flow.
 
 Critical Path adopts a strictly layered, decoupled architecture designed to operate seamlessly across edge runtimes, serverless functions, and long-running Node.js processes.
@@ -343,7 +343,7 @@ State-management primitives that bridge the client SDK to reactive component sys
 ================================================================================
 
 ## Critical Path Engine
-URL: https://criticalpath.pixerate.com/core/engine/
+URL: https://criticalpath.uchiage.app/core/engine/
 Description: Working directly with the CriticalPathEngine class, core methods, and task management.
 
 The `CriticalPathEngine` class is the central orchestrator of Critical Path. It is responsible for business logic validation, state changes, dependency checks, and dispatching events to plugins.
@@ -437,7 +437,7 @@ console.log(blockers); // [] -> No remaining blockers!
 --------------------------------------------------------------------------------
 
 ## Data Model & Schema Reference
-URL: https://criticalpath.pixerate.com/core/data-model/
+URL: https://criticalpath.uchiage.app/core/data-model/
 Description: Complete specification of tasks, projects, dependencies, priorities, and semantic statuses in Critical Path.
 
 Critical Path is built on a clean, strictly typed schema. All entities use ISO-8601 UTC date strings and UUID identifiers.
@@ -560,7 +560,7 @@ Tasks where `totalSlack === 0` lie on the critical path. Any delay in these task
 --------------------------------------------------------------------------------
 
 ## Dependencies & Critical Path Method
-URL: https://criticalpath.pixerate.com/core/dependencies/
+URL: https://criticalpath.uchiage.app/core/dependencies/
 Description: How Critical Path models task dependencies as a DAG, detects circular loops, and computes the critical path duration.
 
 Task dependencies in Critical Path are modeled as a **Directed Acyclic Graph (DAG)**.
@@ -626,7 +626,7 @@ console.log(`Bottleneck Tasks:`, result.criticalTaskIds);
 --------------------------------------------------------------------------------
 
 ## Lifecycle Hooks & Events
-URL: https://criticalpath.pixerate.com/core/lifecycle/
+URL: https://criticalpath.uchiage.app/core/lifecycle/
 Description: Tap into mutation lifecycle events for validation, webhooks, audit trails, and side effects.
 
 Critical Path includes an asynchronous lifecycle event system that enables plugins and custom code to hook into task and project mutations.
@@ -671,7 +671,7 @@ export const tagValidatorPlugin: CriticalPathPlugin = {
 --------------------------------------------------------------------------------
 
 ## Ladder of Abstraction & CPM
-URL: https://criticalpath.pixerate.com/core/ladder-of-abstraction/
+URL: https://criticalpath.uchiage.app/core/ladder-of-abstraction/
 Description: Ladder of Abstraction applied to timelines, Gantt charts, and Critical Path Method (CPM) analysis.
 
 The principle of **moving up and down the ladder of abstraction** emphasizes enabling users to smoothly transition between high-level macro summaries and concrete, granular ground truth without losing context or changing views.
@@ -811,7 +811,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
 ================================================================================
 
 ## In-Memory Storage Adapter
-URL: https://criticalpath.pixerate.com/storage/in-memory/
+URL: https://criticalpath.uchiage.app/storage/in-memory/
 Description: Fast, zero-configuration in-memory store for unit tests, prototyping, and ephemeral workflows.
 
 The `InMemoryStore` adapter stores all projects, tasks, and dependencies in local memory maps.
@@ -841,7 +841,7 @@ const engine = new CriticalPathEngine({ store });
 --------------------------------------------------------------------------------
 
 ## SQLite Storage Adapter
-URL: https://criticalpath.pixerate.com/storage/sqlite/
+URL: https://criticalpath.uchiage.app/storage/sqlite/
 Description: High-performance embedded SQL storage powered by better-sqlite3 for local development and edge deployments.
 
 The `SQLiteStore` adapter provides embedded, persistent relational storage with zero operational overhead.
@@ -882,7 +882,7 @@ const inMemorySqlite = new SQLiteStore({
 --------------------------------------------------------------------------------
 
 ## Firebase & Cloud Firestore Storage Adapter
-URL: https://criticalpath.pixerate.com/storage/firebase/
+URL: https://criticalpath.uchiage.app/storage/firebase/
 Description: Scalable serverless NoSQL storage powered by Google Cloud Firestore.
 
 The `FirebaseStore` adapter persists tasks, projects, and dependencies directly to **Google Cloud Firestore**.
@@ -935,7 +935,7 @@ Queries automatically leverage Firestore compound indexes for fast filtering by 
 --------------------------------------------------------------------------------
 
 ## Custom Storage Adapters
-URL: https://criticalpath.pixerate.com/storage/custom/
+URL: https://criticalpath.uchiage.app/storage/custom/
 Description: Implement your own custom storage adapter for PostgreSQL, MongoDB, DynamoDB, or Redis.
 
 Critical Path makes zero assumptions about your persistence layer. Any class implementing `CriticalPathStore` can be passed to `CriticalPathEngine`.
@@ -976,7 +976,7 @@ export interface CriticalPathStore {
 ================================================================================
 
 ## Next.js App Router Integration
-URL: https://criticalpath.pixerate.com/frameworks/nextjs/
+URL: https://criticalpath.uchiage.app/frameworks/nextjs/
 Description: Mount Critical Path route handlers directly in Next.js 14/15 App Router.
 
 Critical Path includes an out-of-the-box adapter for the Next.js App Router via `@critical-path/server`.
@@ -1032,7 +1032,7 @@ const handler = createNextHandler({
 --------------------------------------------------------------------------------
 
 ## SvelteKit Endpoint Integration
-URL: https://criticalpath.pixerate.com/frameworks/sveltekit/
+URL: https://criticalpath.uchiage.app/frameworks/sveltekit/
 Description: Mount Critical Path route handlers in SvelteKit server endpoints.
 
 Integrating Critical Path into SvelteKit is straightforward using `createSvelteKitHandler`.
@@ -1081,7 +1081,7 @@ const handler = createSvelteKitHandler({
 --------------------------------------------------------------------------------
 
 ## Standard Web Handler
-URL: https://criticalpath.pixerate.com/frameworks/web-handler/
+URL: https://criticalpath.uchiage.app/frameworks/web-handler/
 Description: Using the universal Web Fetch API router with Cloudflare Workers, Hono, Fastify, or Express.
 
 Critical Path's router operates directly on standard Web `Request` and `Response` objects.
@@ -1112,7 +1112,7 @@ export default {
 ================================================================================
 
 ## React Integration (@critical-path/react)
-URL: https://criticalpath.pixerate.com/ui/react/
+URL: https://criticalpath.uchiage.app/ui/react/
 Description: Building reactive project management interfaces with React hooks and context.
 
 The `@critical-path/react` package provides ready-to-use hooks for tasks, projects, and Kanban boards.
@@ -1263,7 +1263,7 @@ function CopilotIntegration({ projectId }: { projectId: string }) {
 --------------------------------------------------------------------------------
 
 ## Svelte Integration (@critical-path/svelte)
-URL: https://criticalpath.pixerate.com/ui/svelte/
+URL: https://criticalpath.uchiage.app/ui/svelte/
 Description: Idiomatic Svelte state primitives and runes for project management.
 
 The `@critical-path/svelte` package offers native reactive state containers tailored for Svelte.
@@ -1421,7 +1421,7 @@ Expose client-side WebMCP tools to in-browser AI assistants with reactive Svelte
 ================================================================================
 
 ## Plugin Architecture & Creation
-URL: https://criticalpath.pixerate.com/plugins/creating-plugins/
+URL: https://criticalpath.uchiage.app/plugins/creating-plugins/
 Description: Build modular plugins to extend the CriticalPathEngine with custom validation, webhooks, and integrations.
 
 Plugins in Critical Path are defined as objects adhering to the `CriticalPathPlugin` interface.
@@ -1461,7 +1461,7 @@ const engine = new CriticalPathEngine({
 --------------------------------------------------------------------------------
 
 ## Audit Logging Plugin
-URL: https://criticalpath.pixerate.com/plugins/audit-log/
+URL: https://criticalpath.uchiage.app/plugins/audit-log/
 Description: Implement comprehensive audit logging for task status changes and assignee reallocations.
 
 Here is a complete, production-ready audit logger plugin:
@@ -1504,7 +1504,7 @@ export const auditLogPlugin: CriticalPathPlugin = {
 ================================================================================
 
 ## MCP & WebMCP Overview
-URL: https://criticalpath.pixerate.com/mcp/overview/
+URL: https://criticalpath.uchiage.app/mcp/overview/
 Description: Dual Model Context Protocol architecture for AI coding agents and in-browser AI copilots in Critical Path.
 
 Critical Path provides native, first-class AI integration through the **Model Context Protocol (MCP)** via `@critical-path/mcp`.
@@ -1603,7 +1603,7 @@ pnpm add @critical-path/mcp
 --------------------------------------------------------------------------------
 
 ## Standard Server MCP
-URL: https://criticalpath.pixerate.com/mcp/server/
+URL: https://criticalpath.uchiage.app/mcp/server/
 Description: Connecting Claude Desktop, Cursor, and autonomous AI agents to Critical Path via stdio and network transports.
 
 The standard MCP server implementation in `@critical-path/mcp/server` exposes project management tools, live resources, and prompt templates to AI coding environments using the [Model Context Protocol](https://modelcontextprotocol.io).
@@ -1713,7 +1713,7 @@ In addition to tools, the server exposes:
 --------------------------------------------------------------------------------
 
 ## Client-Side WebMCP
-URL: https://criticalpath.pixerate.com/mcp/webmcp/
+URL: https://criticalpath.uchiage.app/mcp/webmcp/
 Description: In-browser AI Copilots with W3C WebML CG WebMCP, React hooks, and Svelte 5 runes in Critical Path.
 
 **WebMCP** brings structured tool execution into browser applications. Following the **W3C Web Machine Learning Community Group (WebML CG)** WebMCP specification draft, `@critical-path/mcp/web` exposes project management tools directly onto the DOM context (`document.modelContext` / `navigator.modelContext`).
@@ -1843,7 +1843,7 @@ const { tools, unregister } = registerWebMcpTools({
 ================================================================================
 
 ## AI Agent Integration Guide
-URL: https://criticalpath.pixerate.com/reference/agents/
+URL: https://criticalpath.uchiage.app/reference/agents/
 Description: System prompts, tool schemas, and operational instructions for AI coding agents integrating Critical Path.
 
 Critical Path is built from the ground up to be seamlessly operable by AI Coding Agents (such as Antigravity, Claude, Cursor, Copilot, or OpenAI Swarms).
@@ -1898,7 +1898,7 @@ registerWebMcpTools({ client, projectId: 'current-project-id' });
 --------------------------------------------------------------------------------
 
 ## HTTP REST API Specification
-URL: https://criticalpath.pixerate.com/reference/api/
+URL: https://criticalpath.uchiage.app/reference/api/
 Description: Complete REST endpoint documentation exposed by @critical-path/server.
 
 The `@critical-path/server` router exposes the following REST endpoints under the configured base path (e.g. `/api/critical-path`).
@@ -2010,7 +2010,7 @@ Create a dependency between two tasks.
 --------------------------------------------------------------------------------
 
 ## TypeScript Type Definitions
-URL: https://criticalpath.pixerate.com/reference/types/
+URL: https://criticalpath.uchiage.app/reference/types/
 Description: Canonical TypeScript types, interfaces, and enums exported by @critical-path/core.
 
 ```typescript

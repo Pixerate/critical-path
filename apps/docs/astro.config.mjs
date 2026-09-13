@@ -6,7 +6,7 @@ import svelte from '@astrojs/svelte';
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://criticalpath.pixerate.com',
+  site: process.env.DOCS_SITE_URL || 'https://criticalpath.uchiage.app',
   output: 'server',
   adapter: node({ mode: 'standalone' }),
   integrations: [

@@ -60,4 +60,21 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: D3 baseline offset algorithms (notably `d3.stackOffsetWiggle` and `d3.stackOffsetSilhouette`) calculate weighted baselines across all layers simultaneously. If any key in `seriesKeys` is `undefined` in any bucket `values`, D3 arithmetic results in `NaN`, which poisons the entire path calculation.
 - **Solution / Workaround**: In `calculateWorkloadDistribution`, the engine collects all unique `seriesKeys` across the entire queried timeline upfront and initializes every bucket's `values` dictionary with `0` for every key. When writing custom aggregators for continuous stacked visualizations, always ensure every series key is explicitly zero-filled in every bucket.
 
+### Deterministic Reference Dates in Task Progress & EVM Domain Tests
+- **Area / Package**: `@critical-path/core`, `reconstructTaskProgressHistory`, `calculateTaskEVM`
+- **Symptom / Behavior**: Tests asserting curve profiles (`linear`, `s_curve`, `early_surge`, `late_rush`) intermittently or suddenly fail with `expected 'stalled'` days after being authored.
+- **Root Cause**: `reconstructTaskProgressHistory` and `calculateTaskEVM` evaluate stalls and schedule durations relative to `referenceDate ?? new Date()`. If unit test fixtures hardcode historical activity dates without specifying `referenceDate`, real time elapsing causes `now - lastActivity > stallThresholdMs` (5 days), misclassifying normal progress as `'stalled'`.
+- **Solution / Workaround**: Always supply an explicit, deterministic `referenceDate` in unit test options when verifying time-sensitive progress curves or EVM calculations:
+  ```ts
+  const referenceDate = new Date('2026-09-09T12:00:00Z');
+  const history = reconstructTaskProgressHistory(task, activities, { referenceDate });
+  ```
+
+### Firebase App Hosting Default Domain vs Custom Domain in Astro Sitemaps
+- **Area / Package**: `apps/docs`, Astro Starlight, Firebase App Hosting
+- **Symptom / Behavior**: `sitemap.xml` returns 200 on the live deployment (e.g. `*.uchiage.app`), but search crawlers fail because `<loc>` points to sub-sitemaps on an unconfigured custom domain returning HTTP 404.
+- **Root Cause**: Astro's sitemap generation relies on `site` defined in `astro.config.mjs`. If set to a custom domain before DNS/domain verification completes in Firebase App Hosting, the generated sitemap index directs bots to 404s.
+- **Solution / Workaround**: Configure `site: process.env.DOCS_SITE_URL || 'https://criticalpath.uchiage.app'` in `astro.config.mjs` and sync scripts generating `robots.txt`, `sitemap.xml`, and `llms.txt` so default builds produce valid URLs for the active deployment host.
+
+
 

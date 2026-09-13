@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const BASE_URL = 'https://criticalpath.pixerate.com';
+const BASE_URL = process.env.DOCS_SITE_URL || 'https://criticalpath.uchiage.app';
 const DOCS_DIR = path.resolve(__dirname, '../src/content/docs');
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
 const ROOT_DIR = path.resolve(__dirname, '../../..');
