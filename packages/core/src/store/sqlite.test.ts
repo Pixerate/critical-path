@@ -40,8 +40,24 @@ describe('SQLiteStore', () => {
     expect(task.priority).toBe('high');
     expect(task.tags).toContain('sqlite');
 
-    const updated = await store.updateTask(task.id, { status: 'in_progress' });
+    const updated = await store.updateTask(task.id, {
+      status: 'in_progress',
+      isBlocked: true,
+      blockedReason: 'Waiting for SQLite lock'
+    });
     expect(updated?.status).toBe('in_progress');
+    expect(updated?.isBlocked).toBe(true);
+    expect(updated?.blockedReason).toBe('Waiting for SQLite lock');
+
+    const fetchedTask = await store.getTask(task.id);
+    expect(fetchedTask?.isBlocked).toBe(true);
+    expect(fetchedTask?.blockedReason).toBe('Waiting for SQLite lock');
+
+    const unblocked = await store.updateTask(task.id, {
+      isBlocked: false,
+      blockedReason: null
+    });
+    expect(unblocked?.isBlocked).toBe(false);
 
     const projectTasks = await store.getTasks(project.id);
     expect(projectTasks).toHaveLength(1);

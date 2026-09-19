@@ -88,8 +88,13 @@ export function deriveTaskLifecycleState(
     return upstreamDef.category !== 'completed';
   });
   const blockingTaskIds = blockingTasks.map((t) => t.id);
-  const isBlocked = !isDone && blockingTaskIds.length > 0;
-  const isReady = semanticStatus === 'not_started' && blockingTaskIds.length === 0;
+  const isExplicitlyBlocked = Boolean(
+    task.isBlocked === true ||
+    task.customFields?.isBlocked === true ||
+    task.status === 'blocked'
+  );
+  const isBlocked = !isDone && (blockingTaskIds.length > 0 || isExplicitlyBlocked);
+  const isReady = semanticStatus === 'not_started' && !isBlocked;
 
   // Time & Schedule Indicators
   let isOverdue = false;

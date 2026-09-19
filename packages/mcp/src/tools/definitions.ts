@@ -161,6 +161,8 @@ export const createTaskTool: ToolDefinition<{
   dueDate?: string;
   tags?: string[];
   estimatedHours?: number;
+  isBlocked?: boolean;
+  blockedReason?: string;
 }> = {
   name: 'create_task',
   title: 'Create Task',
@@ -174,7 +176,9 @@ export const createTaskTool: ToolDefinition<{
     assigneeId: z.string().optional().describe('User ID to assign task to'),
     dueDate: z.string().optional().describe('Due date (ISO string)'),
     tags: z.array(z.string()).optional().describe('Tags for categorization'),
-    estimatedHours: z.number().optional().describe('Estimated hours to complete')
+    estimatedHours: z.number().optional().describe('Estimated hours to complete'),
+    isBlocked: z.boolean().optional().describe('Whether the task is blocked'),
+    blockedReason: z.string().optional().describe('Reason why the task is blocked')
   }),
   inputSchema: {
     type: 'object',
@@ -187,7 +191,9 @@ export const createTaskTool: ToolDefinition<{
       assigneeId: { type: 'string', description: 'User ID of assignee' },
       dueDate: { type: 'string', description: 'Due date in ISO 8601 format' },
       tags: { type: 'array', items: { type: 'string' } },
-      estimatedHours: { type: 'number' }
+      estimatedHours: { type: 'number' },
+      isBlocked: { type: 'boolean', description: 'Whether the task is blocked' },
+      blockedReason: { type: 'string', description: 'Reason why the task is blocked' }
     },
     required: ['title'],
     additionalProperties: false
@@ -206,7 +212,9 @@ export const createTaskTool: ToolDefinition<{
       assigneeId: args.assigneeId,
       dueDate: args.dueDate,
       tags: args.tags || [],
-      estimatedHours: args.estimatedHours
+      estimatedHours: args.estimatedHours,
+      isBlocked: args.isBlocked,
+      blockedReason: args.blockedReason
     };
     return target.createTask(input);
   }
@@ -223,6 +231,8 @@ export const updateTaskTool: ToolDefinition<{
   tags?: string[];
   estimatedHours?: number;
   loggedHours?: number;
+  isBlocked?: boolean;
+  blockedReason?: string;
 }> = {
   name: 'update_task',
   title: 'Update Task',
@@ -237,7 +247,9 @@ export const updateTaskTool: ToolDefinition<{
     dueDate: z.string().optional(),
     tags: z.array(z.string()).optional(),
     estimatedHours: z.number().optional(),
-    loggedHours: z.number().optional()
+    loggedHours: z.number().optional(),
+    isBlocked: z.boolean().optional(),
+    blockedReason: z.string().optional()
   }),
   inputSchema: {
     type: 'object',
@@ -251,7 +263,9 @@ export const updateTaskTool: ToolDefinition<{
       dueDate: { type: 'string' },
       tags: { type: 'array', items: { type: 'string' } },
       estimatedHours: { type: 'number' },
-      loggedHours: { type: 'number' }
+      loggedHours: { type: 'number' },
+      isBlocked: { type: 'boolean', description: 'Whether the task is blocked' },
+      blockedReason: { type: 'string', description: 'Reason why the task is blocked' }
     },
     required: ['id'],
     additionalProperties: false

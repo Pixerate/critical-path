@@ -235,4 +235,77 @@ describe('calculateWorkloadDistribution', () => {
     expect(distribution.buckets.length).toBeGreaterThan(0);
     expect(distribution.seriesKeys).toContain('u1');
   });
+
+  it('distributes task effort only on working days and reduces capacity on holidays', () => {
+    // Friday 2026-09-18 to Tuesday 2026-09-22 (5 calendar days: Fri, Sat, Sun, Mon, Tue)
+    // Monday 2026-09-21 is a Holiday!
+    // Active working days: Friday 2026-09-18 and Tuesday 2026-09-22 (2 days total)
+    // 16 estimated hours should be divided into 8h on Fri, 0h on Sat, 0h on Sun, 0h on Mon, 8h on Tue!
+    const customSchedule = {
+      name: 'Holiday Calendar',
+      defaultHoursPerDay: 8,
+      days: [
+        { dayOfWeek: 0, isWorkingDay: false },
+        { dayOfWeek: 1, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] },
+        { dayOfWeek: 2, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] },
+        { dayOfWeek: 3, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] },
+        { dayOfWeek: 4, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] },
+        { dayOfWeek: 5, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] },
+        { dayOfWeek: 6, isWorkingDay: false }
+      ],
+      holidays: [{ date: '2026-09-21', name: 'Monday Holiday' }]
+    };
+
+    const tasks: Task[] = [
+      {
+        id: 't_holiday',
+        projectId: 'p1',
+        title: 'Holiday Spanning Task',
+        status: 'todo',
+        priority: 'high',
+        assigneeId: 'u2',
+        estimatedHours: 16,
+        plannedStartDate: '2026-09-18', // Friday
+        dueDate: '2026-09-22',          // Tuesday
+        createdAt: '2026-09-01',
+        updatedAt: '2026-09-01'
+      }
+    ];
+
+    const result = calculateWorkloadDistribution(
+      { tasks, users },
+      {
+        startDate: '2026-09-18',
+        endDate: '2026-09-22',
+        interval: 'day',
+        groupBy: 'assignee',
+        metric: 'scheduled',
+        schedule: customSchedule
+      }
+    );
+
+    const fri = result.buckets.find((b) => b.date === '2026-09-18');
+    const sat = result.buckets.find((b) => b.date === '2026-09-19');
+    const sun = result.buckets.find((b) => b.date === '2026-09-20');
+    const mon = result.buckets.find((b) => b.date === '2026-09-21');
+    const tue = result.buckets.find((b) => b.date === '2026-09-22');
+
+    expect(fri?.values.u2).toBe(8);
+    expect(fri?.capacity?.u2).toBe(8);
+
+    expect(sat?.values.u2).toBe(0);
+    expect(sat?.capacity?.u2).toBe(0);
+
+    expect(sun?.values.u2).toBe(0);
+    expect(sun?.capacity?.u2).toBe(0);
+
+    // Monday is holiday: 0 scheduled effort, 0 capacity
+    expect(mon?.values.u2).toBe(0);
+    expect(mon?.capacity?.u2).toBe(0);
+
+    expect(tue?.values.u2).toBe(8);
+    expect(tue?.capacity?.u2).toBe(8);
+
+    expect(result.totalHours).toBe(16);
+  });
 });

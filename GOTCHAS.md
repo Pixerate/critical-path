@@ -70,11 +70,14 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
   const history = reconstructTaskProgressHistory(task, activities, { referenceDate });
   ```
 
+### Daylight Saving Time (DST) & Cross-Timezone Drift in Working Hour Calculations
+- **Area / Package**: `@critical-path/core`, `calendar.ts`, `cpm.ts`, `workload.ts`
+- **Symptom / Behavior**: Calculating working hour durations across Daylight Saving Time (DST) clock change weekends or comparing dates across client/server timezones causes 1-hour schedule drifts or off-by-one errors when using local time methods (`getHours()`, `getDate()`) or naive millisecond offsets `(end - start) / 86400000`.
+- **Root Cause**: Local time objects shift clocks by $\pm 1$ hour on DST transitions, making a 24-hour day 23 or 25 hours. When servers and browsers run in different local timezones, string parses like `new Date('2026-09-01')` shift calendar days backwards or forwards based on local UTC offset.
+- **Solution / Workaround**: The calendar engine standardizes on ISO `YYYY-MM-DD` date keys and UTC day-offset arithmetic (`Date.UTC(y, m, d)`) to compute day transitions and calendar bucket intervals, guaranteeing DST-drift-free headless execution across all client and server timezones.
+
 ### Firebase App Hosting Default Domain vs Custom Domain in Astro Sitemaps
 - **Area / Package**: `apps/docs`, Astro Starlight, Firebase App Hosting
 - **Symptom / Behavior**: `sitemap.xml` returns 200 on the live deployment (e.g. `*.uchiage.app`), but search crawlers fail because `<loc>` points to sub-sitemaps on an unconfigured custom domain returning HTTP 404.
 - **Root Cause**: Astro's sitemap generation relies on `site` defined in `astro.config.mjs`. If set to a custom domain before DNS/domain verification completes in Firebase App Hosting, the generated sitemap index directs bots to 404s.
 - **Solution / Workaround**: Configure `site: process.env.DOCS_SITE_URL || 'https://criticalpath.uchiage.app'` in `astro.config.mjs` and sync scripts generating `robots.txt`, `sitemap.xml`, and `llms.txt` so default builds produce valid URLs for the active deployment host.
-
-
-

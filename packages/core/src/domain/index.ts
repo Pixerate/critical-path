@@ -6,4 +6,5 @@ export * from './cpm.js';
 export * from './ladder.js';
 export * from './metrics.js';
 export * from './workload.js';
+export * from './calendar.js';
 

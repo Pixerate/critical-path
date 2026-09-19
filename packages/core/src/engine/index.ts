@@ -51,6 +51,7 @@ import {
   TaskCreatedEvent,
   TaskUpdatedEvent,
   TaskStatusChangedEvent,
+  TaskBlockedEvent,
   TaskUnblockedEvent,
   TaskDeletedEvent,
   ProjectCreatedEvent,
@@ -79,7 +80,7 @@ import {
 import { validateAttachmentUrl, AttachmentValidationError } from '../domain/entities.js';
 import { validateCustomFieldValues } from '../domain/custom-fields.js';
 import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
-import { calculateCPM } from '../domain/cpm.js';
+import { calculateCPM, type CPMOptions } from '../domain/cpm.js';
 import { buildTimelineLadder, aggregateConcreteEvidenceForTask } from '../domain/ladder.js';
 import {
   calculateTaskMetrics,
@@ -89,6 +90,7 @@ import {
 import { calculateWorkloadDistribution } from '../domain/workload.js';
 
 export class CriticalPathEngine {
+  public readonly config: CriticalPathConfig;
   public readonly store: StorageAdapter;
   public readonly fileStorage?: FileStorageAdapter;
   public readonly plugins: PluginRegistry;
@@ -96,6 +98,7 @@ export class CriticalPathEngine {
   public readonly ready: Promise<void> = Promise.resolve();
 
   constructor(config: CriticalPathConfig = {}) {
+    this.config = config;
     this.store = typeof config.store === 'object' && config.store !== null
       ? (config.store as StorageAdapter)
       : new InMemoryStore();
@@ -531,6 +534,58 @@ export class CriticalPathEngine {
       await this.events.publish(updateEvent);
     }
 
+    const wasBlocked = Boolean(existing.isBlocked || existing.customFields?.isBlocked || existing.status === 'blocked');
+    const isNowBlocked = Boolean(updated.isBlocked || updated.customFields?.isBlocked || updated.status === 'blocked');
+
+    if (!wasBlocked && isNowBlocked) {
+      const blockedReason = updated.blockedReason ?? (updated.customFields?.blockedReason as string | undefined) ?? null;
+      const blockedEvent: TaskBlockedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'task.blocked',
+        aggregateId: updated.id,
+        aggregateType: 'Task',
+        occurredAt: now,
+        payload: {
+          task: updated,
+          reason: blockedReason
+        }
+      };
+      await this.events.publish(blockedEvent);
+      await this.store.logActivity({
+        projectId: updated.projectId,
+        taskId: updated.id,
+        actorId: updated.assigneeId || 'system',
+        action: 'task.blocked',
+        details: { reason: blockedReason }
+      });
+      this.dispatchWebhook('task.blocked', {
+        task: updated,
+        reason: blockedReason
+      });
+    } else if (wasBlocked && !isNowBlocked) {
+      const unblockedEvent: TaskUnblockedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'task.unblocked',
+        aggregateId: updated.id,
+        aggregateType: 'Task',
+        occurredAt: now,
+        payload: {
+          task: updated
+        }
+      };
+      await this.events.publish(unblockedEvent);
+      await this.store.logActivity({
+        projectId: updated.projectId,
+        taskId: updated.id,
+        actorId: updated.assigneeId || 'system',
+        action: 'task.unblocked',
+        details: {}
+      });
+      this.dispatchWebhook('task.unblocked', {
+        task: updated
+      });
+    }
+
     await this.store.logActivity({
       projectId: updated.projectId,
       taskId: updated.id,
@@ -575,6 +630,11 @@ export class CriticalPathEngine {
           if (downstream.status === 'blocked') {
             const defaultStatus = downstreamWorkflow?.defaultStatusKey || 'todo';
             updates.status = defaultStatus;
+          }
+
+          if (downstream.isBlocked || downstream.blockedReason) {
+            updates.isBlocked = false;
+            updates.blockedReason = null;
           }
 
           if (downstream.customFields?.isBlocked || downstream.customFields?.blockedReason) {
@@ -1379,7 +1439,11 @@ export class CriticalPathEngine {
   }
 
   // --- Ladder of Abstraction & Critical Path Method ---
-  async calculateCriticalPath(projectId: string): Promise<CriticalPathAnalysis> {
+  async calculateCriticalPath(
+    projectId: string,
+    options: CPMOptions = {}
+  ): Promise<CriticalPathAnalysis> {
+    const project = await this.store.getProject(projectId);
     const tasks = await this.store.getTasks(projectId);
     const allDepArrays = await Promise.all(tasks.map((t) => this.store.getDependencies(t.id)));
     const seenDepIds = new Set<string>();
@@ -1392,7 +1456,9 @@ export class CriticalPathEngine {
         }
       }
     }
-    return calculateCPM(projectId, tasks, dependencies);
+    const schedule = options.schedule || project?.schedule || this.config.defaultSchedule;
+    const projectStartDate = options.projectStartDate || project?.startDate;
+    return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate });
   }
 
   async getTimelineLadder(
@@ -1435,6 +1501,8 @@ export class CriticalPathEngine {
     const timeEntriesNested = await Promise.all(tasks.map((t) => this.store.getTimeEntries(t.id)));
     const timeEntries: TimeEntry[] = timeEntriesNested.flat();
 
+    const schedule = project.schedule || this.config.defaultSchedule;
+
     return buildTimelineLadder(
       {
         project,
@@ -1445,7 +1513,8 @@ export class CriticalPathEngine {
         deliverables,
         attachments,
         timeEntries,
-        activities
+        activities,
+        schedule
       },
       options
     );
@@ -1518,6 +1587,8 @@ export class CriticalPathEngine {
   ): Promise<WorkloadDistribution> {
     const tasks = await this.store.getTasks(projectId);
     const teams = await this.store.getTeams();
+    const project = projectId ? await this.store.getProject(projectId) : undefined;
+    const schedule = options.schedule || project?.schedule || this.config.defaultSchedule;
 
     const timeEntriesNested = await Promise.all(tasks.map((t) => this.store.getTimeEntries(t.id)));
     const timeEntries: TimeEntry[] = timeEntriesNested.flat();
@@ -1529,7 +1600,10 @@ export class CriticalPathEngine {
         teams,
         projectId
       },
-      options
+      {
+        ...options,
+        schedule
+      }
     );
   }
 

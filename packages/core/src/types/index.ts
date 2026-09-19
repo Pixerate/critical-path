@@ -33,6 +33,32 @@ export type TaskLifecycleState = TaskDerivedStatus;
 
 export type Role = 'admin' | 'project_manager' | 'contributor' | 'viewer';
 
+export interface WorkingHoursRange {
+  start: string; // "09:00" (HH:MM 24-hour format)
+  end: string;   // "17:00"
+}
+
+export interface DaySchedule {
+  dayOfWeek: number; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  isWorkingDay: boolean;
+  hours?: WorkingHoursRange[];
+}
+
+export interface Holiday {
+  date: string; // "YYYY-MM-DD"
+  name?: string;
+  halfDay?: boolean; // if true, counts as 50% working hours
+}
+
+export interface WorkSchedule {
+  id?: string;
+  name?: string;
+  timezone?: string; // Informational (e.g. "UTC", "America/New_York")
+  defaultHoursPerDay?: number; // Default: 8
+  days: DaySchedule[];
+  holidays?: Holiday[];
+}
+
 export interface User {
   id: string;
   name: string;
@@ -40,6 +66,7 @@ export interface User {
   avatarUrl?: string;
   role: Role;
   weeklyCapacityHours?: number;
+  schedule?: WorkSchedule;
   createdAt: string;
 }
 
@@ -50,6 +77,7 @@ export interface Team {
   leaderId?: string;
   memberIds: string[];
   weeklyCapacityHours?: number;
+  schedule?: WorkSchedule;
   createdAt: string;
   updatedAt: string;
 }
@@ -107,6 +135,9 @@ export interface Project {
   statusDefinitions?: StatusDefinition[];
   priorityDefinitions?: Array<{ key: string; label: string; level?: number }>;
   customFieldDefinitions?: CustomFieldDefinition[];
+  schedule?: WorkSchedule;
+  startDate?: string;
+  targetEndDate?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -185,6 +216,8 @@ export interface Task {
   billableDurationMinutes?: number;
   // Progress (0 to 100 percentage)
   progress?: number;
+  isBlocked?: boolean;
+  blockedReason?: string | null;
   tags?: string[];
   todos?: TaskTodoItem[];
   customFields?: Record<string, unknown>;
@@ -371,6 +404,7 @@ export type WebhookEvent =
   | 'task.updated'
   | 'task.deleted'
   | 'task.status_changed'
+  | 'task.blocked'
   | 'task.unblocked'
   | 'comment.created'
   | 'comment.updated'
@@ -415,6 +449,7 @@ export interface CriticalPathConfig {
   fileStorage?: FileStorageAdapter;
   plugins?: CriticalPathPlugin[];
   webhooks?: Omit<Webhook, 'id' | 'createdAt'>[];
+  defaultSchedule?: WorkSchedule;
   initialData?: {
     projects?: Project[];
     tasks?: Task[];
@@ -483,12 +518,21 @@ export interface TaskCriticalPathSchedule {
   lateFinish: number;
   totalSlack: number;
   isCritical: boolean;
+  durationHours?: number;
+  earlyStartDate?: string;
+  earlyFinishDate?: string;
+  lateStartDate?: string;
+  lateFinishDate?: string;
+  slackWorkingHours?: number;
 }
 
 export interface CriticalPathAnalysis {
   projectId: string;
   calculatedAt: string;
   totalDurationHours: number;
+  totalWorkingHours?: number;
+  projectStartDate?: string;
+  projectEndDate?: string;
   criticalTaskIds: string[];
   tasks: TaskCriticalPathSchedule[];
 }
@@ -523,6 +567,7 @@ export interface RealityDelta {
   effortVarianceHours?: number; // loggedHours - estimatedHours (effort variance)
   durationVarianceHours?: number; // actual duration hours - planned duration hours
   scheduleVarianceDays?: number; // days difference between planned/due vs actual
+  scheduleVarianceWorkingDays?: number; // working days difference between planned/due vs actual
   accuracyRatio?: number; // loggedHours / estimatedHours (estimation accuracy ratio)
   isOverdue: boolean;
   isOverEstimate: boolean;
@@ -669,5 +714,8 @@ export interface WorkloadDistributionOptions {
   metric?: WorkloadMetric; // default: 'blended'
   defaultWeeklyCapacityHours?: number; // default: 40
   capacityOverrides?: Record<string, number>; // e.g. { [assigneeOrTeamId]: weeklyCapacityHours }
+  schedule?: WorkSchedule;
+  userSchedules?: Record<string, WorkSchedule>;
+  teamSchedules?: Record<string, WorkSchedule>;
 }
 

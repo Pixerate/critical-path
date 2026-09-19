@@ -132,6 +132,8 @@ export class SQLiteStore implements StorageAdapter {
         actualDurationMinutes REAL,
         billableDurationMinutes REAL,
         progress REAL,
+        isBlocked INTEGER,
+        blockedReason TEXT,
         tags TEXT,
         customFields TEXT,
         parentId TEXT,
@@ -659,8 +661,9 @@ export class SQLiteStore implements StorageAdapter {
         reviewerId, iterationId, teamId, containerId, deliverableId, plannedStartDate, actualStartDate, actualEndDate,
         dueDate, estimatedHours, loggedHours, actualHours, billableHours,
         estimatedDurationMinutes, actualDurationMinutes, billableDurationMinutes, progress,
+        isBlocked, blockedReason,
         tags, customFields, parentId, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newTask.id,
@@ -690,6 +693,8 @@ export class SQLiteStore implements StorageAdapter {
       newTask.actualDurationMinutes ?? null,
       newTask.billableDurationMinutes ?? null,
       newTask.progress ?? null,
+      newTask.isBlocked !== undefined ? (newTask.isBlocked ? 1 : 0) : null,
+      newTask.blockedReason ?? null,
       JSON.stringify(newTask.tags || []),
       JSON.stringify(newTask.customFields || {}),
       newTask.parentId || null,
@@ -716,6 +721,7 @@ export class SQLiteStore implements StorageAdapter {
         plannedStartDate = ?, actualStartDate = ?, actualEndDate = ?, dueDate = ?,
         estimatedHours = ?, loggedHours = ?, actualHours = ?, billableHours = ?,
         estimatedDurationMinutes = ?, actualDurationMinutes = ?, billableDurationMinutes = ?, progress = ?,
+        isBlocked = ?, blockedReason = ?,
         tags = ?, customFields = ?, parentId = ?, updatedAt = ?
       WHERE id = ?
     `);
@@ -746,6 +752,8 @@ export class SQLiteStore implements StorageAdapter {
       updated.actualDurationMinutes ?? null,
       updated.billableDurationMinutes ?? null,
       updated.progress ?? null,
+      updated.isBlocked !== undefined ? (updated.isBlocked ? 1 : 0) : null,
+      updated.blockedReason ?? null,
       JSON.stringify(updated.tags || []),
       JSON.stringify(updated.customFields || {}),
       updated.parentId || null,
@@ -1188,6 +1196,8 @@ export class SQLiteStore implements StorageAdapter {
   private mapTask(row: any): Task {
     return {
       ...row,
+      isBlocked: row.isBlocked !== null && row.isBlocked !== undefined ? Boolean(row.isBlocked) : undefined,
+      blockedReason: row.blockedReason || undefined,
       taskType: row.taskType || undefined,
       deliverableId: row.deliverableId || undefined,
       tags: row.tags ? JSON.parse(row.tags) : [],
