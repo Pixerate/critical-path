@@ -1,5 +1,22 @@
 # @critical-path/core
 
+## 0.19.0
+
+### Minor Changes
+
+- 31a6dde: Promote task blocking state (`isBlocked: boolean` and `blockedReason: string | null`) to first-class fields on `Task`, `CreateTaskInput`, and `UpdateTaskInput`.
+  
+  - **Domain Events**: Introduced `TaskBlockedEvent` (`task.blocked`) and updated `TaskUnblockedEvent` (`task.unblocked`) to support explicit unblocking.
+  - **Lifecycle Derivation**: Updated `deriveTaskStatus` and `deriveTaskLifecycleState` to reflect `task.isBlocked` directly alongside upstream dependency checks.
+  - **Engines & Storage**: Added `isBlocked` and `blockedReason` persistence to `SQLiteStore`, `FirebaseStore`, and `InMemoryStore`.
+  - **MCP Server**: Added `isBlocked` and `blockedReason` parameter options to `create_task` and `update_task` tool schemas.
+- 31a6dde: Add comprehensive Work Schedule, Working Hours, Working Days & Holidays subsystem:
+  - Added `WorkSchedule`, `DaySchedule`, `WorkingHoursRange`, and `Holiday` types supporting custom shifts, weekend configurations, and organization/regional holidays.
+  - Integrated hierarchical calendar resolution: Task Assignee/Team -> Project -> Engine/Default (`DEFAULT_WORK_SCHEDULE`).
+  - Enhanced Critical Path Method (CPM) with calendar working-hours math (`earlyStartDate`, `earlyFinishDate`, `lateStartDate`, `lateFinishDate`, `totalWorkingHours`, `projectEndDate`) skipping weekends and holidays.
+  - Enhanced Workload & Capacity Engine with working-day effort distribution and holiday capacity deductions.
+  - Added working-days schedule variance (`scheduleVarianceWorkingDays`) to Reality Deltas in the Ladder of Abstraction.
+
 ## 0.18.0
 
 ### Minor Changes

@@ -1,5 +1,23 @@
 # @critical-path/mcp
 
+## 0.6.0
+
+### Minor Changes
+
+- 31a6dde: Promote task blocking state (`isBlocked: boolean` and `blockedReason: string | null`) to first-class fields on `Task`, `CreateTaskInput`, and `UpdateTaskInput`.
+  
+  - **Domain Events**: Introduced `TaskBlockedEvent` (`task.blocked`) and updated `TaskUnblockedEvent` (`task.unblocked`) to support explicit unblocking.
+  - **Lifecycle Derivation**: Updated `deriveTaskStatus` and `deriveTaskLifecycleState` to reflect `task.isBlocked` directly alongside upstream dependency checks.
+  - **Engines & Storage**: Added `isBlocked` and `blockedReason` persistence to `SQLiteStore`, `FirebaseStore`, and `InMemoryStore`.
+  - **MCP Server**: Added `isBlocked` and `blockedReason` parameter options to `create_task` and `update_task` tool schemas.
+
+### Patch Changes
+
+- Updated dependencies [31a6dde]
+- Updated dependencies [31a6dde]
+  - @critical-path/core@0.19.0
+  - @critical-path/client@0.12.1
+
 ## 0.5.0
 
 ### Minor Changes
