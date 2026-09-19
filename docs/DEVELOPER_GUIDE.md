@@ -23,6 +23,7 @@ Welcome to the **Critical Path** developer documentation. This guide provides an
 13. [Ladder of Abstraction & Critical Path Method (CPM)](#13-ladder-of-abstraction--critical-path-method-cpm)
 14. [Task Metrics, Inferred Actuals, EVM & Progress Curves](#14-task-metrics-inferred-actuals-evm--progress-curves)
 15. [Workload & Capacity Distribution (Streamgraphs)](#15-workload--capacity-distribution-streamgraphs)
+16. [Work Schedules, Working Hours, Working Days & Holidays](#16-work-schedules-working-hours-working-days--holidays)
 
 ---
 
@@ -850,4 +851,77 @@ console.log('Capacity:', distribution.totalCapacity);
 console.log('Average utilization:', distribution.averageUtilization);
 ```
 
+---
 
+## 16. Work Schedules, Working Hours, Working Days & Holidays
+
+Critical Path features a production-ready calendar calculation and schedule inheritance engine. This subsystem ensures that critical path calculations, workload capacity allocations, and variance metrics reflect real-world working shifts, weekends, and holidays rather than naive 24/7 calendar days.
+
+### Schedule Data Model
+
+A `WorkSchedule` defines:
+- **`timezone`**: Canonical IANA timezone identifier (e.g. `'UTC'`, `'America/New_York'`).
+- **`days`**: Map of days (`monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`, `sunday`) specifying `isWorking: boolean` and one or more active shifts (`hours: [{ start: '09:00', end: '17:00' }]`).
+- **`holidays`**: Array of dates (`YYYY-MM-DD`) that are non-working or partial days (`isWorkingDay: false` or custom `hours`).
+
+```ts
+import type { WorkSchedule } from '@critical-path/core';
+
+export const techTeamSchedule: WorkSchedule = {
+  timezone: 'UTC',
+  days: {
+    monday:    { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
+    tuesday:   { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
+    wednesday: { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
+    thursday:  { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
+    friday:    { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
+    saturday:  { isWorking: false },
+    sunday:    { isWorking: false }
+  },
+  holidays: [
+    { date: '2026-12-25', name: 'Christmas Day' },
+    { date: '2026-12-26', name: 'Boxing Day' },
+    { date: '2027-01-01', name: "New Year's Day" }
+  ]
+};
+```
+
+### Hierarchical Schedule Resolution
+
+Schedules resolve automatically with explicit hierarchical fallback:
+1. **Assignee User Schedule** (`user.schedule` if defined)
+2. **Team Schedule** (`team.schedule` if defined)
+3. **Project Schedule** (`project.schedule` if defined)
+4. **Engine Default Schedule** (`engine.config.defaultSchedule` or built-in standard 40h `DEFAULT_WORK_SCHEDULE`)
+
+### Calendar Domain Helpers
+
+The core domain provides zero-dependency calendar arithmetic utilities:
+
+- **`isWorkingDay(date, schedule)`**: Tests whether a specific date is a working day, taking into account weekend flags and holidays.
+- **`getWorkingHoursInDay(date, schedule)`**: Computes the net active working hours available on a specific date.
+- **`addWorkingHours(startDate, hours, schedule)`**: Rolls a start timestamp forward by the specified number of active working hours, skipping weekends, nights, and holidays.
+- **`subtractWorkingHours(endDate, hours, schedule)`**: Rolls a finish timestamp backward by working hours (used in CPM backward passes).
+- **`getWorkingHoursBetween(start, end, schedule)`**: Measures total working hours elapsed between two timestamps.
+- **`getWorkingDaysBetween(start, end, schedule)`**: Measures total working days elapsed between two dates.
+- **`getNetAvailableCapacity(startDate, endDate, baseWeeklyCapacity, schedule)`**: Dynamically discounts base capacity by holidays and shortened days across a date range.
+
+### Critical Path Method (CPM) Integration
+
+When running CPM, forward passes compute `earlyStartDate` and `earlyFinishDate`, while backward passes compute `lateStartDate`, `lateFinishDate`, `totalWorkingHours`, and `projectEndDate`. Tasks automatically leap across non-working weekends and holiday periods.
+
+```ts
+import { CriticalPathEngine } from '@critical-path/core';
+
+const engine = new CriticalPathEngine({
+  defaultSchedule: techTeamSchedule
+});
+
+const cpm = await engine.calculateCriticalPath('proj_123', {
+  projectStartDate: '2026-12-24T09:00:00Z'
+});
+
+// Since Dec 25 & 26 are holidays and Dec 27 & 28 are weekends,
+// the next 8-hour task scheduled from Dec 24 09:00 ends Dec 29 17:00.
+console.log('Project finishes on:', cpm.projectEndDate);
+```

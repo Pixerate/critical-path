@@ -125,4 +125,65 @@ describe('Critical Path Method (CPM)', () => {
     };
     expect(getTaskDurationHours(task)).toBe(1);
   });
+
+  it('calculates calendar-aware dates skipping weekends and respecting working hours', () => {
+    // Friday 2026-09-18 at 09:00
+    // Task 1: 16 working hours (Friday 09:00-17:00 = 8h, skips weekend, Monday 2026-09-21 09:00-17:00 = 8h) -> Finishes Mon 17:00
+    // Task 2: 8 working hours (depends on Task 1) -> Tuesday 2026-09-22 09:00-17:00
+    const tasks: Task[] = [
+      { id: 'T1', projectId: 'p1', title: 'Task 1', status: 'todo', priority: 'medium', estimatedHours: 16, createdAt: '', updatedAt: '' },
+      { id: 'T2', projectId: 'p1', title: 'Task 2', status: 'todo', priority: 'medium', estimatedHours: 8, createdAt: '', updatedAt: '' }
+    ];
+    const deps: TaskDependency[] = [
+      { id: 'd1', taskId: 'T2', dependsOnTaskId: 'T1', type: 'blocking' }
+    ];
+
+    const projectStartDate = '2026-09-18T09:00:00Z';
+    const result = calculateCPM('p1', tasks, deps, { projectStartDate });
+
+    expect(result.totalDurationHours).toBe(24);
+    expect(result.totalWorkingHours).toBe(24);
+    expect(result.projectStartDate).toBe('2026-09-18T09:00:00.000Z');
+    expect(result.projectEndDate).toBe('2026-09-22T17:00:00.000Z');
+
+    const s1 = result.tasks.find((t) => t.taskId === 'T1')!;
+    expect(s1.earlyStartDate).toBe('2026-09-18T09:00:00.000Z');
+    expect(s1.earlyFinishDate).toBe('2026-09-21T17:00:00.000Z');
+    expect(s1.durationHours).toBe(16);
+
+    const s2 = result.tasks.find((t) => t.taskId === 'T2')!;
+    expect(s2.earlyStartDate).toBe('2026-09-21T17:00:00.000Z');
+    expect(s2.earlyFinishDate).toBe('2026-09-22T17:00:00.000Z');
+    expect(s2.durationHours).toBe(8);
+  });
+
+  it('skips configured holidays during CPM scheduling', () => {
+    // Friday 2026-09-18 09:00, with Monday 2026-09-21 as a holiday!
+    // Task 1: 16 working hours (Friday 8h, Sat/Sun off, Mon off [holiday], Tuesday 2026-09-22 8h) -> Finishes Tuesday 17:00!
+    const tasks: Task[] = [
+      { id: 'T1', projectId: 'p1', title: 'Task 1', status: 'todo', priority: 'medium', estimatedHours: 16, createdAt: '', updatedAt: '' }
+    ];
+
+    const result = calculateCPM('p1', tasks, [], {
+      projectStartDate: '2026-09-18T09:00:00Z',
+      schedule: {
+        name: 'Custom',
+        defaultHoursPerDay: 8,
+        days: [
+          { dayOfWeek: 0, isWorkingDay: false },
+          { dayOfWeek: 1, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] },
+          { dayOfWeek: 2, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] },
+          { dayOfWeek: 3, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] },
+          { dayOfWeek: 4, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] },
+          { dayOfWeek: 5, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] },
+          { dayOfWeek: 6, isWorkingDay: false }
+        ],
+        holidays: [{ date: '2026-09-21', name: 'Monday Holiday' }]
+      }
+    });
+
+    const s1 = result.tasks.find((t) => t.taskId === 'T1')!;
+    expect(s1.earlyStartDate).toBe('2026-09-18T09:00:00.000Z');
+    expect(s1.earlyFinishDate).toBe('2026-09-22T17:00:00.000Z');
+  });
 });

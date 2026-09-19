@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { CriticalPathEngine } from './engine/index.js';
 import { deriveTaskLifecycleState } from './utils/status.js';
-import type { Task, StatusDefinition, TaskUnblockedEvent } from './index.js';
+import type { Task, StatusDefinition, TaskBlockedEvent, TaskUnblockedEvent } from './index.js';
 
 describe('Task State Behaviour & Dependency Validation', () => {
   const baseTask: Task = {
@@ -442,6 +442,65 @@ describe('Task State Behaviour & Dependency Validation', () => {
       lifecycle = await engine.getTaskLifecycleState(downstream.id);
       expect(lifecycle?.isBlocked).toBe(false);
       expect(lifecycle?.isReady).toBe(true);
+    });
+
+    it('manages first-class isBlocked and blockedReason independently of workflow status', async () => {
+      const engine = new CriticalPathEngine();
+      const project = await engine.createProject({ key: 'BLOCK', name: 'First Class Blocking' });
+
+      const blockedEvents: TaskBlockedEvent[] = [];
+      const unblockedEvents: TaskUnblockedEvent[] = [];
+      engine.events.subscribe<TaskBlockedEvent>('task.blocked', (evt) => {
+        blockedEvents.push(evt);
+      });
+      engine.events.subscribe<TaskUnblockedEvent>('task.unblocked', (evt) => {
+        unblockedEvents.push(evt);
+      });
+
+      // 1. Create a task in 'in_progress' status
+      const task = await engine.createTask({
+        projectId: project.id,
+        title: 'Work on feature',
+        status: 'in_progress'
+      });
+
+      let lifecycle = await engine.getTaskLifecycleState(task.id);
+      expect(lifecycle?.isBlocked).toBe(false);
+
+      // 2. Explicitly block the task while keeping status in_progress
+      const blockedTask = await engine.updateTask(task.id, {
+        isBlocked: true,
+        blockedReason: 'Awaiting third-party API key'
+      });
+      expect(blockedTask?.isBlocked).toBe(true);
+      expect(blockedTask?.blockedReason).toBe('Awaiting third-party API key');
+      expect(blockedTask?.status).toBe('in_progress');
+
+      // Verify domain event
+      expect(blockedEvents).toHaveLength(1);
+      expect(blockedEvents[0].aggregateId).toBe(task.id);
+      expect(blockedEvents[0].payload.reason).toBe('Awaiting third-party API key');
+
+      // Verify lifecycle state
+      lifecycle = await engine.getTaskLifecycleState(task.id);
+      expect(lifecycle?.isBlocked).toBe(true);
+      expect(lifecycle?.isReady).toBe(false);
+
+      // 3. Unblock the task
+      const unblockedTask = await engine.updateTask(task.id, {
+        isBlocked: false,
+        blockedReason: null
+      });
+      expect(unblockedTask?.isBlocked).toBe(false);
+      expect(unblockedTask?.blockedReason).toBeNull();
+      expect(unblockedTask?.status).toBe('in_progress');
+
+      // Verify domain event
+      expect(unblockedEvents).toHaveLength(1);
+      expect(unblockedEvents[0].aggregateId).toBe(task.id);
+
+      lifecycle = await engine.getTaskLifecycleState(task.id);
+      expect(lifecycle?.isBlocked).toBe(false);
     });
   });
 });

@@ -10,6 +10,12 @@ import type {
   WorkloadDistribution,
   WorkloadDistributionOptions
 } from '../types/index.js';
+import {
+  DEFAULT_WORK_SCHEDULE,
+  getWorkingDaysList,
+  getNetAvailableCapacity,
+  getWorkingHoursInDay
+} from './calendar.js';
 
 export interface WorkloadContext {
   tasks: Task[];
@@ -260,21 +266,53 @@ export function calculateWorkloadDistribution(
         taskEnd = taskStart;
       }
 
-      // Calculate days in task window
+      // Resolve schedule for task assignee / team / project
+      const taskSchedule =
+        (task.assigneeId && options.userSchedules?.[task.assigneeId]) ||
+        (task.assigneeId && userMap.get(task.assigneeId)?.schedule) ||
+        (task.teamId && options.teamSchedules?.[task.teamId]) ||
+        (task.teamId && teamMap.get(task.teamId)?.schedule) ||
+        options.schedule ||
+        DEFAULT_WORK_SCHEDULE;
+
+      const workingDays = getWorkingDaysList(taskStart, taskEnd, taskSchedule);
       const msPerDay = 1000 * 60 * 60 * 24;
-      const totalDays = Math.max(1, Math.round((taskEnd.getTime() - taskStart.getTime()) / msPerDay) + 1);
-      const hoursPerDay = hoursToDistribute / totalDays;
 
-      // Distribute across overlapping buckets
-      for (const bucket of bucketList) {
-        const bucketLastDay = addDays(bucket.endDate, -1);
-        const overlapStart = new Date(Math.max(taskStart.getTime(), bucket.startDate.getTime()));
-        const overlapEnd = new Date(Math.min(taskEnd.getTime(), bucketLastDay.getTime()));
+      if (workingDays.length > 0) {
+        const hoursPerWorkingDay = hoursToDistribute / workingDays.length;
 
-        if (overlapStart <= overlapEnd) {
-          const overlapDays = Math.round((overlapEnd.getTime() - overlapStart.getTime()) / msPerDay) + 1;
-          const bucketEffort = overlapDays * hoursPerDay;
-          addValue(bucket, dimKey, bucketEffort);
+        for (const bucket of bucketList) {
+          const bucketStart = bucket.startDate.getTime();
+          const bucketEnd = bucket.endDate.getTime();
+
+          let workingDaysInBucket = 0;
+          for (const wdStr of workingDays) {
+            const wdTime = parseDateOnly(wdStr).getTime();
+            if (wdTime >= bucketStart && wdTime < bucketEnd) {
+              workingDaysInBucket++;
+            }
+          }
+
+          if (workingDaysInBucket > 0) {
+            const bucketEffort = workingDaysInBucket * hoursPerWorkingDay;
+            addValue(bucket, dimKey, bucketEffort);
+          }
+        }
+      } else {
+        // Fallback if no working days in range (e.g. task scheduled on an all-holiday window)
+        const totalDays = Math.max(1, Math.round((taskEnd.getTime() - taskStart.getTime()) / msPerDay) + 1);
+        const hoursPerDay = hoursToDistribute / totalDays;
+
+        for (const bucket of bucketList) {
+          const bucketLastDay = addDays(bucket.endDate, -1);
+          const overlapStart = new Date(Math.max(taskStart.getTime(), bucket.startDate.getTime()));
+          const overlapEnd = new Date(Math.min(taskEnd.getTime(), bucketLastDay.getTime()));
+
+          if (overlapStart <= overlapEnd) {
+            const overlapDays = Math.round((overlapEnd.getTime() - overlapStart.getTime()) / msPerDay) + 1;
+            const bucketEffort = overlapDays * hoursPerDay;
+            addValue(bucket, dimKey, bucketEffort);
+          }
         }
       }
     }
@@ -325,6 +363,12 @@ export function calculateWorkloadDistribution(
       bucketTotalHours += roundedHours;
 
       // Capacity calculation
+      const entitySchedule =
+        (groupBy === 'assignee' && (options.userSchedules?.[key] || userMap.get(key)?.schedule)) ||
+        (groupBy === 'team' && (options.teamSchedules?.[key] || teamMap.get(key)?.schedule)) ||
+        options.schedule ||
+        DEFAULT_WORK_SCHEDULE;
+
       let weeklyCap = defaultWeeklyCapacity;
       if (options.capacityOverrides && typeof options.capacityOverrides[key] === 'number') {
         weeklyCap = options.capacityOverrides[key];
@@ -344,13 +388,23 @@ export function calculateWorkloadDistribution(
       }
 
       let bucketCap = 0;
-      if (interval === 'week') {
-        bucketCap = weeklyCap;
+      if (key === 'unassigned') {
+        bucketCap = 0;
+      } else if (interval === 'week') {
+        const netWeekCap = getNetAvailableCapacity(ib.startDate, addDays(ib.endDate, -1), entitySchedule);
+        const baseline = (entitySchedule.defaultHoursPerDay ?? 8) * 5;
+        const scale = baseline > 0 ? weeklyCap / baseline : 1;
+        bucketCap = Math.round(netWeekCap * scale * 100) / 100;
       } else if (interval === 'day') {
-        bucketCap = Math.round((weeklyCap / 5) * 100) / 100;
+        const dayHours = getWorkingHoursInDay(ib.startDate, entitySchedule);
+        const baseline = (entitySchedule.defaultHoursPerDay ?? 8) * 5;
+        const scale = baseline > 0 ? weeklyCap / baseline : 1;
+        bucketCap = Math.round(dayHours * scale * 100) / 100;
       } else if (interval === 'month') {
-        const daysInMonth = new Date(Date.UTC(ib.startDate.getUTCFullYear(), ib.startDate.getUTCMonth() + 1, 0)).getUTCDate();
-        bucketCap = Math.round((weeklyCap * (daysInMonth / 7)) * 100) / 100;
+        const netMonthCap = getNetAvailableCapacity(ib.startDate, addDays(ib.endDate, -1), entitySchedule);
+        const baseline = (entitySchedule.defaultHoursPerDay ?? 8) * 5;
+        const scale = baseline > 0 ? weeklyCap / baseline : 1;
+        bucketCap = Math.round(netMonthCap * scale * 100) / 100;
       }
 
       capacity[key] = bucketCap;

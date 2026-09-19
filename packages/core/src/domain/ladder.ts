@@ -17,9 +17,11 @@ import type {
   ConcreteTaskEvidence,
   ConcreteEvidenceSummary,
   RealityDelta,
-  TaskLadderView
+  TaskLadderView,
+  WorkSchedule
 } from '../types/index.js';
 import { calculateCPM, getTaskDurationHours } from './cpm.js';
+import { DEFAULT_WORK_SCHEDULE, getWorkingDaysBetween } from './calendar.js';
 
 export interface LadderContext {
   project: Project;
@@ -31,6 +33,7 @@ export interface LadderContext {
   attachments?: Attachment[];
   timeEntries?: TimeEntry[];
   activities?: Activity[];
+  schedule?: WorkSchedule;
 }
 
 export function aggregateConcreteEvidenceForTask(
@@ -38,7 +41,8 @@ export function aggregateConcreteEvidenceForTask(
   attachments: Attachment[] = [],
   deliverables: Deliverable[] = [],
   timeEntries: TimeEntry[] = [],
-  activities: Activity[] = []
+  activities: Activity[] = [],
+  schedule?: WorkSchedule
 ): ConcreteTaskEvidence {
   const taskAttachments = attachments.filter((a) => a.taskId === task.id);
   const taskDeliverables = deliverables.filter(
@@ -70,10 +74,19 @@ export function aggregateConcreteEvidenceForTask(
   const isOverEstimate = Boolean(estimatedHours > 0 && effectiveLoggedHours > estimatedHours);
 
   let scheduleVarianceDays: number | undefined;
+  let scheduleVarianceWorkingDays: number | undefined;
   if (task.dueDate && task.actualEndDate) {
     const dueTime = new Date(task.dueDate).getTime();
     const actualTime = new Date(task.actualEndDate).getTime();
     scheduleVarianceDays = Math.round((actualTime - dueTime) / (1000 * 60 * 60 * 24));
+    const effectiveSched = schedule || DEFAULT_WORK_SCHEDULE;
+    if (actualTime > dueTime) {
+      scheduleVarianceWorkingDays = Math.max(0, getWorkingDaysBetween(task.dueDate, task.actualEndDate, effectiveSched) - 1);
+    } else if (actualTime < dueTime) {
+      scheduleVarianceWorkingDays = -Math.max(0, getWorkingDaysBetween(task.actualEndDate, task.dueDate, effectiveSched) - 1);
+    } else {
+      scheduleVarianceWorkingDays = 0;
+    }
   }
 
   let durationVarianceHours: number | undefined;
@@ -100,6 +113,7 @@ export function aggregateConcreteEvidenceForTask(
     effortVarianceHours: varianceHours,
     durationVarianceHours,
     scheduleVarianceDays,
+    scheduleVarianceWorkingDays,
     accuracyRatio,
     isOverdue,
     isOverEstimate
@@ -309,8 +323,14 @@ export function buildTimelineLadder(
   const targetLevel = options.level || 'all';
   const generatedAt = new Date().toISOString();
 
+  const effectiveSchedule = context.schedule || project.schedule || DEFAULT_WORK_SCHEDULE;
+  const projectStartDate = project.startDate || (tasks.length > 0 ? tasks.find((t) => t.plannedStartDate)?.plannedStartDate : undefined);
+
   // Run Critical Path Method (CPM)
-  const cpm = calculateCPM(project.id, tasks, dependencies);
+  const cpm = calculateCPM(project.id, tasks, dependencies, {
+    schedule: effectiveSchedule,
+    projectStartDate
+  });
   const criticalSet = new Set(cpm.criticalTaskIds);
   const scheduleMap = new Map(cpm.tasks.map((s) => [s.taskId, s]));
 
@@ -352,7 +372,8 @@ export function buildTimelineLadder(
       attachments,
       deliverables,
       timeEntries,
-      activities
+      activities,
+      effectiveSchedule
     );
   }
 

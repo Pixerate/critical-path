@@ -2,8 +2,10 @@ import type {
   Task,
   TaskDependency,
   TaskCriticalPathSchedule,
-  CriticalPathAnalysis
+  CriticalPathAnalysis,
+  WorkSchedule
 } from '../types/index.js';
+import { DEFAULT_WORK_SCHEDULE, addWorkingHours, parseDate } from './calendar.js';
 
 export function getTaskDurationHours(task: Task): number {
   if (typeof task.estimatedHours === 'number' && task.estimatedHours >= 0) {
@@ -19,24 +21,36 @@ export function getTaskDurationHours(task: Task): number {
   return 1;
 }
 
+export interface CPMOptions {
+  projectStartDate?: string | Date;
+  schedule?: WorkSchedule;
+}
+
 /**
  * Calculates the Critical Path Method (CPM) schedule for a set of tasks and their dependencies.
- * - Forward Pass: computes earlyStart and earlyFinish
+ * - Forward Pass: computes earlyStart and earlyFinish (in working hours and calendar dates)
  * - Backward Pass: computes lateStart, lateFinish, and totalSlack
+ * - Respects working days, working hours, and holidays via WorkSchedule
  * - Identifies critical tasks (totalSlack === 0) that dictate the minimum project duration.
  */
 export function calculateCPM(
   projectId: string,
   tasks: Task[],
-  dependencies: TaskDependency[]
+  dependencies: TaskDependency[],
+  options: CPMOptions = {}
 ): CriticalPathAnalysis {
   const calculatedAt = new Date().toISOString();
+  const schedule = options.schedule || DEFAULT_WORK_SCHEDULE;
+  const projectStartDate = options.projectStartDate ? parseDate(options.projectStartDate) : undefined;
 
   if (tasks.length === 0) {
     return {
       projectId,
       calculatedAt,
       totalDurationHours: 0,
+      totalWorkingHours: 0,
+      projectStartDate: projectStartDate ? projectStartDate.toISOString() : undefined,
+      projectEndDate: projectStartDate ? projectStartDate.toISOString() : undefined,
       criticalTaskIds: [],
       tasks: []
     };
@@ -194,6 +208,22 @@ export function calculateCPM(
       criticalTaskIds.push(id);
     }
 
+    const task = taskMap.get(id)!;
+    const duration = getTaskDurationHours(task);
+
+    const earlyStartDate = projectStartDate
+      ? addWorkingHours(projectStartDate, es, schedule).toISOString()
+      : undefined;
+    const earlyFinishDate = projectStartDate
+      ? addWorkingHours(projectStartDate, ef, schedule).toISOString()
+      : undefined;
+    const lateStartDate = projectStartDate
+      ? addWorkingHours(projectStartDate, ls, schedule).toISOString()
+      : undefined;
+    const lateFinishDate = projectStartDate
+      ? addWorkingHours(projectStartDate, lf, schedule).toISOString()
+      : undefined;
+
     schedules.push({
       taskId: id,
       earlyStart: Math.round(es * 100) / 100,
@@ -201,14 +231,27 @@ export function calculateCPM(
       lateStart: Math.round(ls * 100) / 100,
       lateFinish: Math.round(lf * 100) / 100,
       totalSlack,
-      isCritical
+      isCritical,
+      durationHours: duration,
+      slackWorkingHours: totalSlack,
+      earlyStartDate,
+      earlyFinishDate,
+      lateStartDate,
+      lateFinishDate
     });
   }
+
+  const projectEndDate = projectStartDate
+    ? addWorkingHours(projectStartDate, totalDurationHours, schedule).toISOString()
+    : undefined;
 
   return {
     projectId,
     calculatedAt,
     totalDurationHours: Math.round(totalDurationHours * 100) / 100,
+    totalWorkingHours: Math.round(totalDurationHours * 100) / 100,
+    projectStartDate: projectStartDate ? projectStartDate.toISOString() : undefined,
+    projectEndDate,
     criticalTaskIds,
     tasks: schedules
   };

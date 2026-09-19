@@ -36,6 +36,12 @@
   - Multi-scale timeline synthesis: Macro bird's-eye phase rollups (`getTimelineLadder({ level: 'macro' })`), Standard Gantt view with topological CPM forward/backward passes and total float/slack, and Concrete grounding (attachments, deliverables, checklist items, daily effort histograms, and reality deltas).
   - Single-task contextual drilldown via `getTaskLadder(taskId)`.
   - Comprehensive CPM analysis via `calculateCriticalPath(projectId)` identifying project bottleneck tasks and critical path duration.
+- **Work Schedules, Working Hours, Working Days & Holidays Subsystem**:
+  - Configurable `WorkSchedule` data model defining day-by-day active working hours (e.g. 09:00–17:00), non-working days/weekends, and organization or regional `Holiday` exemptions.
+  - Multi-level schedule inheritance hierarchy: Task Assignee / Team -> Project -> Global Engine Default (`DEFAULT_WORK_SCHEDULE`).
+  - Calendar math domain operations (`addWorkingHours`, `subtractWorkingHours`, `getWorkingHoursBetween`, `getWorkingDaysBetween`, `getNetAvailableCapacity`).
+  - Automatic exclusion of weekends and holidays during Critical Path Method (CPM) forward and backward schedule passes (`earlyStartDate`, `earlyFinishDate`, `lateStartDate`, `lateFinishDate`, `totalWorkingHours`, `projectEndDate`).
+  - Calendar-aware capacity reductions in Workload Distribution and working-day schedule variance metrics (`scheduleVarianceWorkingDays`).
 - **Headless Workload & Capacity Distribution (Streamgraphs & Capacity Planning)**:
   - Time-series aggregations across customizable intervals (`day`, `week`, `month`) and dimensions (`assignee`, `team`, `taskType`, `priority`, `status`).
   - Pluggable effort distribution metrics (`scheduled`, `logged`, `remaining`, `blended`) with contiguous, gap-free calendar buckets and zero-filled tabular series matrices ready for D3 (`d3.stack().offset(d3.stackOffsetWiggle)`).
@@ -200,6 +206,43 @@ console.log('Contiguous Weekly Buckets:', workload.buckets);
 //   totalCapacity: 80,
 //   utilizationRatio: 0.625
 // }
+```
+
+### 8. Configuring Work Schedules, Working Hours & Holidays
+
+```ts
+import { CriticalPathEngine, type WorkSchedule, addWorkingHours } from '@critical-path/core';
+
+// Define a project schedule with 4-day workweeks and holidays
+const engineeringSchedule: WorkSchedule = {
+  timezone: 'UTC',
+  days: {
+    monday: { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
+    tuesday: { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
+    wednesday: { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
+    thursday: { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
+    friday: { isWorking: false },
+    saturday: { isWorking: false },
+    sunday: { isWorking: false }
+  },
+  holidays: [
+    { date: '2026-12-25', name: 'Christmas Day' },
+    { date: '2026-12-26', name: 'Boxing Day' }
+  ]
+};
+
+const engine = new CriticalPathEngine({
+  defaultSchedule: engineeringSchedule
+});
+
+// CPM automatically rolls over non-working days and holidays
+const cpm = await engine.calculateCriticalPath('proj_123', {
+  projectStartDate: '2026-09-01T09:00:00Z',
+  schedule: engineeringSchedule
+});
+
+console.log('Project End Date (skipping weekends & holidays):', cpm.projectEndDate);
+console.log('Total Working Hours on Critical Path:', cpm.totalWorkingHours);
 ```
 
 ---

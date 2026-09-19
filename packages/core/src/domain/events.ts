@@ -42,9 +42,18 @@ export interface TaskStatusChangedEvent extends DomainEvent<{
   readonly aggregateType: 'Task';
 }
 
+export interface TaskBlockedEvent extends DomainEvent<{
+  task: Task;
+  reason?: string | null;
+  blockedByTaskId?: string;
+}> {
+  readonly name: 'task.blocked';
+  readonly aggregateType: 'Task';
+}
+
 export interface TaskUnblockedEvent extends DomainEvent<{
   task: Task;
-  upstreamTaskId: string;
+  upstreamTaskId?: string;
 }> {
   readonly name: 'task.unblocked';
   readonly aggregateType: 'Task';
@@ -169,6 +178,7 @@ export type CriticalPathDomainEvent =
   | TaskCreatedEvent
   | TaskUpdatedEvent
   | TaskStatusChangedEvent
+  | TaskBlockedEvent
   | TaskUnblockedEvent
   | TaskDeletedEvent
   | TimeLoggedEvent
