@@ -388,5 +388,27 @@ describe('@critical-path/server Router Tests', () => {
     const globalWorkloadData = await globalWorkloadRes.json();
     expect(globalWorkloadData.workload.buckets.length).toBeGreaterThan(0);
   });
+
+  it('handles agent status updates via POST /status', async () => {
+    const router = new CriticalPathRouter();
+    const req = new Request('http://localhost:3000/api/critical-path/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'Executing compilation step',
+        taskId: 't-123',
+        projectId: 'p-456',
+        details: 'compiling typescript files',
+        isEngaged: true
+      })
+    });
+
+    const res = await router.handleRequest(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.status).toBe('Executing compilation step');
+    expect(typeof data.timestamp).toBe('number');
+  });
 });
 

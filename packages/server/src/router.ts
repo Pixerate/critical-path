@@ -505,6 +505,33 @@ export class CriticalPathRouter {
         }
       }
 
+      // Agent Status / Telemetry API
+      if (segments[0] === 'status') {
+        if (method === 'POST') {
+          const body = await request.json();
+          const status = typeof body.status === 'string' ? body.status : 'active';
+          if (this.engine.events) {
+            this.engine.events.publish({
+              type: 'agent.status_updated' as any,
+              aggregateId: body.taskId || body.projectId || 'system',
+              payload: {
+                status,
+                taskId: body.taskId,
+                projectId: body.projectId,
+                details: body.details,
+                isEngaged: body.isEngaged ?? true,
+                timestamp: Date.now()
+              }
+            } as any);
+          }
+          return this.jsonResponse({
+            success: true,
+            status,
+            timestamp: Date.now()
+          });
+        }
+      }
+
       return this.jsonResponse({ error: `Route not found: ${method} ${pathname}` }, 404);
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'name' in err) {
