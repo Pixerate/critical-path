@@ -1,5 +1,11 @@
 # @critical-path/client
 
+## 0.13.0
+
+### Minor Changes
+
+- b86b6fc: Introduce `critical-path` CLI commands (`status`, `block`, `clarify`, `propose`, `deliverable`, `comment`) and `CriticalPathClient.updateStatus` for agent execution telemetry and task management.
+
 ## 0.12.1
 
 ### Patch Changes
