@@ -362,5 +362,39 @@ describe('@critical-path/client Tests', () => {
     expect(workload.seriesKeys).toEqual(['u1', 'u2']);
     expect(workload.buckets[0].values.u1).toBe(12);
   });
+
+  it('posts agent status updates via client.updateStatus', async () => {
+    let capturedBody: any = null;
+    const mockFetch = async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      if (urlStr.endsWith('/status') && init?.method === 'POST') {
+        capturedBody = JSON.parse(init.body as string);
+        return new Response(JSON.stringify({ success: true, status: capturedBody.status, timestamp: 123456789 }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+    };
+
+    const client = new CriticalPathClient({
+      baseUrl: 'http://localhost:3000/api/critical-path',
+      fetch: mockFetch as typeof fetch
+    });
+
+    const result = await client.updateStatus('Running unit tests', {
+      taskId: 't1',
+      projectId: 'p1',
+      details: 'vitest run 15 passed'
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('Running unit tests');
+    expect(capturedBody).toEqual({
+      status: 'Running unit tests',
+      taskId: 't1',
+      projectId: 'p1',
+      details: 'vitest run 15 passed',
+      isEngaged: true
+    });
+  });
 });
+
 

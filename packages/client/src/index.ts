@@ -73,6 +73,19 @@ export type {
   WorkloadMetric
 };
 
+export interface UpdateStatusOptions {
+  taskId?: string;
+  projectId?: string;
+  details?: string;
+  isEngaged?: boolean;
+}
+
+export interface UpdateStatusResult {
+  success: boolean;
+  status: string;
+  timestamp: number;
+}
+
 export interface ClientOptions {
   baseUrl: string; // e.g. "http://localhost:3000/api/critical-path"
   headers?: Record<string, string>;
@@ -552,6 +565,24 @@ export class CriticalPathClient {
       body: JSON.stringify(data)
     });
     return res.timeEntry;
+  }
+
+  // Agent Status / Telemetry
+  async updateStatus(
+    status: string,
+    options?: UpdateStatusOptions
+  ): Promise<UpdateStatusResult> {
+    const res = await this.request<UpdateStatusResult>('/status', {
+      method: 'POST',
+      body: JSON.stringify({
+        status,
+        taskId: options?.taskId,
+        projectId: options?.projectId,
+        details: options?.details,
+        isEngaged: options?.isEngaged ?? true
+      })
+    });
+    return res;
   }
 }
 
