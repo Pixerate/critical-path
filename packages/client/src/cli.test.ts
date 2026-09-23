@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { main } from './bin/cli.js';
+import { main, isDirectExecution } from './bin/cli.js';
 
 describe('critical-path CLI Subcommands', () => {
   const originalEnv = process.env;
@@ -146,5 +146,24 @@ describe('critical-path CLI Subcommands', () => {
     const commentCall = fetchCalls.find(c => c.url.endsWith('/comments'));
     expect(commentCall?.body.taskId).toBe('task-123');
     expect(commentCall?.body.content).toBe('Migration completed successfully, starting verification.');
+  });
+
+  describe('isDirectExecution', () => {
+    it('returns false when argv1 is undefined', () => {
+      expect(isDirectExecution('file:///path/to/cli.js', undefined)).toBe(false);
+    });
+
+    it('returns true when paths match directly', () => {
+      // Using an existing file path for realpathSync
+      const realFile = process.cwd() + '/package.json';
+      const fileUrl = new URL(`file://${realFile}`).href;
+      expect(isDirectExecution(fileUrl, realFile)).toBe(true);
+    });
+
+    it('returns false when target file does not match argv1', () => {
+      const realFile = process.cwd() + '/package.json';
+      const fileUrl = new URL(`file://${realFile}`).href;
+      expect(isDirectExecution(fileUrl, process.cwd() + '/tsconfig.json')).toBe(false);
+    });
   });
 });
