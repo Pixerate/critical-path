@@ -49,12 +49,14 @@ function getContext(flags: Record<string, any>): {
   taskId?: string;
   projectId?: string;
   authorId: string;
+  agentName?: string;
 } {
   const apiUrl = (flags.api as string) || process.env.CRITICAL_PATH_API;
   const apiKey = (flags.key as string) || process.env.CRITICAL_PATH_KEY;
   const taskId = (flags.task as string) || process.env.CRITICAL_PATH_TASK_ID;
   const projectId = (flags.project as string) || process.env.CRITICAL_PATH_PROJECT_ID;
-  const authorId = (flags.author as string) || process.env.CRITICAL_PATH_AUTHOR_ID || 'agent';
+  const authorId = (flags.author as string) || (flags['actor-id'] as string) || process.env.CRITICAL_PATH_AUTHOR_ID || process.env.CRITICAL_PATH_ACTOR_ID || 'agent';
+  const agentName = (flags['actor-name'] as string) || (flags['agent-name'] as string) || process.env.CRITICAL_PATH_AGENT_NAME || undefined;
 
   if (!apiUrl) {
     console.error('[critical-path] Error: Base API URL is required. Provide --api or set CRITICAL_PATH_API.');
@@ -67,7 +69,7 @@ function getContext(flags: Record<string, any>): {
   }
 
   const client = new CriticalPathClient({ baseUrl: apiUrl, headers });
-  return { client, taskId, projectId, authorId };
+  return { client, taskId, projectId, authorId, agentName };
 }
 
 function printHelp() {
@@ -156,8 +158,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         authorType: 'agent'
       });
 
+      const { authorId: blockAuthorId, agentName: blockAgentName } = getContext(flags);
       await client.updateTask(taskId, {
         isBlocked: true,
+        actorId: blockAuthorId,
+        actorName: blockAgentName,
+        actorType: 'agent',
         customFields: {
           blockerReason: reason,
           ...(prUrl ? { prUrl } : {})
@@ -179,7 +185,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         console.error('[critical-path] Error: --reason is required when requesting clarification.');
         process.exit(1);
       }
-      const { client, taskId, authorId } = getContext(flags);
+      const { client, taskId, authorId, agentName } = getContext(flags);
       if (!taskId) {
         console.error('[critical-path] Error: Task ID is required (--task or CRITICAL_PATH_TASK_ID).');
         process.exit(1);
@@ -205,6 +211,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 
       await client.updateTask(taskId, {
         isBlocked: true,
+        actorId: authorId,
+        actorName: agentName,
+        actorType: 'agent',
         customFields: {
           needsClarification: true,
           clarificationReason: reason
@@ -257,7 +266,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         console.error('[critical-path] Error: Both --title and --url are required for deliverable.');
         process.exit(1);
       }
-      const { client, taskId, projectId, authorId } = getContext(flags);
+      const { client, taskId, projectId, authorId, agentName } = getContext(flags);
 
       if (projectId) {
         try {
@@ -280,6 +289,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
           authorType: 'agent'
         });
         await client.updateTask(taskId, {
+          actorId: authorId,
+          actorName: agentName,
+          actorType: 'agent',
           customFields: {
             deliverableUrl: url,
             deliverableTitle: title
@@ -378,7 +390,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     case 'checklist':
     case 'todo': {
       const subAction = positionals[1];
-      const { client, taskId } = getContext(flags);
+      const { client, taskId, authorId, agentName } = getContext(flags);
       if (!taskId) {
         console.error('[critical-path] Error: Task ID is required (--task or CRITICAL_PATH_TASK_ID).');
         process.exit(1);
@@ -403,7 +415,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
           console.error('[critical-path] Error: Checklist item ID or title is required. Example: critical-path checklist check "Write unit tests"');
           process.exit(1);
         }
-        const updated = await client.toggleTodo(taskId, query, true);
+        const updated = await client.toggleTodo(taskId, query, true, {
+          actorId: authorId,
+          actorName: agentName,
+          actorType: 'agent'
+        });
         const item = updated.todos?.find(
           (t) => t.id === query || t.title.toLowerCase().includes(query.toLowerCase())
         );
@@ -417,7 +433,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
           console.error('[critical-path] Error: Checklist item ID or title is required.');
           process.exit(1);
         }
-        const updated = await client.toggleTodo(taskId, query, false);
+        const updated = await client.toggleTodo(taskId, query, false, {
+          actorId: authorId,
+          actorName: agentName,
+          actorType: 'agent'
+        });
         const item = updated.todos?.find(
           (t) => t.id === query || t.title.toLowerCase().includes(query.toLowerCase())
         );
@@ -438,7 +458,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
           completed: false,
           createdAt: new Date().toISOString()
         }));
-        await client.updateTask(taskId, { todos: newTodos });
+        await client.updateTask(taskId, {
+          todos: newTodos,
+          actorId: authorId,
+          actorName: agentName,
+          actorType: 'agent'
+        });
         console.log(`[critical-path] Set ${newTodos.length} checklist item(s) on task ${taskId}.`);
         break;
       }
@@ -454,7 +479,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         process.exit(1);
       }
 
-      const item = await client.addTodo(taskId, title);
+      const item = await client.addTodo(taskId, title, {
+        actorId: authorId,
+        actorName: agentName,
+        actorType: 'agent'
+      });
       console.log(`[critical-path] Added checklist item "${item.title}" (${item.id}) to task ${taskId}.`);
       break;
     }

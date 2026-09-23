@@ -275,7 +275,15 @@ export class CriticalPathClient {
     return res.task;
   }
 
-  async updateTask(id: string, updates: Partial<Task>): Promise<Task> {
+  async updateTask(
+    id: string,
+    updates: Partial<Task> & {
+      actorId?: string;
+      actorName?: string;
+      actorType?: string;
+      actor?: { userId: string; username?: string; actorType?: string };
+    }
+  ): Promise<Task> {
     const res = await this.request<{ task: Task }>(`/tasks/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
@@ -312,7 +320,11 @@ export class CriticalPathClient {
     });
   }
 
-  async addTodo(taskId: string, title: string): Promise<TaskTodoItem> {
+  async addTodo(
+    taskId: string,
+    title: string,
+    options?: { actorId?: string; actorName?: string; actorType?: string }
+  ): Promise<TaskTodoItem> {
     const task = await this.getTask(taskId);
     const item: TaskTodoItem = {
       id: `todo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -321,11 +333,16 @@ export class CriticalPathClient {
       createdAt: new Date().toISOString()
     };
     const todos = [...(task.todos || []), item];
-    await this.updateTask(taskId, { todos });
+    await this.updateTask(taskId, { todos, ...options });
     return item;
   }
 
-  async toggleTodo(taskId: string, todoIdOrTitle: string, completed?: boolean): Promise<Task> {
+  async toggleTodo(
+    taskId: string,
+    todoIdOrTitle: string,
+    completed?: boolean,
+    options?: { actorId?: string; actorName?: string; actorType?: string }
+  ): Promise<Task> {
     const task = await this.getTask(taskId);
     if (!task.todos || task.todos.length === 0) {
       throw new Error(`Task ${taskId} has no checklist items.`);
@@ -338,7 +355,7 @@ export class CriticalPathClient {
     }
     item.completed = completed !== undefined ? completed : !item.completed;
     item.completedAt = item.completed ? new Date().toISOString() : undefined;
-    return this.updateTask(taskId, { todos: task.todos });
+    return this.updateTask(taskId, { todos: task.todos, ...options });
   }
 
   async deleteTask(id: string): Promise<boolean> {

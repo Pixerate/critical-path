@@ -431,30 +431,76 @@ export class CriticalPathEngine {
     return created;
   }
 
-  async updateTask(id: string, updates: Partial<Task>): Promise<Task | null> {
+  async updateTask(
+    id: string,
+    updates: Partial<Task> & {
+      actorId?: string;
+      actorName?: string;
+      actorType?: string;
+      actor?: { userId: string; username?: string; actorType?: string };
+    },
+    options?: {
+      actorId?: string;
+      actorName?: string;
+      actorType?: string;
+      actor?: { userId: string; username?: string; actorType?: string };
+    }
+  ): Promise<Task | null> {
     const existing = await this.store.getTask(id);
     if (!existing) return null;
+
+    const actorId =
+      options?.actorId ||
+      updates.actorId ||
+      options?.actor?.userId ||
+      updates.actor?.userId ||
+      'system';
+    const actorName =
+      options?.actorName ||
+      updates.actorName ||
+      options?.actor?.username ||
+      updates.actor?.username ||
+      (actorId === 'system' ? 'System' : undefined);
+    const actorType =
+      options?.actorType ||
+      updates.actorType ||
+      options?.actor?.actorType ||
+      updates.actor?.actorType ||
+      (actorId === 'system' ? 'system' : 'user');
+    const actorObj = options?.actor || updates.actor || {
+      userId: actorId,
+      username: actorName,
+      actorType
+    };
+
+    const {
+      actorId: _aId,
+      actorName: _aName,
+      actorType: _aType,
+      actor: _aObj,
+      ...taskUpdates
+    } = updates;
 
     const project = await this.store.getProject(existing.projectId);
     const workflow = await this.resolveProjectWorkflow(existing.projectId);
 
     // Validate workflow transition invariant
-    if (updates.status && updates.status !== existing.status) {
-      const isValid = validateTransition(workflow || undefined, existing.status, updates.status);
+    if (taskUpdates.status && taskUpdates.status !== existing.status) {
+      const isValid = validateTransition(workflow || undefined, existing.status, taskUpdates.status);
       if (!isValid) {
-        throw new WorkflowValidationError(existing.status, updates.status, workflow?.id);
+        throw new WorkflowValidationError(existing.status, taskUpdates.status, workflow?.id);
       }
     }
 
     // Validate custom field invariants
-    if (project?.customFieldDefinitions && updates.customFields) {
+    if (project?.customFieldDefinitions && taskUpdates.customFields) {
       validateCustomFieldValues(project.customFieldDefinitions, {
         ...existing.customFields,
-        ...updates.customFields
+        ...taskUpdates.customFields
       });
     }
 
-    const processedUpdates = await this.plugins.runBeforeTaskUpdate(id, updates);
+    const processedUpdates = await this.plugins.runBeforeTaskUpdate(id, taskUpdates);
 
     // Auto-update execution/completion timestamps if status changes
     if (processedUpdates.status && processedUpdates.status !== existing.status) {
@@ -507,7 +553,10 @@ export class CriticalPathEngine {
         payload: {
           task: updated,
           previousStatus: existing.status,
-          newStatus: updated.status
+          newStatus: updated.status,
+          actorId,
+          ...(actorName ? { actorName } : {}),
+          actor: actorObj
         }
       };
       await this.events.publish(statusEvent);
@@ -528,7 +577,10 @@ export class CriticalPathEngine {
         occurredAt: now,
         payload: {
           task: updated,
-          previous: existing
+          previous: existing,
+          actorId,
+          ...(actorName ? { actorName } : {}),
+          actor: actorObj
         }
       };
       await this.events.publish(updateEvent);
@@ -547,16 +599,19 @@ export class CriticalPathEngine {
         occurredAt: now,
         payload: {
           task: updated,
-          reason: blockedReason
+          reason: blockedReason,
+          actorId,
+          ...(actorName ? { actorName } : {}),
+          actor: actorObj
         }
       };
       await this.events.publish(blockedEvent);
       await this.store.logActivity({
         projectId: updated.projectId,
         taskId: updated.id,
-        actorId: updated.assigneeId || 'system',
+        actorId,
         action: 'task.blocked',
-        details: { reason: blockedReason }
+        details: { reason: blockedReason, ...(actorName ? { actorName } : {}) }
       });
       this.dispatchWebhook('task.blocked', {
         task: updated,
@@ -570,16 +625,19 @@ export class CriticalPathEngine {
         aggregateType: 'Task',
         occurredAt: now,
         payload: {
-          task: updated
+          task: updated,
+          actorId,
+          ...(actorName ? { actorName } : {}),
+          actor: actorObj
         }
       };
       await this.events.publish(unblockedEvent);
       await this.store.logActivity({
         projectId: updated.projectId,
         taskId: updated.id,
-        actorId: updated.assigneeId || 'system',
+        actorId,
         action: 'task.unblocked',
-        details: {}
+        details: { ...(actorName ? { actorName } : {}) }
       });
       this.dispatchWebhook('task.unblocked', {
         task: updated
@@ -589,9 +647,13 @@ export class CriticalPathEngine {
     await this.store.logActivity({
       projectId: updated.projectId,
       taskId: updated.id,
-      actorId: updated.assigneeId || 'system',
+      actorId,
       action: isStatusChange ? 'task.status_changed' : 'task.updated',
-      details: { fromStatus: existing.status, toStatus: updated.status }
+      details: {
+        fromStatus: existing.status,
+        toStatus: updated.status,
+        ...(actorName ? { actorName } : {})
+      }
     });
 
     this.dispatchWebhook(isStatusChange ? 'task.status_changed' : 'task.updated', {
