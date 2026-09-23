@@ -453,12 +453,22 @@ export function calculateTaskMetrics(
 
   // Compute Inferred Actuals
   let activeWorkingHours: number | undefined;
+  let calendarDurationHours: number | undefined;
+
   if (task.actualStartDate && task.actualEndDate) {
     const startMs = new Date(task.actualStartDate).getTime();
     const endMs = new Date(task.actualEndDate).getTime();
     if (!isNaN(startMs) && !isNaN(endMs) && endMs >= startMs) {
-      activeWorkingHours = Math.round(((endMs - startMs) / (1000 * 60 * 60)) * 100) / 100;
+      calendarDurationHours = Math.round(((endMs - startMs) / (1000 * 60 * 60)) * 100) / 100;
     }
+  }
+
+  if (task.actualDurationSeconds !== undefined) {
+    activeWorkingHours = Math.round((task.actualDurationSeconds / 3600) * 100) / 100;
+  } else if (task.actualHours !== undefined) {
+    activeWorkingHours = task.actualHours;
+  } else {
+    activeWorkingHours = calendarDurationHours;
   }
 
   const inferredActuals: TaskInferredActuals = {
@@ -466,7 +476,9 @@ export function calculateTaskMetrics(
     actualEndDate: task.actualEndDate,
     isStartDateInferred: Boolean(task.actualStartDate && !task.plannedStartDate),
     isEndDateInferred: Boolean(task.actualEndDate && task.semanticStatus === 'completed'),
-    activeWorkingHours
+    activeWorkingHours,
+    calendarDurationHours,
+    actualDurationSeconds: task.actualDurationSeconds
   };
 
   const progress = inferTaskProgress(task, options);

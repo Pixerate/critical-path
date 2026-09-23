@@ -214,6 +214,10 @@ export interface Task {
   estimatedDurationMinutes?: number;
   actualDurationMinutes?: number;
   billableDurationMinutes?: number;
+  /** Cumulative active execution time spent in 'in_progress' status (in seconds) */
+  actualDurationSeconds?: number;
+  /** Transient ISO timestamp marking the start of current 'in_progress' session (null when not in_progress) */
+  inProgressSince?: string | null;
   // Progress (0 to 100 percentage)
   progress?: number;
   isBlocked?: boolean;
@@ -626,6 +630,10 @@ export interface TaskInferredActuals {
   isStartDateInferred: boolean;
   isEndDateInferred: boolean;
   activeWorkingHours?: number;
+  /** Calendar elapsed hours between actualStartDate and actualEndDate */
+  calendarDurationHours?: number;
+  /** Cumulative active execution duration in seconds */
+  actualDurationSeconds?: number;
 }
 
 export interface TaskMetrics {

@@ -371,6 +371,7 @@ export class CriticalPathEngine {
     const statusDef = resolveStatusDefinition(initialStatus, project?.statusDefinitions || workflow?.statuses);
     const semanticStatus = processedInput.semanticStatus ?? taskInput.semanticStatus ?? statusDef.category;
     const actualStartDate = processedInput.actualStartDate ?? taskInput.actualStartDate ?? (statusDef.category === 'in_progress' ? now : undefined);
+    const inProgressSince = processedInput.inProgressSince ?? taskInput.inProgressSince ?? (statusDef.category === 'in_progress' ? now : undefined);
     const actualEndDate = processedInput.actualEndDate ?? taskInput.actualEndDate ?? ((statusDef.category === 'completed' || statusDef.category === 'canceled') ? now : undefined);
 
     const created = await this.store.createTask({
@@ -400,6 +401,8 @@ export class CriticalPathEngine {
       estimatedDurationMinutes: processedInput.estimatedDurationMinutes ?? taskInput.estimatedDurationMinutes,
       actualDurationMinutes: processedInput.actualDurationMinutes ?? taskInput.actualDurationMinutes,
       billableDurationMinutes: processedInput.billableDurationMinutes ?? taskInput.billableDurationMinutes,
+      actualDurationSeconds: processedInput.actualDurationSeconds ?? taskInput.actualDurationSeconds,
+      inProgressSince,
       progress: processedInput.progress ?? taskInput.progress ?? (statusDef.category === 'completed' ? 100 : 0),
       tags: processedInput.tags ?? taskInput.tags ?? [],
       customFields: processedInput.customFields ?? taskInput.customFields ?? {},
@@ -515,22 +518,69 @@ export class CriticalPathEngine {
         existing.status,
         project?.statusDefinitions || workflow?.statuses
       );
-      if (
+
+      // 1. Leaving in_progress: finalize active session duration
+      if (existingStatusDef.category === 'in_progress' && statusDef.category !== 'in_progress') {
+        const inProgressSince = existing.inProgressSince;
+        if (inProgressSince) {
+          const startMs = new Date(inProgressSince).getTime();
+          const endMs = new Date(now).getTime();
+          if (!isNaN(startMs) && !isNaN(endMs) && endMs >= startMs) {
+            const sessionSeconds = Math.max(0, (endMs - startMs) / 1000);
+            processedUpdates.actualDurationSeconds =
+              (processedUpdates.actualDurationSeconds ?? existing.actualDurationSeconds ?? 0) + sessionSeconds;
+            if (processedUpdates.actualHours === undefined) {
+              processedUpdates.actualHours = Math.round((processedUpdates.actualDurationSeconds / 3600) * 100) / 100;
+            }
+            if (processedUpdates.actualDurationMinutes === undefined) {
+              processedUpdates.actualDurationMinutes = Math.round(processedUpdates.actualDurationSeconds / 60);
+            }
+          }
+          processedUpdates.inProgressSince = null;
+        }
+      }
+
+      // 2. Entering in_progress: retain earliest start date & start session timer
+      if (statusDef.category === 'in_progress') {
+        if (!existing.actualStartDate && !processedUpdates.actualStartDate) {
+          processedUpdates.actualStartDate = now;
+        }
+        if (!processedUpdates.inProgressSince) {
+          processedUpdates.inProgressSince = now;
+        }
+        if (
+          (existingStatusDef.category === 'completed' || existingStatusDef.category === 'canceled') &&
+          processedUpdates.actualEndDate === undefined
+        ) {
+          processedUpdates.actualEndDate = undefined;
+        }
+      } else if (
         (existingStatusDef.category === 'completed' || existingStatusDef.category === 'canceled') &&
-        (statusDef.category === 'in_progress' || statusDef.category === 'not_started') &&
+        statusDef.category === 'not_started' &&
         processedUpdates.actualEndDate === undefined
       ) {
         processedUpdates.actualEndDate = undefined;
       }
 
-      if (statusDef.category === 'in_progress' && !existing.actualStartDate && !processedUpdates.actualStartDate) {
-        processedUpdates.actualStartDate = now;
-      }
+      // 3. Entering completed or canceled
       if ((statusDef.category === 'completed' || statusDef.category === 'canceled') && !processedUpdates.actualEndDate) {
         processedUpdates.actualEndDate = now;
         if (statusDef.category === 'completed' && processedUpdates.progress === undefined && (existing.progress || 0) < 100) {
           processedUpdates.progress = 100;
         }
+      }
+    }
+
+    // Mutual sync for manual duration/effort edits
+    if (processedUpdates.actualDurationSeconds !== undefined && processedUpdates.actualHours === undefined) {
+      processedUpdates.actualHours = Math.round((processedUpdates.actualDurationSeconds / 3600) * 100) / 100;
+      if (processedUpdates.actualDurationMinutes === undefined) {
+        processedUpdates.actualDurationMinutes = Math.round(processedUpdates.actualDurationSeconds / 60);
+      }
+    } else if (processedUpdates.actualHours !== undefined && processedUpdates.actualDurationSeconds === undefined) {
+      processedUpdates.actualDurationSeconds = Math.round(processedUpdates.actualHours * 3600);
+      if (processedUpdates.actualDurationMinutes === undefined) {
+        processedUpdates.actualDurationMinutes = Math.round(processedUpdates.actualHours * 60);
       }
     }
 
