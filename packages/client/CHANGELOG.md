@@ -1,5 +1,11 @@
 # @critical-path/client
 
+## 0.14.0
+
+### Minor Changes
+
+- f539a11: Add subtask and checklist CLI commands (`critical-path subtask`, `critical-path checklist`) and CriticalPathClient helpers (`createSubtask`, `addTodo`, `toggleTodo`).
+
 ## 0.13.1
 
 ### Patch Changes
