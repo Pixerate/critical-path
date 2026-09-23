@@ -1,5 +1,11 @@
 # @critical-path/client
 
+## 0.13.1
+
+### Patch Changes
+
+- 1c85472: Fix direct execution detection in `critical-path` CLI when invoked via symlinks or paths containing spaces.
+
 ## 0.13.0
 
 ### Minor Changes
