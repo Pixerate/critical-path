@@ -1,6 +1,9 @@
 import type {
   Project,
   Task,
+  TaskTodoItem,
+  TaskStatus,
+  Priority,
   TaskDependencyGraph,
   Team,
   TaskContainer,
@@ -45,6 +48,9 @@ import type {
 } from '@critical-path/core';
 
 export type {
+  TaskTodoItem,
+  TaskStatus,
+  Priority,
   SemanticStatus,
   StatusDefinition,
   TaskDerivedStatus,
@@ -275,6 +281,64 @@ export class CriticalPathClient {
       body: JSON.stringify(updates)
     });
     return res.task;
+  }
+
+  async createSubtask(
+    parentTaskId: string,
+    data: {
+      title: string;
+      description?: string;
+      status?: TaskStatus;
+      priority?: Priority;
+      projectId?: string;
+      assigneeId?: string;
+      customFields?: Record<string, unknown>;
+    }
+  ): Promise<Task> {
+    let projectId = data.projectId;
+    if (!projectId) {
+      const parentTask = await this.getTask(parentTaskId);
+      projectId = parentTask.projectId;
+    }
+    return this.createTask({
+      projectId,
+      title: data.title,
+      description: data.description,
+      parentId: parentTaskId,
+      status: data.status || 'todo',
+      priority: data.priority || 'medium',
+      assigneeId: data.assigneeId,
+      customFields: data.customFields
+    });
+  }
+
+  async addTodo(taskId: string, title: string): Promise<TaskTodoItem> {
+    const task = await this.getTask(taskId);
+    const item: TaskTodoItem = {
+      id: `todo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      title,
+      completed: false,
+      createdAt: new Date().toISOString()
+    };
+    const todos = [...(task.todos || []), item];
+    await this.updateTask(taskId, { todos });
+    return item;
+  }
+
+  async toggleTodo(taskId: string, todoIdOrTitle: string, completed?: boolean): Promise<Task> {
+    const task = await this.getTask(taskId);
+    if (!task.todos || task.todos.length === 0) {
+      throw new Error(`Task ${taskId} has no checklist items.`);
+    }
+    const item = task.todos.find(
+      (t) => t.id === todoIdOrTitle || t.title.toLowerCase() === todoIdOrTitle.toLowerCase()
+    );
+    if (!item) {
+      throw new Error(`Checklist item "${todoIdOrTitle}" not found on task ${taskId}.`);
+    }
+    item.completed = completed !== undefined ? completed : !item.completed;
+    item.completedAt = item.completed ? new Date().toISOString() : undefined;
+    return this.updateTask(taskId, { todos: task.todos });
   }
 
   async deleteTask(id: string): Promise<boolean> {

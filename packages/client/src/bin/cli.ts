@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import { CriticalPathClient } from '../index.js';
+import { CriticalPathClient, type TaskTodoItem } from '../index.js';
 
 interface CliContext {
   apiUrl?: string;
@@ -18,28 +18,24 @@ function parseCliArgs(args: string[]) {
     const arg = args[i];
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
-      if (key === 'help' || key === 'disengaged') {
-        flags[key] = true;
-      } else if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
-        const val = args[++i];
-        if (key === 'question') {
-          if (!Array.isArray(flags.question)) flags.question = [];
-          (flags.question as string[]).push(val);
+      const nextArg = args[i + 1];
+      if (nextArg && !nextArg.startsWith('--')) {
+        if (flags[key]) {
+          if (Array.isArray(flags[key])) {
+            (flags[key] as string[]).push(nextArg);
+          } else {
+            flags[key] = [flags[key] as string, nextArg];
+          }
         } else {
-          flags[key] = val;
+          flags[key] = nextArg;
         }
+        i++;
       } else {
         flags[key] = true;
       }
     } else if (arg.startsWith('-')) {
       const key = arg.slice(1);
-      if (key === 'h') {
-        flags.help = true;
-      } else if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
-        flags[key] = args[++i];
-      } else {
-        flags[key] = true;
-      }
+      flags[key] = true;
     } else {
       positionals.push(arg);
     }
@@ -85,6 +81,13 @@ Commands:
   status <message>                       Update live execution activity / status
   block --reason <reason> [--pr <url>]   Mark current task as blocked with explanation
   clarify --reason <reason> [--question <q>...] Post clarification request on task
+  subtask <title> [--description <desc>] Create active child subtask under task
+  subtask list                           List subtasks under current or specified task
+  checklist add <title>                  Add a checklist item to current task
+  checklist check <item>                 Mark a checklist item completed by title or ID
+  checklist uncheck <item>               Mark a checklist item incomplete
+  checklist list                         List all checklist items on current task
+  checklist set <item1> <item2>...       Replace/initialize full checklist for task
   propose --title <title> [--description <desc>] Stage follow-up draft task on board
   deliverable --title <title> --url <url> Record output artifact or PR link
   comment <content>                      Post progress comment to task
@@ -307,6 +310,152 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         authorType: 'agent'
       });
       console.log(`[critical-path] Added comment to task ${taskId}.`);
+      break;
+    }
+
+    case 'subtask': {
+      const subAction = positionals[1];
+      const { client, taskId, projectId } = getContext(flags);
+      const targetParentId = (flags.parent as string) || taskId;
+
+      if (subAction === 'list') {
+        const targetProj = (flags.project as string) || projectId;
+        if (!targetParentId) {
+          console.error('[critical-path] Error: Parent task ID is required (--task, --parent, or CRITICAL_PATH_TASK_ID).');
+          process.exit(1);
+        }
+        const tasks = await client.getTasks(targetProj);
+        const subtasks = tasks.filter((t) => t.parentId === targetParentId);
+        if (subtasks.length === 0) {
+          console.log(`[critical-path] No subtasks found for parent task ${targetParentId}.`);
+        } else {
+          console.log(`[critical-path] Subtasks for parent task ${targetParentId} (${subtasks.length}):`);
+          for (const st of subtasks) {
+            console.log(`  - [${st.id}] (${st.status}): ${st.title}`);
+          }
+        }
+        break;
+      }
+
+      const title =
+        subAction === 'create'
+          ? positionals.slice(2).join(' ') || (flags.title as string)
+          : positionals.slice(1).join(' ') || (flags.title as string);
+
+      if (!title) {
+        console.error('[critical-path] Error: Subtask title is required. Example: critical-path subtask "Implement unit tests"');
+        process.exit(1);
+      }
+
+      if (!targetParentId) {
+        console.error('[critical-path] Error: Parent task ID is required (--task, --parent, or CRITICAL_PATH_TASK_ID).');
+        process.exit(1);
+      }
+
+      let targetProj = (flags.project as string) || projectId;
+      if (!targetProj) {
+        const parentTask = await client.getTask(targetParentId);
+        targetProj = parentTask.projectId;
+      }
+
+      const created = await client.createTask({
+        projectId: targetProj,
+        title,
+        description: (flags.description as string) || '',
+        parentId: targetParentId,
+        status: (flags.status as any) || 'todo',
+        priority: (flags.priority as any) || 'medium',
+        assigneeId: (flags.assignee as string) || undefined,
+        customFields: {
+          createdByAgent: true
+        }
+      });
+
+      console.log(`[critical-path] Created subtask "${created.title}" (ID: ${created.id}) under parent task ${targetParentId}.`);
+      break;
+    }
+
+    case 'checklist':
+    case 'todo': {
+      const subAction = positionals[1];
+      const { client, taskId } = getContext(flags);
+      if (!taskId) {
+        console.error('[critical-path] Error: Task ID is required (--task or CRITICAL_PATH_TASK_ID).');
+        process.exit(1);
+      }
+
+      if (!subAction || subAction === 'list') {
+        const task = await client.getTask(taskId);
+        if (!task.todos || task.todos.length === 0) {
+          console.log(`[critical-path] Task ${taskId} has no checklist items.`);
+        } else {
+          console.log(`[critical-path] Checklist for task ${taskId} (${task.todos.length}):`);
+          for (const item of task.todos) {
+            console.log(`  ${item.completed ? '[x]' : '[ ]'} ${item.title} (${item.id})`);
+          }
+        }
+        break;
+      }
+
+      if (subAction === 'check' || subAction === 'done' || subAction === 'complete') {
+        const query = positionals.slice(2).join(' ') || (flags.item as string) || (flags.title as string) || (flags.id as string);
+        if (!query) {
+          console.error('[critical-path] Error: Checklist item ID or title is required. Example: critical-path checklist check "Write unit tests"');
+          process.exit(1);
+        }
+        const updated = await client.toggleTodo(taskId, query, true);
+        const item = updated.todos?.find(
+          (t) => t.id === query || t.title.toLowerCase().includes(query.toLowerCase())
+        );
+        console.log(`[critical-path] Marked checklist item "${item?.title || query}" as completed on task ${taskId}.`);
+        break;
+      }
+
+      if (subAction === 'uncheck') {
+        const query = positionals.slice(2).join(' ') || (flags.item as string) || (flags.title as string) || (flags.id as string);
+        if (!query) {
+          console.error('[critical-path] Error: Checklist item ID or title is required.');
+          process.exit(1);
+        }
+        const updated = await client.toggleTodo(taskId, query, false);
+        const item = updated.todos?.find(
+          (t) => t.id === query || t.title.toLowerCase().includes(query.toLowerCase())
+        );
+        console.log(`[critical-path] Marked checklist item "${item?.title || query}" as incomplete on task ${taskId}.`);
+        break;
+      }
+
+      if (subAction === 'set') {
+        const rawItems = positionals.slice(2);
+        const items = rawItems.length > 0 ? rawItems : (flags.items as string[]) || [];
+        if (items.length === 0) {
+          console.error('[critical-path] Error: Items are required when using checklist set.');
+          process.exit(1);
+        }
+        const newTodos: TaskTodoItem[] = items.map((title, i) => ({
+          id: `todo_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`,
+          title,
+          completed: false,
+          createdAt: new Date().toISOString()
+        }));
+        await client.updateTask(taskId, { todos: newTodos });
+        console.log(`[critical-path] Set ${newTodos.length} checklist item(s) on task ${taskId}.`);
+        break;
+      }
+
+      // Default or 'add'
+      const title =
+        subAction === 'add'
+          ? positionals.slice(2).join(' ') || (flags.title as string) || (flags.item as string)
+          : positionals.slice(1).join(' ') || (flags.title as string) || (flags.item as string);
+
+      if (!title) {
+        console.error('[critical-path] Error: Item title is required. Example: critical-path checklist add "Write unit tests"');
+        process.exit(1);
+      }
+
+      const item = await client.addTodo(taskId, title);
+      console.log(`[critical-path] Added checklist item "${item.title}" (${item.id}) to task ${taskId}.`);
       break;
     }
 

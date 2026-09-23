@@ -30,9 +30,26 @@ describe('critical-path CLI Subcommands', () => {
         return new Response(JSON.stringify({ comment: { id: 'c1', ...body } }), { status: 201 });
       }
       if (urlStr.includes('/tasks/')) {
-        return new Response(JSON.stringify({ task: { id: 'task-123', ...body } }), { status: 200 });
+        return new Response(JSON.stringify({
+          task: {
+            id: 'task-123',
+            projectId: 'proj-456',
+            todos: [
+              { id: 'todo-1', title: 'Existing checklist item', completed: false }
+            ],
+            ...body
+          }
+        }), { status: 200 });
       }
-      if (urlStr.endsWith('/tasks')) {
+      if (urlStr.endsWith('/tasks') || urlStr.includes('/tasks?')) {
+        if (method === 'GET') {
+          return new Response(JSON.stringify({
+            tasks: [
+              { id: 'sub-1', title: 'Existing child subtask', parentId: 'task-123', status: 'todo' },
+              { id: 'sub-2', title: 'Unrelated task', parentId: 'other-task', status: 'todo' }
+            ]
+          }), { status: 200 });
+        }
         return new Response(JSON.stringify({ task: { id: 'task-new-1', ...body } }), { status: 201 });
       }
       if (urlStr.endsWith('/deliverables')) {
@@ -146,6 +163,74 @@ describe('critical-path CLI Subcommands', () => {
     const commentCall = fetchCalls.find(c => c.url.endsWith('/comments'));
     expect(commentCall?.body.taskId).toBe('task-123');
     expect(commentCall?.body.content).toBe('Migration completed successfully, starting verification.');
+  });
+
+  it('handles "subtask" command (creates active subtask)', async () => {
+    await main([
+      'subtask',
+      '--title', 'Implement database migrations',
+      '--description', 'Run Knex migrations for users table',
+      '--priority', 'high'
+    ]);
+
+    const createTaskCall = fetchCalls.find(c => c.url.endsWith('/tasks') && c.method === 'POST');
+    expect(createTaskCall).toBeDefined();
+    expect(createTaskCall?.body.title).toBe('Implement database migrations');
+    expect(createTaskCall?.body.description).toBe('Run Knex migrations for users table');
+    expect(createTaskCall?.body.projectId).toBe('proj-456');
+    expect(createTaskCall?.body.parentId).toBe('task-123');
+    expect(createTaskCall?.body.status).toBe('todo');
+    expect(createTaskCall?.body.priority).toBe('high');
+    expect(createTaskCall?.body.customFields?.createdByAgent).toBe(true);
+  });
+
+  it('handles "subtask list" command', async () => {
+    const logSpy = vi.spyOn(console, 'log');
+    await main(['subtask', 'list']);
+
+    const getTasksCall = fetchCalls.find(c => (c.url.endsWith('/tasks') || c.url.includes('/tasks?')) && c.method === 'GET');
+    expect(getTasksCall).toBeDefined();
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Subtasks for parent task task-123 (1):'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Existing child subtask'));
+    logSpy.mockRestore();
+  });
+
+  it('handles "checklist add" command', async () => {
+    await main(['checklist', 'add', 'Write comprehensive unit tests']);
+
+    const updateTaskCall = fetchCalls.find(c => c.url.includes('/tasks/task-123') && c.method === 'PATCH');
+    expect(updateTaskCall).toBeDefined();
+    expect(updateTaskCall?.body.todos).toHaveLength(2);
+    expect(updateTaskCall?.body.todos[1].title).toBe('Write comprehensive unit tests');
+    expect(updateTaskCall?.body.todos[1].completed).toBe(false);
+  });
+
+  it('handles "checklist check" command', async () => {
+    await main(['checklist', 'check', 'Existing checklist item']);
+
+    const updateTaskCall = fetchCalls.find(c => c.url.includes('/tasks/task-123') && c.method === 'PATCH');
+    expect(updateTaskCall).toBeDefined();
+    expect(updateTaskCall?.body.todos[0].completed).toBe(true);
+    expect(updateTaskCall?.body.todos[0].completedAt).toBeDefined();
+  });
+
+  it('handles "checklist list" command', async () => {
+    const logSpy = vi.spyOn(console, 'log');
+    await main(['checklist', 'list']);
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Checklist for task task-123 (1):'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Existing checklist item'));
+    logSpy.mockRestore();
+  });
+
+  it('handles "checklist set" command', async () => {
+    await main(['checklist', 'set', 'Step 1', 'Step 2']);
+
+    const updateTaskCall = fetchCalls.find(c => c.url.includes('/tasks/task-123') && c.method === 'PATCH');
+    expect(updateTaskCall).toBeDefined();
+    expect(updateTaskCall?.body.todos).toHaveLength(2);
+    expect(updateTaskCall?.body.todos[0].title).toBe('Step 1');
+    expect(updateTaskCall?.body.todos[1].title).toBe('Step 2');
   });
 
   describe('isDirectExecution', () => {
