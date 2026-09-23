@@ -28,7 +28,13 @@ export interface TaskCreatedEvent extends DomainEvent<{ task: Task }> {
   readonly aggregateType: 'Task';
 }
 
-export interface TaskUpdatedEvent extends DomainEvent<{ task: Task; previous: Task }> {
+export interface TaskUpdatedEvent extends DomainEvent<{
+  task: Task;
+  previous: Task;
+  actorId?: string;
+  actorName?: string;
+  actor?: { userId: string; username?: string; actorType?: string };
+}> {
   readonly name: 'task.updated';
   readonly aggregateType: 'Task';
 }
@@ -37,6 +43,9 @@ export interface TaskStatusChangedEvent extends DomainEvent<{
   task: Task;
   previousStatus: string;
   newStatus: string;
+  actorId?: string;
+  actorName?: string;
+  actor?: { userId: string; username?: string; actorType?: string };
 }> {
   readonly name: 'task.status_changed';
   readonly aggregateType: 'Task';
@@ -46,6 +55,9 @@ export interface TaskBlockedEvent extends DomainEvent<{
   task: Task;
   reason?: string | null;
   blockedByTaskId?: string;
+  actorId?: string;
+  actorName?: string;
+  actor?: { userId: string; username?: string; actorType?: string };
 }> {
   readonly name: 'task.blocked';
   readonly aggregateType: 'Task';
@@ -54,6 +66,9 @@ export interface TaskBlockedEvent extends DomainEvent<{
 export interface TaskUnblockedEvent extends DomainEvent<{
   task: Task;
   upstreamTaskId?: string;
+  actorId?: string;
+  actorName?: string;
+  actor?: { userId: string; username?: string; actorType?: string };
 }> {
   readonly name: 'task.unblocked';
   readonly aggregateType: 'Task';

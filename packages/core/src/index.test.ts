@@ -440,6 +440,54 @@ describe('CriticalPathEngine Core Tests', () => {
     const updated = await engine.updateTask(task.id, { status: 'in_production' });
     expect(updated?.status).toBe('in_production');
   });
+
+  it('attributes activities and domain events to the real actor rather than the assignee', async () => {
+    const engine = new CriticalPathEngine();
+    const proj = await engine.createProject({ key: 'ACT', name: 'Actor Attribution Project' });
+    const task = await engine.createTask({
+      projectId: proj.id,
+      title: 'Assigned Task',
+      status: 'todo',
+      assigneeId: 'agent_worker_1'
+    });
+
+    const receivedEvents: any[] = [];
+    engine.events.subscribe('task.status_changed', async (evt) => {
+      receivedEvents.push(evt);
+    });
+    engine.events.subscribe('task.updated', async (evt) => {
+      receivedEvents.push(evt);
+    });
+
+    // Update with explicit actor (e.g. human user updating an assigned agent task)
+    await engine.updateTask(task.id, {
+      status: 'in_progress',
+      actorId: 'user_human_42',
+      actorName: 'Jack James'
+    });
+
+    const activities = await engine.store.getActivities({ taskId: task.id });
+    const statusActivity = activities.find((a) => a.action === 'task.status_changed');
+    expect(statusActivity).toBeDefined();
+    expect(statusActivity?.actorId).toBe('user_human_42');
+    expect((statusActivity?.details as any)?.actorName).toBe('Jack James');
+    expect(statusActivity?.actorId).not.toBe('agent_worker_1');
+
+    expect(receivedEvents).toHaveLength(1);
+    expect(receivedEvents[0].payload.actorId).toBe('user_human_42');
+    expect(receivedEvents[0].payload.actorName).toBe('Jack James');
+
+    // Update without explicit actor - should fall back to 'system', NEVER task.assigneeId
+    await engine.updateTask(task.id, {
+      title: 'Updated title'
+    });
+
+    const updatedActivities = await engine.store.getActivities({ taskId: task.id });
+    const updateActivity = updatedActivities.find((a) => a.action === 'task.updated');
+    expect(updateActivity).toBeDefined();
+    expect(updateActivity?.actorId).toBe('system');
+    expect(updateActivity?.actorId).not.toBe('agent_worker_1');
+  });
 });
 
 
