@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 import { CriticalPathClient } from '../index.js';
 
 interface CliContext {
@@ -315,7 +317,20 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 }
 
 // Only invoke main when executed directly as CLI script
-if (import.meta.url === `file://${process.argv[1]}`) {
+export function isDirectExecution(
+  scriptUrl: string = import.meta.url,
+  argv1: string | undefined = process.argv[1]
+): boolean {
+  if (!argv1) return false;
+  try {
+    const scriptPath = fileURLToPath(scriptUrl);
+    return fs.realpathSync(scriptPath) === fs.realpathSync(argv1);
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectExecution()) {
   main().catch((err) => {
     console.error('[critical-path] Execution error:', err instanceof Error ? err.message : err);
     process.exit(1);
