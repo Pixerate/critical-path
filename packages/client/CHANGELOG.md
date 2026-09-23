@@ -1,5 +1,13 @@
 # @critical-path/client
 
+## 0.14.1
+
+### Patch Changes
+
+- f816145: Preserve real actor identity and metadata in `updateTask`, activity logs, and domain events, preventing status changes and updates from erroneously attributing the task's assignee as the initiating actor.
+- Updated dependencies [f816145]
+  - @critical-path/core@0.19.1
+
 ## 0.14.0
 
 ### Minor Changes
