@@ -455,3 +455,48 @@ export function getNetAvailableCapacity(
 
   return Math.round(totalCapacity * 100) / 100;
 }
+
+export interface FormatDurationOptions {
+  /** Optional custom work schedule to determine working hours in a day */
+  schedule?: WorkSchedule;
+  /** 'working_days' uses schedule.defaultHoursPerDay (default 8h). 'calendar_days' uses 24h. Default: 'working_days' */
+  dayBasis?: 'working_days' | 'calendar_days';
+}
+
+/**
+ * Formats task execution duration dynamically based on magnitude:
+ * - < 120s: Seconds with 1 decimal place (e.g. '110.3s', '45s')
+ * - < 1 day (based on dayBasis): Hours and minutes (e.g. '0h 44m', '2h 15m')
+ * - >= 1 day: Days with 1 decimal place (e.g. '1.5 days', '3.2 days')
+ */
+export function formatTaskDuration(
+  durationSeconds: number | null | undefined,
+  options?: FormatDurationOptions
+): string {
+  if (durationSeconds === null || durationSeconds === undefined || isNaN(durationSeconds) || durationSeconds <= 0) {
+    return '0s';
+  }
+
+  // Under 120 seconds: return seconds with 1 decimal place (or whole if integer)
+  if (durationSeconds < 120) {
+    const formatted = durationSeconds.toFixed(1);
+    return `${formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted}s`;
+  }
+
+  const hoursPerDay = options?.dayBasis === 'calendar_days'
+    ? 24
+    : (options?.schedule?.defaultHoursPerDay || DEFAULT_WORK_SCHEDULE.defaultHoursPerDay || 8);
+
+  const totalHours = durationSeconds / 3600;
+  if (totalHours >= hoursPerDay) {
+    const days = totalHours / hoursPerDay;
+    const formatted = days.toFixed(1);
+    const cleanDays = formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted;
+    return `${cleanDays} ${cleanDays === '1' ? 'day' : 'days'}`;
+  }
+
+  const hours = Math.floor(totalHours);
+  const minutes = Math.floor((durationSeconds % 3600) / 60);
+  return `${hours}h ${minutes}m`;
+}
+

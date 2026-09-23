@@ -9,7 +9,8 @@ import {
   getWorkingHoursBetween,
   getWorkingDaysBetween,
   getWorkingDaysList,
-  getNetAvailableCapacity
+  getNetAvailableCapacity,
+  formatTaskDuration
 } from './calendar.js';
 import type { WorkSchedule } from '../types/index.js';
 
@@ -159,6 +160,57 @@ describe('Calendar and Work Schedule Domain', () => {
       // Friday (8) + Sat (0) + Sun (0) + Mon (0, holiday) + Tue (8) = 16h
       const cap = getNetAvailableCapacity('2026-09-18', '2026-09-22', scheduleWithHoliday);
       expect(cap).toBe(16);
+    });
+  });
+
+  describe('formatTaskDuration', () => {
+    it('handles null, undefined, NaN, and negative values', () => {
+      expect(formatTaskDuration(null)).toBe('0s');
+      expect(formatTaskDuration(undefined)).toBe('0s');
+      expect(formatTaskDuration(NaN)).toBe('0s');
+      expect(formatTaskDuration(-5)).toBe('0s');
+      expect(formatTaskDuration(0)).toBe('0s');
+    });
+
+    it('formats short durations under 120s with seconds', () => {
+      expect(formatTaskDuration(45)).toBe('45s');
+      expect(formatTaskDuration(110.3)).toBe('110.3s');
+      expect(formatTaskDuration(119.9)).toBe('119.9s');
+      expect(formatTaskDuration(1.5)).toBe('1.5s');
+    });
+
+    it('formats sub-day durations with hours and minutes', () => {
+      // 44 minutes = 2640s
+      expect(formatTaskDuration(2640)).toBe('0h 44m');
+      // 2h 15m = 8100s
+      expect(formatTaskDuration(8100)).toBe('2h 15m');
+      // 7h 59m = 28740s (< 8h working day)
+      expect(formatTaskDuration(28740)).toBe('7h 59m');
+    });
+
+    it('formats multi-day durations using default 8h working days', () => {
+      // 8 hours = 28800s -> 1 day
+      expect(formatTaskDuration(28800)).toBe('1 day');
+      // 12 hours = 43200s -> 1.5 days
+      expect(formatTaskDuration(43200)).toBe('1.5 days');
+      // 25.6 hours = 92160s -> 3.2 days
+      expect(formatTaskDuration(92160)).toBe('3.2 days');
+    });
+
+    it('supports calendar_days basis (24h per day)', () => {
+      // 12 hours on calendar days basis -> 12h 0m (< 24h)
+      expect(formatTaskDuration(43200, { dayBasis: 'calendar_days' })).toBe('12h 0m');
+      // 36 hours on calendar days basis -> 1.5 days
+      expect(formatTaskDuration(129600, { dayBasis: 'calendar_days' })).toBe('1.5 days');
+    });
+
+    it('supports custom work schedules', () => {
+      const fourHourDaySchedule: WorkSchedule = {
+        ...DEFAULT_WORK_SCHEDULE,
+        defaultHoursPerDay: 4
+      };
+      // 6 hours with 4h/day schedule = 1.5 days
+      expect(formatTaskDuration(21600, { schedule: fourHourDaySchedule })).toBe('1.5 days');
     });
   });
 });

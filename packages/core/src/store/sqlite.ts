@@ -131,6 +131,8 @@ export class SQLiteStore implements StorageAdapter {
         estimatedDurationMinutes REAL,
         actualDurationMinutes REAL,
         billableDurationMinutes REAL,
+        actualDurationSeconds REAL,
+        inProgressSince TEXT,
         progress REAL,
         isBlocked INTEGER,
         blockedReason TEXT,
@@ -660,10 +662,11 @@ export class SQLiteStore implements StorageAdapter {
         id, projectId, title, description, status, priority, taskType, assigneeId, assignees, reporterId,
         reviewerId, iterationId, teamId, containerId, deliverableId, plannedStartDate, actualStartDate, actualEndDate,
         dueDate, estimatedHours, loggedHours, actualHours, billableHours,
-        estimatedDurationMinutes, actualDurationMinutes, billableDurationMinutes, progress,
+        estimatedDurationMinutes, actualDurationMinutes, billableDurationMinutes,
+        actualDurationSeconds, inProgressSince, progress,
         isBlocked, blockedReason,
         tags, customFields, parentId, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newTask.id,
@@ -692,6 +695,8 @@ export class SQLiteStore implements StorageAdapter {
       newTask.estimatedDurationMinutes ?? null,
       newTask.actualDurationMinutes ?? null,
       newTask.billableDurationMinutes ?? null,
+      newTask.actualDurationSeconds ?? null,
+      newTask.inProgressSince ?? null,
       newTask.progress ?? null,
       newTask.isBlocked !== undefined ? (newTask.isBlocked ? 1 : 0) : null,
       newTask.blockedReason ?? null,
@@ -720,7 +725,8 @@ export class SQLiteStore implements StorageAdapter {
         assigneeId = ?, assignees = ?, reporterId = ?, reviewerId = ?, iterationId = ?, teamId = ?, containerId = ?, deliverableId = ?,
         plannedStartDate = ?, actualStartDate = ?, actualEndDate = ?, dueDate = ?,
         estimatedHours = ?, loggedHours = ?, actualHours = ?, billableHours = ?,
-        estimatedDurationMinutes = ?, actualDurationMinutes = ?, billableDurationMinutes = ?, progress = ?,
+        estimatedDurationMinutes = ?, actualDurationMinutes = ?, billableDurationMinutes = ?,
+        actualDurationSeconds = ?, inProgressSince = ?, progress = ?,
         isBlocked = ?, blockedReason = ?,
         tags = ?, customFields = ?, parentId = ?, updatedAt = ?
       WHERE id = ?
@@ -751,6 +757,8 @@ export class SQLiteStore implements StorageAdapter {
       updated.estimatedDurationMinutes ?? null,
       updated.actualDurationMinutes ?? null,
       updated.billableDurationMinutes ?? null,
+      updated.actualDurationSeconds ?? null,
+      updated.inProgressSince ?? null,
       updated.progress ?? null,
       updated.isBlocked !== undefined ? (updated.isBlocked ? 1 : 0) : null,
       updated.blockedReason ?? null,

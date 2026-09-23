@@ -87,6 +87,8 @@ export class TaskEntity extends BaseEntity {
   public estimatedDurationMinutes?: number;
   public actualDurationMinutes?: number;
   public billableDurationMinutes?: number;
+  public actualDurationSeconds?: number;
+  public inProgressSince?: string | null;
   public progress?: number;
   public tags?: string[];
   public todos?: TaskTodoItem[];
@@ -121,6 +123,8 @@ export class TaskEntity extends BaseEntity {
     this.estimatedDurationMinutes = data.estimatedDurationMinutes;
     this.actualDurationMinutes = data.actualDurationMinutes;
     this.billableDurationMinutes = data.billableDurationMinutes;
+    this.actualDurationSeconds = data.actualDurationSeconds;
+    this.inProgressSince = data.inProgressSince;
     this.progress = data.progress ?? 0;
     this.tags = data.tags ? [...data.tags] : [];
     this.todos = data.todos ? data.todos.map((t) => ({ ...t })) : [];
@@ -141,6 +145,10 @@ export class TaskEntity extends BaseEntity {
 
     const status = input.status || options?.workflow?.defaultStatusKey || 'todo';
     const statusDef = resolveStatusDefinition(status, options?.workflow?.statuses);
+    const semanticStatus = input.semanticStatus || statusDef.category;
+    const actualStartDate = input.actualStartDate ?? (semanticStatus === 'in_progress' ? now : undefined);
+    const inProgressSince = input.inProgressSince ?? (semanticStatus === 'in_progress' ? now : undefined);
+    const actualEndDate = input.actualEndDate ?? ((semanticStatus === 'completed' || semanticStatus === 'canceled') ? now : undefined);
 
     const task = new TaskEntity({
       ...input,
@@ -148,7 +156,11 @@ export class TaskEntity extends BaseEntity {
       createdAt: now,
       updatedAt: now,
       status,
-      semanticStatus: input.semanticStatus || statusDef.category,
+      semanticStatus,
+      actualStartDate,
+      inProgressSince,
+      actualEndDate,
+      actualDurationSeconds: input.actualDurationSeconds,
       priority: input.priority || 'medium',
       loggedHours: input.loggedHours ?? 0,
       progress: input.progress ?? 0,
@@ -190,16 +202,45 @@ export class TaskEntity extends BaseEntity {
     this.semanticStatus = statusDef.category;
 
     const prevStatusDef = resolveStatusDefinition(previousStatus, options?.statusDefs || workflow?.statuses);
-    if ((prevStatusDef.category === 'completed' || prevStatusDef.category === 'canceled') &&
-        (statusDef.category === 'in_progress' || statusDef.category === 'not_started')) {
+
+    // 1. Leaving in_progress: finalize current session duration
+    if (prevStatusDef.category === 'in_progress' && statusDef.category !== 'in_progress') {
+      if (this.inProgressSince) {
+        const startMs = new Date(this.inProgressSince).getTime();
+        const endMs = new Date(now).getTime();
+        if (!isNaN(startMs) && !isNaN(endMs) && endMs >= startMs) {
+          const sessionSeconds = Math.max(0, (endMs - startMs) / 1000);
+          this.actualDurationSeconds = (this.actualDurationSeconds || 0) + sessionSeconds;
+          this.actualHours = Math.round(((this.actualDurationSeconds || 0) / 3600) * 100) / 100;
+          this.actualDurationMinutes = Math.round((this.actualDurationSeconds || 0) / 60);
+        }
+        this.inProgressSince = null;
+      }
+    }
+
+    // 2. Entering in_progress: retain earliest start date & start session timer
+    if (statusDef.category === 'in_progress') {
+      if (!this.actualStartDate) {
+        this.actualStartDate = now;
+      }
+      if (!this.inProgressSince) {
+        this.inProgressSince = now;
+      }
+      if (prevStatusDef.category === 'completed' || prevStatusDef.category === 'canceled') {
+        this.actualEndDate = undefined;
+      }
+    } else if (
+      (prevStatusDef.category === 'completed' || prevStatusDef.category === 'canceled') &&
+      statusDef.category === 'not_started'
+    ) {
       this.actualEndDate = undefined;
     }
 
-    if (statusDef.category === 'in_progress' && !this.actualStartDate) {
-      this.actualStartDate = now;
-    }
+    // 3. Entering completed or canceled
     if (statusDef.category === 'completed' || statusDef.category === 'canceled') {
-      this.actualEndDate = now;
+      if (!this.actualEndDate) {
+        this.actualEndDate = now;
+      }
       if (statusDef.category === 'completed' && this.progress !== undefined && this.progress < 100) {
         this.progress = 100;
       }
@@ -354,6 +395,13 @@ export class TaskEntity extends BaseEntity {
     }
 
     Object.assign(this, updates);
+    if (updates.actualDurationSeconds !== undefined && updates.actualHours === undefined) {
+      this.actualHours = Math.round((updates.actualDurationSeconds / 3600) * 100) / 100;
+      this.actualDurationMinutes = updates.actualDurationMinutes ?? Math.round(updates.actualDurationSeconds / 60);
+    } else if (updates.actualHours !== undefined && updates.actualDurationSeconds === undefined) {
+      this.actualDurationSeconds = Math.round(updates.actualHours * 3600);
+      this.actualDurationMinutes = updates.actualDurationMinutes ?? Math.round(updates.actualHours * 60);
+    }
     this.markUpdated();
 
     const event: TaskUpdatedEvent = {
@@ -401,6 +449,8 @@ export class TaskEntity extends BaseEntity {
       estimatedDurationMinutes: this.estimatedDurationMinutes,
       actualDurationMinutes: this.actualDurationMinutes,
       billableDurationMinutes: this.billableDurationMinutes,
+      actualDurationSeconds: this.actualDurationSeconds,
+      inProgressSince: this.inProgressSince,
       progress: this.progress,
       tags: this.tags ? [...this.tags] : [],
       todos: this.todos ? this.todos.map((t) => ({ ...t })) : [],
