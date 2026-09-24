@@ -353,12 +353,13 @@ describe('Task State Behaviour & Dependency Validation', () => {
         status: 'todo'
       });
 
-      // Create downstream task with status: 'blocked' and customFields.isBlocked = true
+      // Create downstream task with isBlocked = true
       const taskDownstream = await engine.createTask({
         projectId: project.id,
         title: 'Run Integration Tests',
-        status: 'blocked',
-        customFields: { isBlocked: true, blockedReason: 'Waiting on compilation' }
+        status: 'todo',
+        isBlocked: true,
+        blockedReason: 'Waiting on compilation'
       });
 
       await engine.addDependency({
@@ -382,11 +383,11 @@ describe('Task State Behaviour & Dependency Validation', () => {
       expect(unblockedEvents[0].aggregateId).toBe(taskDownstream.id);
       expect(unblockedEvents[0].payload.upstreamTaskId).toBe(taskUpstream.id);
 
-      // Verify downstream task was automatically transitioned from 'blocked' to 'todo'
+      // Verify downstream task is unblocked
       const updatedDownstream = await engine.getTask(taskDownstream.id);
       expect(updatedDownstream?.status).toBe('todo');
-      expect(updatedDownstream?.customFields?.isBlocked).toBe(false);
-      expect(updatedDownstream?.customFields?.blockedReason).toBeNull();
+      expect(updatedDownstream?.isBlocked).toBe(false);
+      expect(updatedDownstream?.blockedReason).toBeNull();
 
       // Verify lifecycle state is ready and unblocked
       const lifecycle = await engine.getTaskLifecycleState(taskDownstream.id);
@@ -404,8 +405,8 @@ describe('Task State Behaviour & Dependency Validation', () => {
       const downstream = await engine.createTask({
         projectId: project.id,
         title: 'Final Assembly',
-        status: 'blocked',
-        customFields: { isBlocked: true }
+        status: 'todo',
+        isBlocked: true
       });
 
       await engine.addDependency({ taskId: downstream.id, dependsOnTaskId: up1.id, type: 'blocking' });
@@ -423,8 +424,7 @@ describe('Task State Behaviour & Dependency Validation', () => {
       expect(unblockedEvents).toHaveLength(0);
 
       let taskState = await engine.getTask(downstream.id);
-      expect(taskState?.status).toBe('blocked');
-      expect(taskState?.customFields?.isBlocked).toBe(true);
+      expect(taskState?.isBlocked).toBe(true);
 
       let lifecycle = await engine.getTaskLifecycleState(downstream.id);
       expect(lifecycle?.isBlocked).toBe(true);
@@ -437,7 +437,7 @@ describe('Task State Behaviour & Dependency Validation', () => {
       expect(unblockedEvents).toHaveLength(1);
       taskState = await engine.getTask(downstream.id);
       expect(taskState?.status).toBe('todo');
-      expect(taskState?.customFields?.isBlocked).toBe(false);
+      expect(taskState?.isBlocked).toBe(false);
 
       lifecycle = await engine.getTaskLifecycleState(downstream.id);
       expect(lifecycle?.isBlocked).toBe(false);

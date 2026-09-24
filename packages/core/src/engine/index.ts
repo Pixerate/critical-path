@@ -404,6 +404,8 @@ export class CriticalPathEngine {
       actualDurationSeconds: processedInput.actualDurationSeconds ?? taskInput.actualDurationSeconds,
       inProgressSince,
       progress: processedInput.progress ?? taskInput.progress ?? (statusDef.category === 'completed' ? 100 : 0),
+      isBlocked: processedInput.isBlocked ?? taskInput.isBlocked ?? false,
+      blockedReason: processedInput.blockedReason ?? taskInput.blockedReason ?? null,
       tags: processedInput.tags ?? taskInput.tags ?? [],
       customFields: processedInput.customFields ?? taskInput.customFields ?? {},
       parentId: processedInput.parentId ?? taskInput.parentId
@@ -636,11 +638,11 @@ export class CriticalPathEngine {
       await this.events.publish(updateEvent);
     }
 
-    const wasBlocked = Boolean(existing.isBlocked || existing.customFields?.isBlocked || existing.status === 'blocked');
-    const isNowBlocked = Boolean(updated.isBlocked || updated.customFields?.isBlocked || updated.status === 'blocked');
+    const wasBlocked = Boolean(existing.isBlocked);
+    const isNowBlocked = Boolean(updated.isBlocked);
 
     if (!wasBlocked && isNowBlocked) {
-      const blockedReason = updated.blockedReason ?? (updated.customFields?.blockedReason as string | undefined) ?? null;
+      const blockedReason = updated.blockedReason ?? null;
       const blockedEvent: TaskBlockedEvent = {
         id: `evt_${Math.random().toString(36).substring(2, 9)}`,
         name: 'task.blocked',
@@ -739,22 +741,9 @@ export class CriticalPathEngine {
           let updatedDownstream = downstream;
           const updates: Partial<Task> = {};
 
-          if (downstream.status === 'blocked') {
-            const defaultStatus = downstreamWorkflow?.defaultStatusKey || 'todo';
-            updates.status = defaultStatus;
-          }
-
           if (downstream.isBlocked || downstream.blockedReason) {
             updates.isBlocked = false;
             updates.blockedReason = null;
-          }
-
-          if (downstream.customFields?.isBlocked || downstream.customFields?.blockedReason) {
-            updates.customFields = {
-              ...downstream.customFields,
-              isBlocked: false,
-              blockedReason: null
-            };
           }
 
           if (Object.keys(updates).length > 0) {
