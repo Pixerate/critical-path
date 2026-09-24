@@ -386,8 +386,9 @@ describe('CriticalPathEngine Core Tests', () => {
     const downstream = await engine.createTask({
       projectId: proj.id,
       title: 'Downstream Task',
-      status: 'blocked',
-      customFields: { isBlocked: true, blockedReason: 'Waiting on upstream' }
+      status: 'todo',
+      isBlocked: true,
+      blockedReason: 'Waiting on upstream'
     });
 
     await engine.addDependency({
@@ -412,7 +413,7 @@ describe('CriticalPathEngine Core Tests', () => {
 
     const refreshedDownstream = await engine.getTask(downstream.id);
     expect(refreshedDownstream?.status).toBe('todo');
-    expect(refreshedDownstream?.customFields?.isBlocked).toBe(false);
+    expect(refreshedDownstream?.isBlocked).toBe(false);
   });
 
   it('allows VFX workflow transitions from revision_requested to in_production', async () => {

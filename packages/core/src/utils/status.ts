@@ -88,11 +88,7 @@ export function deriveTaskLifecycleState(
     return upstreamDef.category !== 'completed';
   });
   const blockingTaskIds = blockingTasks.map((t) => t.id);
-  const isExplicitlyBlocked = Boolean(
-    task.isBlocked === true ||
-    task.customFields?.isBlocked === true ||
-    task.status === 'blocked'
-  );
+  const isExplicitlyBlocked = Boolean(task.isBlocked === true);
   const isBlocked = !isDone && (blockingTaskIds.length > 0 || isExplicitlyBlocked);
   const isReady = semanticStatus === 'not_started' && !isBlocked;
 
