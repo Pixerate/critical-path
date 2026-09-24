@@ -478,7 +478,8 @@ export function calculateTaskMetrics(
     isEndDateInferred: Boolean(task.actualEndDate && task.semanticStatus === 'completed'),
     activeWorkingHours,
     calendarDurationHours,
-    actualDurationSeconds: task.actualDurationSeconds
+    actualDurationSeconds: task.actualDurationSeconds,
+    blockedDurationSeconds: task.blockedDurationSeconds
   };
 
   const progress = inferTaskProgress(task, options);

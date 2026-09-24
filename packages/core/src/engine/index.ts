@@ -374,6 +374,10 @@ export class CriticalPathEngine {
     const inProgressSince = processedInput.inProgressSince ?? taskInput.inProgressSince ?? (statusDef.category === 'in_progress' ? now : undefined);
     const actualEndDate = processedInput.actualEndDate ?? taskInput.actualEndDate ?? ((statusDef.category === 'completed' || statusDef.category === 'canceled') ? now : undefined);
 
+    const isInitialBlocked = processedInput.isBlocked ?? taskInput.isBlocked ?? false;
+    const blockedSince = processedInput.blockedSince ?? taskInput.blockedSince ?? (isInitialBlocked && statusDef.category === 'in_progress' ? now : undefined);
+    const blockedDurationSeconds = processedInput.blockedDurationSeconds ?? taskInput.blockedDurationSeconds;
+
     const created = await this.store.createTask({
       projectId,
       title: processedInput.title || taskInput.title,
@@ -403,8 +407,10 @@ export class CriticalPathEngine {
       billableDurationMinutes: processedInput.billableDurationMinutes ?? taskInput.billableDurationMinutes,
       actualDurationSeconds: processedInput.actualDurationSeconds ?? taskInput.actualDurationSeconds,
       inProgressSince,
+      blockedDurationSeconds,
+      blockedSince,
       progress: processedInput.progress ?? taskInput.progress ?? (statusDef.category === 'completed' ? 100 : 0),
-      isBlocked: processedInput.isBlocked ?? taskInput.isBlocked ?? false,
+      isBlocked: isInitialBlocked,
       blockedReason: processedInput.blockedReason ?? taskInput.blockedReason ?? null,
       tags: processedInput.tags ?? taskInput.tags ?? [],
       customFields: processedInput.customFields ?? taskInput.customFields ?? {},
@@ -507,22 +513,25 @@ export class CriticalPathEngine {
 
     const processedUpdates = await this.plugins.runBeforeTaskUpdate(id, taskUpdates);
 
+    const now = new Date().toISOString();
+    const existingStatusDef = resolveStatusDefinition(
+      existing.status,
+      project?.statusDefinitions || workflow?.statuses
+    );
+    const newStatusDef = processedUpdates.status
+      ? resolveStatusDefinition(
+          processedUpdates.status,
+          project?.statusDefinitions || workflow?.statuses
+        )
+      : undefined;
+    const effectiveCategory = newStatusDef?.category ?? existingStatusDef.category;
+
     // Auto-update execution/completion timestamps if status changes
-    if (processedUpdates.status && processedUpdates.status !== existing.status) {
-      const statusDef = resolveStatusDefinition(
-        processedUpdates.status,
-        project?.statusDefinitions || workflow?.statuses
-      );
-      processedUpdates.semanticStatus = processedUpdates.semanticStatus ?? statusDef.category;
-      const now = new Date().toISOString();
+    if (processedUpdates.status && processedUpdates.status !== existing.status && newStatusDef) {
+      processedUpdates.semanticStatus = processedUpdates.semanticStatus ?? newStatusDef.category;
 
-      const existingStatusDef = resolveStatusDefinition(
-        existing.status,
-        project?.statusDefinitions || workflow?.statuses
-      );
-
-      // 1. Leaving in_progress: finalize active session duration
-      if (existingStatusDef.category === 'in_progress' && statusDef.category !== 'in_progress') {
+      // 1. Leaving in_progress: finalize active session duration and blocked duration
+      if (existingStatusDef.category === 'in_progress' && newStatusDef.category !== 'in_progress') {
         const inProgressSince = existing.inProgressSince;
         if (inProgressSince) {
           const startMs = new Date(inProgressSince).getTime();
@@ -540,15 +549,33 @@ export class CriticalPathEngine {
           }
           processedUpdates.inProgressSince = null;
         }
+
+        const blockedSince = processedUpdates.blockedSince ?? existing.blockedSince;
+        if (blockedSince) {
+          const startMs = new Date(blockedSince).getTime();
+          const endMs = new Date(now).getTime();
+          if (!isNaN(startMs) && !isNaN(endMs) && endMs >= startMs) {
+            const sessionSeconds = Math.max(0, (endMs - startMs) / 1000);
+            processedUpdates.blockedDurationSeconds =
+              (processedUpdates.blockedDurationSeconds ?? existing.blockedDurationSeconds ?? 0) + sessionSeconds;
+          }
+          processedUpdates.blockedSince = null;
+        }
       }
 
-      // 2. Entering in_progress: retain earliest start date & start session timer
-      if (statusDef.category === 'in_progress') {
+      // 2. Entering in_progress: retain earliest start date & start session timer (and blocked timer if blocked)
+      if (newStatusDef.category === 'in_progress') {
         if (!existing.actualStartDate && !processedUpdates.actualStartDate) {
           processedUpdates.actualStartDate = now;
         }
         if (!processedUpdates.inProgressSince) {
           processedUpdates.inProgressSince = now;
+        }
+        const isTaskBlocked = processedUpdates.isBlocked !== undefined
+          ? Boolean(processedUpdates.isBlocked)
+          : Boolean(existing.isBlocked);
+        if (isTaskBlocked && !processedUpdates.blockedSince) {
+          processedUpdates.blockedSince = now;
         }
         if (
           (existingStatusDef.category === 'completed' || existingStatusDef.category === 'canceled') &&
@@ -558,19 +585,47 @@ export class CriticalPathEngine {
         }
       } else if (
         (existingStatusDef.category === 'completed' || existingStatusDef.category === 'canceled') &&
-        statusDef.category === 'not_started' &&
+        newStatusDef.category === 'not_started' &&
         processedUpdates.actualEndDate === undefined
       ) {
         processedUpdates.actualEndDate = undefined;
       }
 
       // 3. Entering completed or canceled
-      if ((statusDef.category === 'completed' || statusDef.category === 'canceled') && !processedUpdates.actualEndDate) {
+      if ((newStatusDef.category === 'completed' || newStatusDef.category === 'canceled') && !processedUpdates.actualEndDate) {
         processedUpdates.actualEndDate = now;
-        if (statusDef.category === 'completed' && processedUpdates.progress === undefined && (existing.progress || 0) < 100) {
+        if (newStatusDef.category === 'completed' && processedUpdates.progress === undefined && (existing.progress || 0) < 100) {
           processedUpdates.progress = 100;
         }
       }
+    }
+
+    // Handle isBlocked transitions while in_progress (when in_progress, whether status changed or not)
+    if (effectiveCategory === 'in_progress') {
+      const wasBlocked = Boolean(existing.isBlocked);
+      const isNowBlocked = processedUpdates.isBlocked !== undefined
+        ? Boolean(processedUpdates.isBlocked)
+        : wasBlocked;
+
+      if (!wasBlocked && isNowBlocked) {
+        if (!processedUpdates.blockedSince) {
+          processedUpdates.blockedSince = now;
+        }
+      } else if (wasBlocked && !isNowBlocked) {
+        const blockedSince = existing.blockedSince ?? processedUpdates.blockedSince;
+        if (blockedSince) {
+          const startMs = new Date(blockedSince).getTime();
+          const endMs = new Date(now).getTime();
+          if (!isNaN(startMs) && !isNaN(endMs) && endMs >= startMs) {
+            const sessionSeconds = Math.max(0, (endMs - startMs) / 1000);
+            processedUpdates.blockedDurationSeconds =
+              (processedUpdates.blockedDurationSeconds ?? existing.blockedDurationSeconds ?? 0) + sessionSeconds;
+          }
+          processedUpdates.blockedSince = null;
+        }
+      }
+    } else if (processedUpdates.isBlocked === false && (existing.blockedSince || processedUpdates.blockedSince)) {
+      processedUpdates.blockedSince = null;
     }
 
     // Mutual sync for manual duration/effort edits
@@ -591,7 +646,6 @@ export class CriticalPathEngine {
 
     await this.plugins.runAfterTaskUpdate(updated, existing);
 
-    const now = new Date().toISOString();
     const isStatusChange = existing.status !== updated.status;
 
     // Publish typed Domain Events
@@ -741,9 +795,18 @@ export class CriticalPathEngine {
           let updatedDownstream = downstream;
           const updates: Partial<Task> = {};
 
-          if (downstream.isBlocked || downstream.blockedReason) {
+          if (downstream.isBlocked || downstream.blockedReason || downstream.blockedSince) {
             updates.isBlocked = false;
             updates.blockedReason = null;
+            if (downstream.blockedSince) {
+              const startMs = new Date(downstream.blockedSince).getTime();
+              const endMs = new Date().getTime();
+              if (!isNaN(startMs) && !isNaN(endMs) && endMs >= startMs) {
+                const blockedSeconds = Math.max(0, (endMs - startMs) / 1000);
+                updates.blockedDurationSeconds = (downstream.blockedDurationSeconds ?? 0) + blockedSeconds;
+              }
+              updates.blockedSince = null;
+            }
           }
 
           if (Object.keys(updates).length > 0) {

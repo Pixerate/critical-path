@@ -89,7 +89,11 @@ export class TaskEntity extends BaseEntity {
   public billableDurationMinutes?: number;
   public actualDurationSeconds?: number;
   public inProgressSince?: string | null;
+  public blockedDurationSeconds?: number;
+  public blockedSince?: string | null;
   public progress?: number;
+  public isBlocked?: boolean;
+  public blockedReason?: string | null;
   public tags?: string[];
   public todos?: TaskTodoItem[];
   public customFields?: Record<string, unknown>;
@@ -125,7 +129,11 @@ export class TaskEntity extends BaseEntity {
     this.billableDurationMinutes = data.billableDurationMinutes;
     this.actualDurationSeconds = data.actualDurationSeconds;
     this.inProgressSince = data.inProgressSince;
+    this.blockedDurationSeconds = data.blockedDurationSeconds;
+    this.blockedSince = data.blockedSince;
     this.progress = data.progress ?? 0;
+    this.isBlocked = data.isBlocked;
+    this.blockedReason = data.blockedReason;
     this.tags = data.tags ? [...data.tags] : [];
     this.todos = data.todos ? data.todos.map((t) => ({ ...t })) : [];
     this.customFields = data.customFields ? { ...data.customFields } : {};
@@ -149,6 +157,8 @@ export class TaskEntity extends BaseEntity {
     const actualStartDate = input.actualStartDate ?? (semanticStatus === 'in_progress' ? now : undefined);
     const inProgressSince = input.inProgressSince ?? (semanticStatus === 'in_progress' ? now : undefined);
     const actualEndDate = input.actualEndDate ?? ((semanticStatus === 'completed' || semanticStatus === 'canceled') ? now : undefined);
+    const isBlocked = input.isBlocked ?? false;
+    const blockedSince = input.blockedSince ?? (isBlocked && semanticStatus === 'in_progress' ? now : undefined);
 
     const task = new TaskEntity({
       ...input,
@@ -161,6 +171,10 @@ export class TaskEntity extends BaseEntity {
       inProgressSince,
       actualEndDate,
       actualDurationSeconds: input.actualDurationSeconds,
+      blockedDurationSeconds: input.blockedDurationSeconds,
+      blockedSince,
+      isBlocked,
+      blockedReason: input.blockedReason ?? null,
       priority: input.priority || 'medium',
       loggedHours: input.loggedHours ?? 0,
       progress: input.progress ?? 0,
@@ -216,6 +230,15 @@ export class TaskEntity extends BaseEntity {
         }
         this.inProgressSince = null;
       }
+      if (this.blockedSince) {
+        const startMs = new Date(this.blockedSince).getTime();
+        const endMs = new Date(now).getTime();
+        if (!isNaN(startMs) && !isNaN(endMs) && endMs >= startMs) {
+          const blockedSeconds = Math.max(0, (endMs - startMs) / 1000);
+          this.blockedDurationSeconds = (this.blockedDurationSeconds || 0) + blockedSeconds;
+        }
+        this.blockedSince = null;
+      }
     }
 
     // 2. Entering in_progress: retain earliest start date & start session timer
@@ -225,6 +248,9 @@ export class TaskEntity extends BaseEntity {
       }
       if (!this.inProgressSince) {
         this.inProgressSince = now;
+      }
+      if (this.isBlocked && !this.blockedSince) {
+        this.blockedSince = now;
       }
       if (prevStatusDef.category === 'completed' || prevStatusDef.category === 'canceled') {
         this.actualEndDate = undefined;
@@ -394,6 +420,32 @@ export class TaskEntity extends BaseEntity {
       });
     }
 
+    const wasBlocked = Boolean(this.isBlocked);
+    const isNowBlocked = updates.isBlocked !== undefined ? Boolean(updates.isBlocked) : wasBlocked;
+    const now = new Date().toISOString();
+    const effectiveSemantic = updates.semanticStatus ?? this.semanticStatus;
+
+    if (effectiveSemantic === 'in_progress') {
+      if (!wasBlocked && isNowBlocked) {
+        if (!updates.blockedSince) {
+          updates.blockedSince = now;
+        }
+      } else if (wasBlocked && !isNowBlocked) {
+        if (this.blockedSince) {
+          const startMs = new Date(this.blockedSince).getTime();
+          const endMs = new Date(now).getTime();
+          if (!isNaN(startMs) && !isNaN(endMs) && endMs >= startMs) {
+            const sessionSeconds = Math.max(0, (endMs - startMs) / 1000);
+            updates.blockedDurationSeconds =
+              (updates.blockedDurationSeconds ?? this.blockedDurationSeconds ?? 0) + sessionSeconds;
+          }
+          updates.blockedSince = null;
+        }
+      }
+    } else if (!isNowBlocked && this.blockedSince) {
+      updates.blockedSince = null;
+    }
+
     Object.assign(this, updates);
     if (updates.actualDurationSeconds !== undefined && updates.actualHours === undefined) {
       this.actualHours = Math.round((updates.actualDurationSeconds / 3600) * 100) / 100;
@@ -451,7 +503,11 @@ export class TaskEntity extends BaseEntity {
       billableDurationMinutes: this.billableDurationMinutes,
       actualDurationSeconds: this.actualDurationSeconds,
       inProgressSince: this.inProgressSince,
+      blockedDurationSeconds: this.blockedDurationSeconds,
+      blockedSince: this.blockedSince,
       progress: this.progress,
+      isBlocked: this.isBlocked,
+      blockedReason: this.blockedReason,
       tags: this.tags ? [...this.tags] : [],
       todos: this.todos ? this.todos.map((t) => ({ ...t })) : [],
       customFields: this.customFields ? { ...this.customFields } : {},

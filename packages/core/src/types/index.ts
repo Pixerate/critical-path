@@ -218,6 +218,10 @@ export interface Task {
   actualDurationSeconds?: number;
   /** Transient ISO timestamp marking the start of current 'in_progress' session (null when not in_progress) */
   inProgressSince?: string | null;
+  /** Cumulative duration spent in blocked state while in progress (in seconds) */
+  blockedDurationSeconds?: number;
+  /** Transient ISO timestamp marking when the task became blocked while in progress (null when not blocked or not in_progress) */
+  blockedSince?: string | null;
   // Progress (0 to 100 percentage)
   progress?: number;
   isBlocked?: boolean;
@@ -634,6 +638,8 @@ export interface TaskInferredActuals {
   calendarDurationHours?: number;
   /** Cumulative active execution duration in seconds */
   actualDurationSeconds?: number;
+  /** Cumulative duration spent in blocked state while in progress (in seconds) */
+  blockedDurationSeconds?: number;
 }
 
 export interface TaskMetrics {
