@@ -1,5 +1,13 @@
 # @critical-path/mcp
 
+## 0.6.6
+
+### Patch Changes
+
+- Updated dependencies [500b353]
+  - @critical-path/core@0.20.1
+  - @critical-path/client@0.14.3
+
 ## 0.6.5
 
 ### Patch Changes
