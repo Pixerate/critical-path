@@ -249,7 +249,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         description,
         status: 'draft' as any,
         priority: (flags.priority as any) || 'medium',
-        parentId: (flags.parent as string) || taskId,
+        parentId: (flags.parent as string) || undefined,
         customFields: {
           proposedByAgent: true
         }
