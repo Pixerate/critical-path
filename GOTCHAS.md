@@ -81,3 +81,27 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: `sitemap.xml` returns 200 on the live deployment (e.g. `*.uchiage.app`), but search crawlers fail because `<loc>` points to sub-sitemaps on an unconfigured custom domain returning HTTP 404.
 - **Root Cause**: Astro's sitemap generation relies on `site` defined in `astro.config.mjs`. If set to a custom domain before DNS/domain verification completes in Firebase App Hosting, the generated sitemap index directs bots to 404s.
 - **Solution / Workaround**: Configure `site: process.env.DOCS_SITE_URL || 'https://criticalpath.uchiage.app'` in `astro.config.mjs` and sync scripts generating `robots.txt`, `sitemap.xml`, and `llms.txt` so default builds produce valid URLs for the active deployment host.
+
+### Optimistic Temporary Task IDs (`temp_...`) in In-Flight Updates & Deletions
+- **Area / Package**: `@critical-path/svelte`, `@critical-path/react`, `@critical-path/core`
+- **Symptom / Behavior**: When a user rapidly edits or deletes a task immediately after creating it, server requests fail with `404 Task not found: "temp_171..."`.
+- **Root Cause**: The client assigns a temporary ID (e.g. `temp_${Date.now()}_...`) optimistically. If an edit or delete action fires before the server's `createTask` HTTP POST resolves, the client sends the unresolved `temp_` ID to `updateTask` or `deleteTask` REST endpoints.
+- **Solution / Workaround**: Both `@critical-path/svelte` (`TaskState`) and `@critical-path/react` (`useTasks`) maintain internal `pendingCreations` promise tracking and a `tempToRealIdMap`. Updates to a temporary task immediately mutate local optimistic state, but await the in-flight creation promise before dispatching to the server, substituting the confirmed server-assigned ID. If the creation fails or the task is purely local, unresolvable temp IDs are never sent to the network. Use `isTempTaskId(id)` from `@critical-path/core` to detect temporary IDs.
+
+### Timestamp Reset & Parity across In-Memory and SQLite Storage Adapters
+- **Area / Package**: `@critical-path/core`, `InMemoryStore`, `SQLiteStore`, `CriticalPathEngine`
+- **Symptom / Behavior**: Reopening a completed task clears `actualEndDate` and `completedAt`. In unit tests or client state, asserting `.toBeUndefined()` fails if the store assigns `null`.
+- **Root Cause**: Relational backends like SQLite store missing fields as SQL `NULL`, whereas JavaScript in-memory objects omit properties or use `undefined`. If engine updates set `actualEndDate: null`, `InMemoryStore` stores `null` directly, causing `toBeUndefined()` checks to fail. Conversely, SQLite queries return `null` unless mapped.
+- **Solution / Workaround**: In the engine, clearing completion timestamps uses `undefined`:
+  ```ts
+  actualEndDate: undefined,
+  completedAt: undefined,
+  ```
+  In `SQLiteStore.updateTask`, fields are bound with `val || null` and mapped on read with `row.completedAt || undefined`, ensuring consistent `undefined` semantics across both in-memory and persistent SQLite adapters.
+
+### Lexical Collation in Fractional Indexing (`generateKeyBetween`)
+- **Area / Package**: `@critical-path/core`, `fractional-index.ts`
+- **Symptom / Behavior**: Ordering items using standard fractional numbers (like floats or floats formatted as strings) produces precision loss after ~50 inserts or collates incorrectly under standard ASCII string comparison.
+- **Root Cause**: JavaScript floats suffer IEEE 754 precision exhaustion. Furthermore, naive decimal string midpointing produces trailing zeros or length mismatches that fail standard string sorting (`'a0' < 'a'`).
+- **Solution / Workaround**: Use `generateKeyBetween(a, b)` from `@critical-path/core`. It utilizes Base-62 digits (`0-9A-Za-z`) with variable-length integer prefix encoding, guaranteeing strictly monotonic lexicographical ordering without rounding errors or array shifts.
+

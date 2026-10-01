@@ -925,3 +925,61 @@ const cpm = await engine.calculateCriticalPath('proj_123', {
 // the next 8-hour task scheduled from Dec 24 09:00 ends Dec 29 17:00.
 console.log('Project finishes on:', cpm.projectEndDate);
 ```
+
+---
+
+## 17. Fractional Lexical Indexing, Mention Extraction & Optimistic UI
+
+### Fractional Lexical Indexing (`fractional-index`)
+
+For high-concurrency Kanban boards, backlogs, and checklist ordering, traditional integer indexes (`rank: 1, 2, 3`) suffer from $O(N)$ write amplification: moving an item from the bottom to the top requires updating the rank of every intervening item.
+
+Critical Path includes a zero-dependency Base-62 fractional indexing implementation (`generateKeyBetween`, `generateNKeysBetween`):
+
+```ts
+import { generateKeyBetween, generateNKeysBetween } from '@critical-path/core';
+
+// Moving a task between two tasks with lexical orders "a0" and "a1"
+const newOrderKey = generateKeyBetween('a0', 'a1');
+// -> "a0V"
+
+// Bulk insertion of 3 tasks between "a0" and "a1"
+const threeKeys = generateNKeysBetween('a0', 'a1', 3);
+// -> ["a0G", "a0V", "a0k"]
+```
+
+Because orders are compared using standard lexical string collation (`taskA.order < taskB.order`), items can be inserted indefinitely without re-indexing the database or causing floating-point precision loss.
+
+### Code-Immune Mention & Reference Extraction
+
+When rendering or indexing task descriptions, comments, or notes, naive regular expressions like `/@(\w+)/g` trigger false positives inside code snippets, URLs, and HTML:
+
+```ts
+import { extractMentions } from '@critical-path/core';
+
+const markdown = `
+Thanks to @sarah and autonomous agent @bot-worker!
+Do not trigger on code:
+\`const email = user + "@domain.com";\`
+\`\`\`ts
+// @internal
+function debug() {}
+\`\`\`
+`;
+
+const mentions = extractMentions(markdown);
+// -> ["sarah", "bot-worker"]
+```
+
+`extractMentions` strips fenced code blocks, inline backticks, HTML tags, and protocol URLs while extracting `@user`, `@agent`, and `@team` handles, ensuring discussions and notification dispatch remain clean.
+
+### Optimistic Temporary Task Resolution
+
+In client UI adapters (`@critical-path/svelte`'s `TaskState` and `@critical-path/react`'s `useTasks`), tasks created client-side are rendered immediately with a temporary identifier (`temp_...`).
+
+To prevent 404 race conditions when a user rapidly modifies or deletes a newly created task before the server HTTP POST resolves:
+1. **Instant UI Response**: Local state updates immediately so inputs and Kanban cards never freeze.
+2. **In-Flight Creation Tracking**: Updates or deletions targeting temporary tasks await the pending `client.createTask()` promise.
+3. **ID Substitution**: Once the server responds with the confirmed entity, the real ID is substituted transparently in subsequent update or delete requests.
+4. **404 Suppression**: If task creation fails or the task is purely local, unresolvable temporary IDs are never transmitted to backend API routes.
+

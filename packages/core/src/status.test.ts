@@ -1,7 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { CriticalPathEngine } from './engine/index.js';
-import { resolveStatusDefinition, deriveTaskLifecycleState } from './utils/status.js';
-import type { Task, StatusDefinition } from './types/index.js';
+import {
+  resolveStatusDefinition,
+  deriveTaskLifecycleState,
+  isDraftTask,
+  isArchivedTask,
+  isTrashedTask,
+  isTrashedOrArchivedTask,
+  isWorkflowTask,
+  getTaskSemanticStatus,
+  isTaskCompleted,
+  isTaskInProgress,
+  isTaskNotStarted,
+  isTaskCanceled,
+  isTaskActive,
+  isTaskUnassigned
+} from './utils/status.js';
+import type { Task, StatusDefinition, Workflow } from './types/index.js';
 
 describe('Universal Semantic Statuses & Implied Statuses', () => {
   describe('resolveStatusDefinition', () => {
@@ -221,6 +236,119 @@ describe('Universal Semantic Statuses & Implied Statuses', () => {
       expect(stateB?.isBlocked).toBe(false);
       expect(stateB?.isReady).toBe(true);
       expect(stateB?.blockingTaskIds).toEqual([]);
+    });
+  });
+
+  describe('Canonical Task Lifecycle & Semantic Status Predicates', () => {
+    it('identifies draft, archived, and trashed tasks properly', () => {
+      expect(isDraftTask(null)).toBe(false);
+      expect(isDraftTask({ isDraft: true })).toBe(true);
+      expect(isDraftTask({ isDraft: false })).toBe(false);
+
+      expect(isArchivedTask(null)).toBe(false);
+      expect(isArchivedTask({ archived: true })).toBe(true);
+      expect(isArchivedTask({ archivedAt: '2026-09-01T00:00:00Z' })).toBe(true);
+      expect(isArchivedTask({ status: 'archived' })).toBe(true);
+      expect(isArchivedTask({ customFields: { isArchived: true } })).toBe(true);
+      expect(isArchivedTask({ status: 'todo' })).toBe(false);
+
+      expect(isTrashedTask(null)).toBe(false);
+      expect(isTrashedTask({ trashed: true })).toBe(true);
+      expect(isTrashedTask({ trashedAt: '2026-09-01T00:00:00Z' })).toBe(true);
+      expect(isTrashedTask({ status: 'trashed' })).toBe(true);
+      expect(isTrashedTask({ customFields: { isTrashed: true } })).toBe(true);
+      expect(isTrashedTask({ status: 'todo' })).toBe(false);
+
+      expect(isTrashedOrArchivedTask({ trashed: true })).toBe(true);
+      expect(isTrashedOrArchivedTask({ archived: true })).toBe(true);
+      expect(isTrashedOrArchivedTask({ status: 'todo' })).toBe(false);
+    });
+
+    it('identifies workflow tasks excluding draft, trashed, and archived tasks (UCH-137)', () => {
+      expect(isWorkflowTask(null)).toBe(false);
+      expect(isWorkflowTask({ status: 'todo' })).toBe(true);
+      expect(isWorkflowTask({ status: 'in_progress' })).toBe(true);
+      expect(isWorkflowTask({ status: 'done' })).toBe(true);
+
+      // Draft tasks are excluded
+      expect(isWorkflowTask({ status: 'todo', isDraft: true })).toBe(false);
+      // Trashed tasks are excluded
+      expect(isWorkflowTask({ status: 'todo', trashed: true })).toBe(false);
+      // Archived tasks are excluded
+      expect(isWorkflowTask({ status: 'done', archived: true })).toBe(false);
+    });
+
+    it('resolves semantic status using workflow, defaults, and custom definitions', () => {
+      const mockWorkflow: Workflow = {
+        id: 'wf_custom',
+        name: 'Custom Flow',
+        isDefault: true,
+        statuses: [
+          { key: 'discovery', label: 'Discovery', category: 'not_started' },
+          { key: 'developing', label: 'Developing', category: 'in_progress' },
+          { key: 'delivered', label: 'Delivered', category: 'completed' },
+          { key: 'dropped', label: 'Dropped', category: 'canceled' }
+        ],
+        transitions: [],
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z'
+      };
+
+      expect(getTaskSemanticStatus({ status: 'developing' }, mockWorkflow)).toBe('in_progress');
+      expect(getTaskSemanticStatus({ status: 'delivered' }, mockWorkflow)).toBe('completed');
+      expect(getTaskSemanticStatus({ status: 'dropped' }, mockWorkflow)).toBe('canceled');
+      expect(getTaskSemanticStatus({ status: 'discovery' }, mockWorkflow)).toBe('not_started');
+
+      // Falls back to standard defaults when not in custom workflow
+      expect(getTaskSemanticStatus({ status: 'in_progress' }, mockWorkflow)).toBe('in_progress');
+      expect(getTaskSemanticStatus({ status: 'done' })).toBe('completed');
+      expect(getTaskSemanticStatus({ status: 'todo' })).toBe('not_started');
+      expect(getTaskSemanticStatus({ status: 'canceled' })).toBe('canceled');
+    });
+
+    it('verifies lifecycle predicates (completed, in_progress, not_started, canceled, active)', () => {
+      const taskDone = { status: 'done' };
+      const taskActive = { status: 'in_progress' };
+      const taskTodo = { status: 'todo' };
+      const taskCanceled = { status: 'canceled' };
+
+      expect(isTaskCompleted(taskDone)).toBe(true);
+      expect(isTaskCompleted(taskActive)).toBe(false);
+
+      expect(isTaskInProgress(taskActive)).toBe(true);
+      expect(isTaskInProgress(taskDone)).toBe(false);
+
+      expect(isTaskNotStarted(taskTodo)).toBe(true);
+      expect(isTaskNotStarted(taskActive)).toBe(false);
+
+      expect(isTaskCanceled(taskCanceled)).toBe(true);
+      expect(isTaskCanceled(taskDone)).toBe(false);
+
+      // Active tasks
+      expect(isTaskActive(taskTodo)).toBe(true);
+      expect(isTaskActive(taskActive)).toBe(true);
+      expect(isTaskActive(taskDone)).toBe(false);
+      expect(isTaskActive(taskCanceled)).toBe(false);
+      expect(isTaskActive({ ...taskActive, isDraft: true })).toBe(false);
+      expect(isTaskActive({ ...taskActive, archived: true })).toBe(false);
+      expect(isTaskActive({ ...taskActive, trashed: true })).toBe(false);
+    });
+
+    it('identifies unassigned tasks properly', () => {
+      expect(isTaskUnassigned(null)).toBe(true);
+      expect(isTaskUnassigned({})).toBe(true);
+      expect(isTaskUnassigned({ assigneeId: undefined })).toBe(true);
+      expect(isTaskUnassigned({ assigneeId: '' })).toBe(true);
+      expect(isTaskUnassigned({ assigneeId: 'unassigned' })).toBe(true);
+      expect(isTaskUnassigned({ assigneeId: '  UNASSIGNED  ' })).toBe(true);
+      expect(isTaskUnassigned({ assigneeId: 'user_123' })).toBe(false);
+
+      // Assignees array checks
+      expect(isTaskUnassigned({ assignees: [] })).toBe(true);
+      expect(isTaskUnassigned({ assignees: ['unassigned'] })).toBe(true);
+      expect(isTaskUnassigned({ assignees: [{ id: 'unassigned', name: 'unassigned' }] })).toBe(true);
+      expect(isTaskUnassigned({ assignees: ['user_456'] })).toBe(false);
+      expect(isTaskUnassigned({ assignees: [{ id: 'user_456', name: 'Alice' }] })).toBe(false);
     });
   });
 });

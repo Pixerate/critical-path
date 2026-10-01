@@ -241,6 +241,67 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       // Should restore deleted task
       expect(taskState.data).toEqual([mockTask]);
     });
+
+    it('resolves in-flight temporary task when updated or deleted before creation completes', async () => {
+      let resolveCreate: (value: Task) => void;
+      const createPromise = new Promise<Task>((resolve) => {
+        resolveCreate = resolve;
+      });
+
+      const mockClient = {
+        getTasks: vi.fn().mockResolvedValue([]),
+        createTask: vi.fn().mockReturnValue(createPromise),
+        updateTask: vi.fn().mockImplementation((taskId: string, updates: Partial<Task>) =>
+          Promise.resolve({ id: taskId, projectId: 'proj_1', title: 'Real Task', status: 'todo', priority: 'medium', createdAt: '2026-01-01', updatedAt: '2026-01-01', ...updates } as Task)
+        ),
+        deleteTask: vi.fn().mockResolvedValue(undefined)
+      } as unknown as CriticalPathClient;
+
+      const taskState = createTaskState(mockClient, 'proj_1');
+      await taskState.fetch();
+
+      // Start creation
+      const creationAction = taskState.createTask({
+        projectId: 'proj_1',
+        title: 'Draft Task',
+        status: 'todo',
+        priority: 'medium'
+      });
+
+      // While in flight, optimistic task with temp_ ID is present
+      expect(taskState.data.length).toBe(1);
+      const tempId = taskState.data[0].id;
+      expect(tempId.startsWith('temp_')).toBe(true);
+
+      // Immediately update using tempId before creation resolves
+      const updateAction = taskState.updateTask(tempId, { title: 'Renamed Draft Task' });
+
+      // Local optimistic state is updated immediately
+      expect(taskState.data[0].title).toBe('Renamed Draft Task');
+
+      // Now resolve the server creation
+      const serverTask: Task = {
+        id: 'real_task_99',
+        projectId: 'proj_1',
+        title: 'Draft Task',
+        status: 'todo',
+        priority: 'medium',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      };
+      resolveCreate!(serverTask);
+
+      await creationAction;
+      await updateAction;
+
+      // Verify server update was called with the real task ID, not the temp ID
+      expect(mockClient.updateTask).toHaveBeenCalledWith('real_task_99', { title: 'Renamed Draft Task' });
+
+      // And deleting with the tempId resolves to real_task_99
+      await taskState.deleteTask(tempId);
+      expect(mockClient.deleteTask).toHaveBeenCalledWith('real_task_99');
+      expect(taskState.data.length).toBe(0);
+    });
   });
 
   describe('CommentState', () => {

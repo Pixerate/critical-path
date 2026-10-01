@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractMentions, parseMentionSegments } from './mentions.js';
+import { extractMentions, parseMentionSegments, stripMarkdownCode } from './mentions.js';
 
 describe('mentions utility', () => {
   describe('extractMentions', () => {
@@ -36,6 +36,42 @@ describe('mentions utility', () => {
     it('correctly ignores trailing punctuation such as periods, commas, and exclamation marks', () => {
       const text = 'Check with @turquoise. Then ping @john.doe! Also ask @coordinator, and @"Jane Doe".';
       expect(extractMentions(text)).toEqual(['turquoise', 'john.doe', 'coordinator', 'Jane Doe']);
+    });
+
+    it('suppresses mentions inside fenced code blocks and inline backticks (UCH-128, UCH-138)', () => {
+      const markdown = `
+Hey @alice, please review this test output:
+\`\`\`ts
+import { describe } from '@vitest/runner';
+// mention in code comment: @bob
+const handler = () => '@charlie';
+\`\`\`
+Also do not match \`@david\` in inline backticks or ~~~@eva~~~ in tilde fences.
+Only real mentions like @frank should match.
+      `;
+      expect(extractMentions(markdown)).toEqual(['alice', 'frank']);
+    });
+
+    it('suppresses mentions inside HTML <pre> and <code> blocks', () => {
+      const html = 'Hello @alice! Check <pre>npm i @types/node</pre> and <code>@bob</code>. Thanks @charlie!';
+      expect(extractMentions(html)).toEqual(['alice', 'charlie']);
+    });
+
+    it('suppresses handles inside URLs and markdown link destinations', () => {
+      const text = 'Visit https://github.com/@org/repo and [profile](https://example.com/@jack) then ping @jack';
+      expect(extractMentions(text)).toEqual(['jack']);
+    });
+
+    it('preserves rich text HTML mention nodes while ignoring attributes', () => {
+      const html = '<p>Assigned to <span data-type="mention" data-label="Jane Doe" data-mention-suggestion-char="@">@Jane Doe</span> and ping @coordinator</p>';
+      expect(extractMentions(html)).toEqual(['Jane Doe', 'coordinator']);
+    });
+  });
+
+  describe('stripMarkdownCode', () => {
+    it('strips code blocks, tilde blocks, inline backticks, pre and code tags', () => {
+      const raw = 'Before ```code @foo``` and `inline @bar` and <pre>pre @baz</pre> and <code>c @qux</code> after @real';
+      expect(stripMarkdownCode(raw)).toBe('Before  and  and  and  after @real');
     });
   });
 

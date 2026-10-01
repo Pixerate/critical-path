@@ -123,6 +123,7 @@ export class SQLiteStore implements StorageAdapter {
         plannedStartDate TEXT,
         actualStartDate TEXT,
         actualEndDate TEXT,
+        completedAt TEXT,
         dueDate TEXT,
         estimatedHours REAL,
         loggedHours REAL,
@@ -263,6 +264,12 @@ export class SQLiteStore implements StorageAdapter {
 
     try {
       this.db.exec('ALTER TABLE tasks ADD COLUMN deliverableId TEXT');
+    } catch {
+      // Column may already exist
+    }
+
+    try {
+      this.db.exec('ALTER TABLE tasks ADD COLUMN completedAt TEXT');
     } catch {
       // Column may already exist
     }
@@ -662,13 +669,13 @@ export class SQLiteStore implements StorageAdapter {
     const stmt = this.db.prepare(`
       INSERT INTO tasks (
         id, projectId, title, description, status, priority, taskType, assigneeId, assignees, reporterId,
-        reviewerId, iterationId, teamId, containerId, deliverableId, plannedStartDate, actualStartDate, actualEndDate,
+        reviewerId, iterationId, teamId, containerId, deliverableId, plannedStartDate, actualStartDate, actualEndDate, completedAt,
         dueDate, estimatedHours, loggedHours, actualHours, billableHours,
         estimatedDurationMinutes, actualDurationMinutes, billableDurationMinutes,
         actualDurationSeconds, inProgressSince, blockedDurationSeconds, blockedSince, progress,
         isBlocked, blockedReason,
         tags, customFields, parentId, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newTask.id,
@@ -689,6 +696,7 @@ export class SQLiteStore implements StorageAdapter {
       newTask.plannedStartDate || null,
       newTask.actualStartDate || null,
       newTask.actualEndDate || null,
+      newTask.completedAt || null,
       newTask.dueDate || null,
       newTask.estimatedHours ?? null,
       newTask.loggedHours ?? null,
@@ -727,7 +735,7 @@ export class SQLiteStore implements StorageAdapter {
       UPDATE tasks SET
         projectId = ?, title = ?, description = ?, status = ?, priority = ?, taskType = ?,
         assigneeId = ?, assignees = ?, reporterId = ?, reviewerId = ?, iterationId = ?, teamId = ?, containerId = ?, deliverableId = ?,
-        plannedStartDate = ?, actualStartDate = ?, actualEndDate = ?, dueDate = ?,
+        plannedStartDate = ?, actualStartDate = ?, actualEndDate = ?, completedAt = ?, dueDate = ?,
         estimatedHours = ?, loggedHours = ?, actualHours = ?, billableHours = ?,
         estimatedDurationMinutes = ?, actualDurationMinutes = ?, billableDurationMinutes = ?,
         actualDurationSeconds = ?, inProgressSince = ?, blockedDurationSeconds = ?, blockedSince = ?, progress = ?,
@@ -753,6 +761,7 @@ export class SQLiteStore implements StorageAdapter {
       updated.plannedStartDate || null,
       updated.actualStartDate || null,
       updated.actualEndDate || null,
+      updated.completedAt || null,
       updated.dueDate || null,
       updated.estimatedHours ?? null,
       updated.loggedHours ?? null,
@@ -1214,6 +1223,8 @@ export class SQLiteStore implements StorageAdapter {
       inProgressSince: row.inProgressSince || undefined,
       blockedDurationSeconds: row.blockedDurationSeconds ?? undefined,
       blockedSince: row.blockedSince || undefined,
+      actualEndDate: row.actualEndDate || undefined,
+      completedAt: row.completedAt || undefined,
       isBlocked: row.isBlocked !== null && row.isBlocked !== undefined ? Boolean(row.isBlocked) : undefined,
       blockedReason: row.blockedReason || undefined,
       taskType: row.taskType || undefined,

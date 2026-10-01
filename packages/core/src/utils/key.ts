@@ -49,3 +49,14 @@ export function formatTaskKey(projectKey: string, taskNumber: number): string {
   const prefix = projectKey ? projectKey.toUpperCase() : 'TASK';
   return `${prefix}-${taskNumber}`;
 }
+
+/**
+ * Checks whether a given task ID represents a temporary/optimistic task
+ * (e.g. temp_1790... or temp-task-...) while it is actively being created.
+ */
+export function isTempTaskId(id?: string | null): boolean {
+  if (!id || typeof id !== 'string') return false;
+  const clean = id.trim().replace(/^#/, '');
+  return clean.startsWith('temp_') || clean.startsWith('temp-');
+}
+

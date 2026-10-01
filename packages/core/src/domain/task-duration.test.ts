@@ -315,4 +315,40 @@ describe('Task Execution Timestamps & Cumulative In-Progress Duration', () => {
       vi.useRealTimers();
     }
   });
+
+  it('sets completedAt and actualEndDate on completion and resets progress when reopening', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = new InMemoryStore();
+      const engine = new CriticalPathEngine({ store });
+
+      const project = await engine.createProject({ name: 'Progress Transition Proj' });
+      vi.setSystemTime(new Date('2026-10-01T10:00:00Z'));
+      const task = await engine.createTask({
+        projectId: project.id,
+        title: 'Task for completion test',
+        status: 'in_progress',
+        progress: 50
+      });
+
+      // Complete the task
+      vi.setSystemTime(new Date('2026-10-01T12:00:00Z'));
+      const completed = await engine.updateTask(task.id, { status: 'done' });
+      expect(completed?.status).toBe('done');
+      expect(completed?.actualEndDate).toBe('2026-10-01T12:00:00.000Z');
+      expect(completed?.completedAt).toBe('2026-10-01T12:00:00.000Z');
+      expect(completed?.progress).toBe(100);
+
+      // Reopen to todo -> actualEndDate & completedAt cleared, progress reset from 100 to 0
+      vi.setSystemTime(new Date('2026-10-01T13:00:00Z'));
+      const reopened = await engine.updateTask(task.id, { status: 'todo' });
+      expect(reopened?.status).toBe('todo');
+      expect(reopened?.actualEndDate).toBeUndefined();
+      expect(reopened?.completedAt).toBeUndefined();
+      expect(reopened?.progress).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
+

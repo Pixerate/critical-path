@@ -205,6 +205,7 @@ export interface Task {
   plannedStartDate?: string;
   actualStartDate?: string;
   actualEndDate?: string;
+  completedAt?: string;
   dueDate?: string;
   // Duration & Effort (in hours and/or minutes)
   estimatedHours?: number;

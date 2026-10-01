@@ -373,6 +373,7 @@ export class CriticalPathEngine {
     const actualStartDate = processedInput.actualStartDate ?? taskInput.actualStartDate ?? (statusDef.category === 'in_progress' ? now : undefined);
     const inProgressSince = processedInput.inProgressSince ?? taskInput.inProgressSince ?? (statusDef.category === 'in_progress' ? now : undefined);
     const actualEndDate = processedInput.actualEndDate ?? taskInput.actualEndDate ?? ((statusDef.category === 'completed' || statusDef.category === 'canceled') ? now : undefined);
+    const completedAt = processedInput.completedAt ?? taskInput.completedAt ?? (statusDef.category === 'completed' ? now : undefined);
 
     const isInitialBlocked = processedInput.isBlocked ?? taskInput.isBlocked ?? false;
     const blockedSince = processedInput.blockedSince ?? taskInput.blockedSince ?? (isInitialBlocked && statusDef.category === 'in_progress' ? now : undefined);
@@ -397,6 +398,7 @@ export class CriticalPathEngine {
       plannedStartDate: processedInput.plannedStartDate ?? taskInput.plannedStartDate,
       actualStartDate,
       actualEndDate,
+      completedAt,
       dueDate: processedInput.dueDate ?? taskInput.dueDate,
       estimatedHours: processedInput.estimatedHours ?? taskInput.estimatedHours,
       loggedHours: processedInput.loggedHours ?? taskInput.loggedHours ?? 0,
@@ -577,25 +579,53 @@ export class CriticalPathEngine {
         if (isTaskBlocked && !processedUpdates.blockedSince) {
           processedUpdates.blockedSince = now;
         }
+        // Moving from completed/canceled to in_progress resets completion timestamp and progress
         if (
-          (existingStatusDef.category === 'completed' || existingStatusDef.category === 'canceled') &&
-          processedUpdates.actualEndDate === undefined
+          existingStatusDef.category === 'completed' || existingStatusDef.category === 'canceled'
         ) {
-          processedUpdates.actualEndDate = undefined;
+          if (processedUpdates.actualEndDate === undefined) {
+            processedUpdates.actualEndDate = undefined;
+          }
+          if (processedUpdates.completedAt === undefined) {
+            processedUpdates.completedAt = undefined;
+          }
+          if (existing.progress === 100 && processedUpdates.progress === undefined) {
+            processedUpdates.progress = 0;
+          }
         }
       } else if (
         (existingStatusDef.category === 'completed' || existingStatusDef.category === 'canceled') &&
-        newStatusDef.category === 'not_started' &&
-        processedUpdates.actualEndDate === undefined
+        newStatusDef.category === 'not_started'
       ) {
-        processedUpdates.actualEndDate = undefined;
+        // Moving from completed/canceled to not_started resets completion timestamp and progress
+        if (processedUpdates.actualEndDate === undefined) {
+          processedUpdates.actualEndDate = undefined;
+        }
+        if (processedUpdates.completedAt === undefined) {
+          processedUpdates.completedAt = undefined;
+        }
+        if (existing.progress === 100 && processedUpdates.progress === undefined) {
+          processedUpdates.progress = 0;
+        }
       }
 
       // 3. Entering completed or canceled
-      if ((newStatusDef.category === 'completed' || newStatusDef.category === 'canceled') && !processedUpdates.actualEndDate) {
-        processedUpdates.actualEndDate = now;
-        if (newStatusDef.category === 'completed' && processedUpdates.progress === undefined && (existing.progress || 0) < 100) {
+      if (newStatusDef.category === 'completed') {
+        if (!processedUpdates.actualEndDate) {
+          processedUpdates.actualEndDate = now;
+        }
+        if (!processedUpdates.completedAt) {
+          processedUpdates.completedAt = now;
+        }
+        if (processedUpdates.progress === undefined && (existing.progress || 0) < 100) {
           processedUpdates.progress = 100;
+        }
+      } else if (newStatusDef.category === 'canceled') {
+        if (!processedUpdates.actualEndDate) {
+          processedUpdates.actualEndDate = now;
+        }
+        if (processedUpdates.completedAt === undefined) {
+          processedUpdates.completedAt = undefined;
         }
       }
     }

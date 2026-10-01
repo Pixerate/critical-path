@@ -46,6 +46,14 @@
   - Time-series aggregations across customizable intervals (`day`, `week`, `month`) and dimensions (`assignee`, `team`, `taskType`, `priority`, `status`).
   - Pluggable effort distribution metrics (`scheduled`, `logged`, `remaining`, `blended`) with contiguous, gap-free calendar buckets and zero-filled tabular series matrices ready for D3 (`d3.stack().offset(d3.stackOffsetWiggle)`).
   - Dynamic capacity modeling per person and team, reporting bucket-level capacity thresholds and utilization ratios (`totalHours / totalCapacity`).
+- **Base-62 Fractional Lexical Indexing**:
+  - Zero-dependency Base-62 fractional indexing (`generateKeyBetween`, `generateNKeysBetween`) for instant Kanban and backlog reordering without re-indexing or array shifting.
+- **Code-Immune Mention & Tag Extraction**:
+  - High-performance mention parsing (`extractMentions`) with automatic markdown code suppression (`stripMarkdownCode`) ignoring code blocks, inline code, and URLs while parsing user and agent handles.
+- **Task Lifecycle & Semantic Status Predicates**:
+  - Full suite of functional predicates (`isDraftTask`, `isArchivedTask`, `isTrashedTask`, `isTaskCompleted`, `isTaskInProgress`, `isTaskActive`, `isTempTaskId`) for headless UI rendering.
+- **Completion Timestamping & Progress Invariant**:
+  - Automatic `actualEndDate` and `completedAt` lifecycle timestamping upon entering completed or canceled statuses, with automatic timestamp clearing and progress reset (100 -> 0) when reopening tasks.
 
 ---
 
@@ -243,6 +251,39 @@ const cpm = await engine.calculateCriticalPath('proj_123', {
 
 console.log('Project End Date (skipping weekends & holidays):', cpm.projectEndDate);
 console.log('Total Working Hours on Critical Path:', cpm.totalWorkingHours);
+```
+
+### 9. Fractional Lexical Indexing (Kanban Reordering)
+
+```ts
+import { generateKeyBetween, generateNKeysBetween } from '@critical-path/core';
+
+// Insert an item between two adjacent items without shifting arrays:
+const firstItemOrder = 'a0';
+const secondItemOrder = 'a1';
+
+const newItemOrder = generateKeyBetween(firstItemOrder, secondItemOrder);
+// -> 'a0V' (lexicographically between 'a0' and 'a1')
+
+// Generate keys for multiple items inserted at once:
+const newKeys = generateNKeysBetween(firstItemOrder, secondItemOrder, 3);
+```
+
+### 10. Code-Immune Mention & Reference Extraction
+
+```ts
+import { extractMentions } from '@critical-path/core';
+
+const markdown = `
+Check with @alice and agent @gemini-bot.
+Ignore \`@not_a_user\` in inline code and code blocks:
+\`\`\`ts
+const query = "@ignored";
+\`\`\`
+`;
+
+const mentions = extractMentions(markdown);
+// -> ['alice', 'gemini-bot']
 ```
 
 ---

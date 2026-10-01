@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type {
   Project,
   Task,
@@ -25,7 +25,7 @@ import type {
   WorkloadGroupBy,
   WorkloadMetric
 } from '@critical-path/core';
-import { resolveStatusDefinition } from '@critical-path/core';
+import { resolveStatusDefinition, isTempTaskId } from '@critical-path/core';
 import { registerWebMcpTools } from '@critical-path/mcp/web';
 import { useCriticalPathClient } from './provider.js';
 
@@ -189,6 +189,9 @@ export function useTasks(projectId?: string) {
     }
   }, [client, projectId]);
 
+  const pendingCreationsRef = useRef<Map<string, Promise<Task>>>(new Map());
+  const tempToRealIdMapRef = useRef<Map<string, string>>(new Map());
+
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
@@ -205,8 +208,12 @@ export function useTasks(projectId?: string) {
 
     setTasks((prev) => [...prev, tempTask]);
 
+    const promise = client.createTask(input);
+    pendingCreationsRef.current.set(tempId, promise);
+
     try {
-      const created = await client.createTask(input);
+      const created = await promise;
+      tempToRealIdMapRef.current.set(tempId, created.id);
       setTasks((prev) => prev.map((t) => (t.id === tempId ? created : t)));
       return created;
     } catch (err) {
@@ -214,30 +221,73 @@ export function useTasks(projectId?: string) {
       const errorObj = err instanceof Error ? err : new Error(String(err));
       setError(errorObj);
       throw errorObj;
+    } finally {
+      pendingCreationsRef.current.delete(tempId);
     }
   };
 
   const updateTask = async (taskId: string, updates: Partial<Task>) => {
+    let targetId = taskId;
+    if (tempToRealIdMapRef.current.has(taskId)) {
+      targetId = tempToRealIdMapRef.current.get(taskId)!;
+    }
+
     let previousTask: Task | undefined;
 
+    // 1. Immediately apply optimistic updates to local tasks
     setTasks((prev) => {
-      previousTask = prev.find((t) => t.id === taskId);
+      previousTask = prev.find((t) => t.id === targetId || t.id === taskId);
       if (!previousTask) return prev;
       return prev.map((t) =>
-        t.id === taskId
+        t.id === targetId || t.id === taskId
           ? { ...t, ...updates, updatedAt: new Date().toISOString() }
           : t
       );
     });
 
+    // 2. If it's a temporary task, await pending creation if in flight
+    if (isTempTaskId(targetId)) {
+      const pendingPromise =
+        pendingCreationsRef.current.get(targetId) ||
+        (pendingCreationsRef.current.size === 1
+          ? Array.from(pendingCreationsRef.current.values())[0]
+          : undefined);
+
+      if (pendingPromise) {
+        try {
+          const created = await pendingPromise;
+          if (created && created.id) {
+            targetId = created.id;
+            tempToRealIdMapRef.current.set(taskId, targetId);
+          }
+        } catch {
+          throw new Error(`Failed to update task: task creation failed for "${taskId}"`);
+        }
+      }
+    }
+
+    // If still a temp ID, the task exists purely in local state; avoid sending unresolvable ID to backend
+    if (isTempTaskId(targetId)) {
+      let resolvedTask: Task | undefined;
+      setTasks((prev) => {
+        resolvedTask = prev.find((t) => t.id === targetId || t.id === taskId);
+        return prev;
+      });
+      return (resolvedTask || { id: targetId, ...updates }) as Task;
+    }
+
     try {
-      const updated = await client.updateTask(taskId, updates);
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+      const updated = await client.updateTask(targetId, updates);
+      setTasks((prev) =>
+        prev.map((t) => (t.id === targetId || t.id === taskId ? updated : t))
+      );
       return updated;
     } catch (err) {
       if (previousTask) {
         const revertTask = previousTask;
-        setTasks((prev) => prev.map((t) => (t.id === taskId ? revertTask : t)));
+        setTasks((prev) =>
+          prev.map((t) => (t.id === targetId || t.id === taskId ? revertTask : t))
+        );
       }
       const errorObj = err instanceof Error ? err : new Error(String(err));
       setError(errorObj);
@@ -250,19 +300,39 @@ export function useTasks(projectId?: string) {
   };
 
   const deleteTask = async (taskId: string) => {
+    let targetId = taskId;
+    if (tempToRealIdMapRef.current.has(taskId)) {
+      targetId = tempToRealIdMapRef.current.get(taskId)!;
+    }
+
     let previousTask: Task | undefined;
     let previousIndex = -1;
 
     setTasks((prev) => {
-      previousIndex = prev.findIndex((t) => t.id === taskId);
+      previousIndex = prev.findIndex((t) => t.id === targetId || t.id === taskId);
       if (previousIndex !== -1) {
         previousTask = prev[previousIndex];
       }
-      return prev.filter((t) => t.id !== taskId);
+      return prev.filter((t) => t.id !== targetId && t.id !== taskId);
     });
 
+    if (isTempTaskId(targetId)) {
+      const pendingPromise = pendingCreationsRef.current.get(targetId);
+      if (pendingPromise) {
+        try {
+          const created = await pendingPromise;
+          if (created && created.id) {
+            await client.deleteTask(created.id);
+          }
+        } catch {
+          // If creation failed anyway, task is already gone
+        }
+      }
+      return;
+    }
+
     try {
-      await client.deleteTask(taskId);
+      await client.deleteTask(targetId);
     } catch (err) {
       if (previousTask && previousIndex !== -1) {
         const restoreTask = previousTask;

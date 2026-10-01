@@ -3,6 +3,7 @@ import type {
   StatusDefinition,
   SemanticStatus,
   TaskDerivedStatus,
+  Workflow
 } from '../types/index.js';
 
 export const DEFAULT_STATUS_DEFINITIONS: Record<string, StatusDefinition> = {
@@ -170,3 +171,249 @@ export function deriveTaskLifecycleState(
     isCancelled
   };
 }
+
+export type TaskLike = {
+  status?: string | null;
+  semanticStatus?: SemanticStatus | string | null;
+  trashed?: boolean | null;
+  trashedAt?: string | null;
+  archived?: boolean | null;
+  archivedAt?: string | null;
+  isDraft?: boolean | null;
+  assigneeId?: string | null;
+  assignees?: Array<{ id?: string; name?: string } | string> | null;
+  customFields?: Record<string, unknown> | null;
+  [key: string]: unknown;
+};
+
+/**
+ * Extracts a list of StatusDefinitions from either a Workflow or an array of definitions.
+ */
+export function extractStatusDefinitions(
+  workflowOrStatuses?: Workflow | StatusDefinition[] | unknown
+): StatusDefinition[] | undefined {
+  if (!workflowOrStatuses) return undefined;
+  if (Array.isArray(workflowOrStatuses)) {
+    return workflowOrStatuses as StatusDefinition[];
+  }
+  if (typeof workflowOrStatuses === 'object' && workflowOrStatuses !== null) {
+    const statuses = (workflowOrStatuses as any).statuses;
+    if (Array.isArray(statuses)) {
+      return statuses as StatusDefinition[];
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Checks whether a task is flagged as a draft outside the active workflow.
+ */
+export function isDraftTask(task: TaskLike | null | undefined): boolean {
+  if (!task) return false;
+  return Boolean(task.isDraft);
+}
+
+/**
+ * Checks whether a task is archived.
+ */
+export function isArchivedTask(task: TaskLike | null | undefined): boolean {
+  if (!task) return false;
+  return (
+    Boolean(task.archived) ||
+    Boolean(task.archivedAt) ||
+    task.status === 'archived' ||
+    Boolean((task.customFields as any)?.isArchived)
+  );
+}
+
+/**
+ * Checks whether a task is soft-deleted / trashed.
+ */
+export function isTrashedTask(task: TaskLike | null | undefined): boolean {
+  if (!task) return false;
+  return (
+    Boolean(task.trashed) ||
+    Boolean(task.trashedAt) ||
+    task.status === 'trashed' ||
+    Boolean((task.customFields as any)?.isTrashed)
+  );
+}
+
+/**
+ * Checks whether a task is trashed, archived, or soft-deleted.
+ */
+export function isTrashedOrArchivedTask(task: TaskLike | null | undefined): boolean {
+  if (!task) return false;
+  return isTrashedTask(task) || isArchivedTask(task);
+}
+
+/**
+ * Determines whether a task is part of the legitimate project workflow.
+ * A workflow task is not trashed, not archived, and not a draft.
+ */
+export function isWorkflowTask(task: TaskLike | null | undefined): boolean {
+  if (!task) return false;
+  return !isTrashedTask(task) && !isArchivedTask(task) && !isDraftTask(task);
+}
+
+export const isTaskDraft = isDraftTask;
+export const isTaskArchived = isArchivedTask;
+export const isTaskTrashed = isTrashedTask;
+export const isTaskTrashedOrArchived = isTrashedOrArchivedTask;
+export const isTaskWorkflow = isWorkflowTask;
+
+/**
+ * Resolves the canonical SemanticStatus for a task based on the project's workflow or default heuristics.
+ */
+export function getTaskSemanticStatus(
+  task: TaskLike | null | undefined,
+  workflowOrStatuses?: Workflow | StatusDefinition[] | unknown
+): SemanticStatus {
+  if (!task) return 'not_started';
+
+  const customDefs = extractStatusDefinitions(workflowOrStatuses);
+
+  // 1. Look up the task's status in custom workflow definitions
+  if (task.status) {
+    if (customDefs) {
+      const match = customDefs.find((s) => s.key === task.status);
+      if (match?.category) return match.category;
+      if (match) {
+        if ((match as any).completionState === 'done') {
+          return (match as any).isCancelled ? 'canceled' : 'completed';
+        }
+        if ((match as any).executionState === 'active') {
+          return 'in_progress';
+        }
+        if ((match as any).completionState === 'not_done') {
+          return 'not_started';
+        }
+      }
+    }
+
+    // 2. Default status definition lookup from @critical-path/core for standard statuses
+    const normalizedKey = task.status.toLowerCase().replace(/[-\s]+/g, '_');
+    const defaultDef =
+      DEFAULT_STATUS_DEFINITIONS[task.status] || DEFAULT_STATUS_DEFINITIONS[normalizedKey];
+    if (defaultDef?.category) {
+      return defaultDef.category;
+    }
+  }
+
+  // 3. If task has an explicit valid semanticStatus (for custom/unknown status), use it
+  if (task.semanticStatus) {
+    const raw = String(task.semanticStatus).toLowerCase();
+    if (
+      raw === 'completed' ||
+      raw === 'in_progress' ||
+      raw === 'not_started' ||
+      raw === 'canceled' ||
+      raw === 'cancelled'
+    ) {
+      return raw === 'cancelled' ? 'canceled' : (raw as SemanticStatus);
+    }
+  }
+
+  // 4. Fallback to resolveStatusDefinition for general fallback or 'not_started'
+  if (task.status) {
+    const def = resolveStatusDefinition(task.status, customDefs);
+    if (def?.category) {
+      return def.category;
+    }
+  }
+
+  return 'not_started';
+}
+
+/**
+ * Determines whether a task has reached completion in its lifecycle.
+ */
+export function isTaskCompleted(
+  task: TaskLike | null | undefined,
+  workflowOrStatuses?: Workflow | StatusDefinition[] | unknown
+): boolean {
+  if (!task) return false;
+  return getTaskSemanticStatus(task, workflowOrStatuses) === 'completed';
+}
+
+export const isTaskDone = isTaskCompleted;
+
+/**
+ * Determines whether a task is actively in progress.
+ */
+export function isTaskInProgress(
+  task: TaskLike | null | undefined,
+  workflowOrStatuses?: Workflow | StatusDefinition[] | unknown
+): boolean {
+  if (!task) return false;
+  return getTaskSemanticStatus(task, workflowOrStatuses) === 'in_progress';
+}
+
+/**
+ * Determines whether a task is pending or not yet started.
+ */
+export function isTaskNotStarted(
+  task: TaskLike | null | undefined,
+  workflowOrStatuses?: Workflow | StatusDefinition[] | unknown
+): boolean {
+  if (!task) return false;
+  return getTaskSemanticStatus(task, workflowOrStatuses) === 'not_started';
+}
+
+/**
+ * Determines whether a task has been canceled or abandoned.
+ */
+export function isTaskCanceled(
+  task: TaskLike | null | undefined,
+  workflowOrStatuses?: Workflow | StatusDefinition[] | unknown
+): boolean {
+  if (!task) return false;
+  return getTaskSemanticStatus(task, workflowOrStatuses) === 'canceled';
+}
+
+/**
+ * Determines whether a task is active in an ongoing project workflow.
+ * An active task:
+ * 1. Is not trashed or archived.
+ * 2. Is not a draft (exists within the active workflow).
+ * 3. Has not reached terminal completion ('completed') or terminal abandonment ('canceled').
+ */
+export function isTaskActive(
+  task: TaskLike | null | undefined,
+  workflowOrStatuses?: Workflow | StatusDefinition[] | unknown
+): boolean {
+  if (!task) return false;
+  if (isTrashedOrArchivedTask(task)) return false;
+  if (isDraftTask(task)) return false;
+  const sem = getTaskSemanticStatus(task, workflowOrStatuses);
+  return sem !== 'completed' && sem !== 'canceled';
+}
+
+/**
+ * Checks whether a task currently has no assigned owner.
+ */
+export function isTaskUnassigned(task: TaskLike | null | undefined): boolean {
+  if (!task) return true;
+
+  const rawId = task.assigneeId ? String(task.assigneeId).trim() : '';
+  const hasAssigneeId = rawId !== '' && rawId.toLowerCase() !== 'unassigned';
+
+  const hasValidAssignees =
+    Array.isArray(task.assignees) &&
+    task.assignees.some((a: any) => {
+      if (!a) return false;
+      if (typeof a === 'string') {
+        const s = a.trim();
+        return s !== '' && s.toLowerCase() !== 'unassigned';
+      }
+      const id = a.id ? String(a.id).trim() : '';
+      const name = a.name ? String(a.name).trim() : '';
+      return (
+        (id !== '' && id.toLowerCase() !== 'unassigned') ||
+        (name !== '' && name.toLowerCase() !== 'unassigned')
+      );
+    });
+
+  return !hasAssigneeId && !hasValidAssignees;
+}
+

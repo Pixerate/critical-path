@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateProjectKey, validateProjectKey, formatTaskKey } from './key.js';
+import { generateProjectKey, validateProjectKey, formatTaskKey, isTempTaskId } from './key.js';
 
 describe('Project Key Utilities', () => {
   describe('generateProjectKey', () => {
@@ -52,4 +52,25 @@ describe('Project Key Utilities', () => {
       expect(formatTaskKey('', 10)).toBe('TASK-10');
     });
   });
+
+  describe('isTempTaskId', () => {
+    it('detects temp_ prefixed IDs', () => {
+      expect(isTempTaskId('temp_123456_abc')).toBe(true);
+      expect(isTempTaskId('#temp_123456_abc')).toBe(true);
+    });
+
+    it('detects temp- prefixed IDs', () => {
+      expect(isTempTaskId('temp-task-1')).toBe(true);
+      expect(isTempTaskId('#temp-task-1')).toBe(true);
+    });
+
+    it('returns false for permanent or invalid IDs', () => {
+      expect(isTempTaskId('task_123')).toBe(false);
+      expect(isTempTaskId('PROJ-1')).toBe(false);
+      expect(isTempTaskId(null)).toBe(false);
+      expect(isTempTaskId(undefined)).toBe(false);
+      expect(isTempTaskId('')).toBe(false);
+    });
+  });
 });
+

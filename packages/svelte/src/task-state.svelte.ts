@@ -1,11 +1,14 @@
 /// <reference types="svelte" />
 import type { CriticalPathClient } from '@critical-path/client';
-import type { Task, TaskStatus } from '@critical-path/core';
+import { type Task, type TaskStatus, isTempTaskId } from '@critical-path/core';
 
 export class TaskState {
   data = $state<Task[]>([]);
   loading = $state<boolean>(false);
   error = $state<Error | null>(null);
+
+  private pendingCreations = new Map<string, Promise<Task>>();
+  private tempToRealIdMap = new Map<string, string>();
 
   constructor(
     private client: CriticalPathClient,
@@ -37,8 +40,12 @@ export class TaskState {
     // Optimistically add temp task
     this.data = [...this.data, tempTask];
 
+    const promise = this.client.createTask(input);
+    this.pendingCreations.set(tempId, promise);
+
     try {
-      const created = await this.client.createTask(input);
+      const created = await promise;
+      this.tempToRealIdMap.set(tempId, created.id);
       // Replace temp task with created task from server
       this.data = this.data.map((t) => (t.id === tempId ? created : t));
       return created;
@@ -48,30 +55,62 @@ export class TaskState {
       const errorObj = err instanceof Error ? err : new Error(String(err));
       this.error = errorObj;
       throw errorObj;
+    } finally {
+      this.pendingCreations.delete(tempId);
     }
   }
 
   async updateTask(taskId: string, updates: Partial<Task>) {
-    const idx = this.data.findIndex((t) => t.id === taskId);
-    if (idx === -1) {
-      return this.client.updateTask(taskId, updates);
+    let targetId = taskId;
+    if (this.tempToRealIdMap.has(taskId)) {
+      targetId = this.tempToRealIdMap.get(taskId)!;
     }
 
-    const previousTask = this.data[idx];
-    const optimisticTask: Task = {
-      ...previousTask,
-      ...updates,
-      updatedAt: new Date().toISOString()
-    };
+    // 1. Immediately apply optimistic updates to the local task (temp or confirmed)
+    const idx = this.data.findIndex((t) => t.id === targetId || t.id === taskId);
+    let previousTask: Task | undefined;
+    if (idx !== -1) {
+      previousTask = this.data[idx];
+      const optimisticTask: Task = {
+        ...previousTask,
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      const newData = [...this.data];
+      newData[idx] = optimisticTask;
+      this.data = newData;
+    }
 
-    // Optimistically update local task
-    const newData = [...this.data];
-    newData[idx] = optimisticTask;
-    this.data = newData;
+    // 2. If it's a temporary task, await pending creation if in flight
+    if (isTempTaskId(targetId)) {
+      const pendingPromise =
+        this.pendingCreations.get(targetId) ||
+        (this.pendingCreations.size === 1
+          ? Array.from(this.pendingCreations.values())[0]
+          : undefined);
+
+      if (pendingPromise) {
+        try {
+          const created = await pendingPromise;
+          if (created && created.id) {
+            targetId = created.id;
+            this.tempToRealIdMap.set(taskId, targetId);
+          }
+        } catch {
+          throw new Error(`Failed to update task: task creation failed for "${taskId}"`);
+        }
+      }
+    }
+
+    // If still a temp ID, task exists purely in local client state; avoid sending unresolvable temp ID
+    if (isTempTaskId(targetId)) {
+      const currentTask = this.data.find((t) => t.id === targetId || t.id === taskId);
+      return (currentTask || { id: targetId, ...updates }) as Task;
+    }
 
     try {
-      const updated = await this.client.updateTask(taskId, updates);
-      const currentIdx = this.data.findIndex((t) => t.id === taskId);
+      const updated = await this.client.updateTask(targetId, updates);
+      const currentIdx = this.data.findIndex((t) => t.id === targetId || t.id === taskId);
       if (currentIdx !== -1) {
         const confirmedData = [...this.data];
         confirmedData[currentIdx] = updated;
@@ -80,11 +119,13 @@ export class TaskState {
       return updated;
     } catch (err) {
       // Rollback to previous task on error
-      const rollbackIdx = this.data.findIndex((t) => t.id === taskId);
-      if (rollbackIdx !== -1) {
-        const rollbackData = [...this.data];
-        rollbackData[rollbackIdx] = previousTask;
-        this.data = rollbackData;
+      if (previousTask) {
+        const rollbackIdx = this.data.findIndex((t) => t.id === targetId || t.id === taskId);
+        if (rollbackIdx !== -1) {
+          const rollbackData = [...this.data];
+          rollbackData[rollbackIdx] = previousTask;
+          this.data = rollbackData;
+        }
       }
       const errorObj = err instanceof Error ? err : new Error(String(err));
       this.error = errorObj;
@@ -93,64 +134,48 @@ export class TaskState {
   }
 
   async updateTaskStatus(taskId: string, status: TaskStatus) {
-    const idx = this.data.findIndex((t) => t.id === taskId);
-    if (idx === -1) {
-      return this.client.updateTask(taskId, { status });
-    }
-
-    const previousTask = this.data[idx];
-    const optimisticTask: Task = {
-      ...previousTask,
-      status,
-      updatedAt: new Date().toISOString()
-    };
-
-    // Optimistically update local task status
-    const newData = [...this.data];
-    newData[idx] = optimisticTask;
-    this.data = newData;
-
-    try {
-      const updated = await this.client.updateTask(taskId, { status });
-      const currentIdx = this.data.findIndex((t) => t.id === taskId);
-      if (currentIdx !== -1) {
-        const confirmedData = [...this.data];
-        confirmedData[currentIdx] = updated;
-        this.data = confirmedData;
-      }
-      return updated;
-    } catch (err) {
-      // Rollback to previous task on error
-      const rollbackIdx = this.data.findIndex((t) => t.id === taskId);
-      if (rollbackIdx !== -1) {
-        const rollbackData = [...this.data];
-        rollbackData[rollbackIdx] = previousTask;
-        this.data = rollbackData;
-      }
-      const errorObj = err instanceof Error ? err : new Error(String(err));
-      this.error = errorObj;
-      throw errorObj;
-    }
+    return this.updateTask(taskId, { status });
   }
 
   async deleteTask(taskId: string) {
-    const idx = this.data.findIndex((t) => t.id === taskId);
-    if (idx === -1) {
-      return this.client.deleteTask(taskId);
+    let targetId = taskId;
+    if (this.tempToRealIdMap.has(taskId)) {
+      targetId = this.tempToRealIdMap.get(taskId)!;
     }
 
-    const previousTask = this.data[idx];
+    const idx = this.data.findIndex((t) => t.id === targetId || t.id === taskId);
+    const previousTask = idx !== -1 ? this.data[idx] : undefined;
 
-    // Optimistically remove task
-    this.data = this.data.filter((t) => t.id !== taskId);
+    // Optimistically remove task from local state
+    if (idx !== -1) {
+      this.data = this.data.filter((t) => t.id !== targetId && t.id !== taskId);
+    }
+
+    // If temporary task:
+    if (isTempTaskId(targetId)) {
+      const pendingPromise = this.pendingCreations.get(targetId);
+      if (pendingPromise) {
+        try {
+          const created = await pendingPromise;
+          if (created && created.id) {
+            await this.client.deleteTask(created.id);
+          }
+        } catch {
+          // If creation failed anyway, task is already gone
+        }
+      }
+      return;
+    }
 
     try {
-      await this.client.deleteTask(taskId);
+      await this.client.deleteTask(targetId);
     } catch (err) {
       // Rollback on error by re-inserting at previous index
-      const restoredData = [...this.data];
-      restoredData.splice(idx, 0, previousTask);
-      this.data = restoredData;
+      if (previousTask && idx !== -1) {
+        const restoredData = [...this.data];
+        restoredData.splice(idx, 0, previousTask);
+        this.data = restoredData;
+      }
       const errorObj = err instanceof Error ? err : new Error(String(err));
       this.error = errorObj;
       throw errorObj;
