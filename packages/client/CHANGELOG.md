@@ -1,5 +1,11 @@
 # @critical-path/client
 
+## 0.14.5
+
+### Patch Changes
+
+- 8acf018: Do not default parentId to active task in `critical-path propose` so staged follow-up recommendations appear as top-level draft cards instead of subtasks unless `--parent` is explicitly specified.
+
 ## 0.14.4
 
 ### Patch Changes
