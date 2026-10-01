@@ -1,5 +1,12 @@
 # @critical-path/server
 
+## 0.13.5
+
+### Patch Changes
+
+- Updated dependencies [f3301bf]
+  - @critical-path/core@0.21.0
+
 ## 0.13.4
 
 ### Patch Changes
