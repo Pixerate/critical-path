@@ -126,7 +126,7 @@ describe('critical-path CLI Subcommands', () => {
     expect(statusCall?.body.isEngaged).toBe(false);
   });
 
-  it('handles "propose" command', async () => {
+  it('handles "propose" command (creates top-level draft task by default)', async () => {
     await main([
       'propose',
       '--title', 'Implement Redis caching layer',
@@ -138,8 +138,20 @@ describe('critical-path CLI Subcommands', () => {
     expect(createTaskCall?.body.description).toBe('Caches frequent queries to optimize response times');
     expect(createTaskCall?.body.projectId).toBe('proj-456');
     expect(createTaskCall?.body.status).toBe('draft');
-    expect(createTaskCall?.body.parentId).toBe('task-123');
+    expect(createTaskCall?.body.parentId).toBeUndefined();
     expect(createTaskCall?.body.customFields?.proposedByAgent).toBe(true);
+  });
+
+  it('handles "propose" command with explicit --parent flag', async () => {
+    await main([
+      'propose',
+      '--title', 'Implement cache invalidation logic',
+      '--parent', 'task-custom-parent'
+    ]);
+
+    const createTaskCall = fetchCalls.find(c => c.url.endsWith('/tasks') && c.method === 'POST' && c.body.title === 'Implement cache invalidation logic');
+    expect(createTaskCall?.body.parentId).toBe('task-custom-parent');
+    expect(createTaskCall?.body.status).toBe('draft');
   });
 
   it('handles "deliverable" command', async () => {
