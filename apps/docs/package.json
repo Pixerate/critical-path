@@ -14,7 +14,7 @@
   "dependencies": {
     "@apphosting/astro-adapter": "^0.0.2",
     "@astrojs/node": "^9.0.0",
-    "@astrojs/starlight": "^0.32.0",
+    "@astrojs/starlight": "^0.42.5",
     "@astrojs/svelte": "^7.2.5",
     "@astrojs/tailwind": "^5.1.0",
     "@slopmachine/svelte": "^0.4.0",
