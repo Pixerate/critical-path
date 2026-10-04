@@ -39,8 +39,8 @@ importers:
         specifier: ^5.1.0
         version: 5.1.5(astro@5.18.2(@types/node@24.13.3)(jiti@1.21.7)(lightningcss@1.33.0)(rollup@4.62.5)(typescript@5.9.3)(yaml@2.9.0))(tailwindcss@3.4.19(yaml@2.9.0))
       '@slopmachine/svelte':
-        specifier: ^0.4.0
-        version: 0.4.0(svelte@5.56.10)
+        specifier: ^0.5.0
+        version: 0.5.0(svelte@5.56.10)
       astro:
         specifier: ^5.4.0
         version: 5.18.2(@types/node@24.13.3)(jiti@1.21.7)(lightningcss@1.33.0)(rollup@4.62.5)(typescript@5.9.3)(yaml@2.9.0)
@@ -1184,8 +1184,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@pixerate/schemas@1.15.0':
-    resolution: {integrity: sha512-yI5Z4WffVQ2HrAFIWdpdru1zOInZcOIfrvPsR0o+cTQ6LkbQsHl83XRVZK7NZP1oN+3LZKLGJDpmbgcHqTe9qw==}
+  '@pixerate/schemas@1.22.0':
+    resolution: {integrity: sha512-JaR8M7kuBi3JSbOla6xGB5+gtOSMT9JDU/H7mkHUgbZdIT6c25dE+JY5QH6PRgyE5TZ2db41qn2wY3QFIC2mQA==}
 
   '@pnpm/deps.graph-sequencer@1100.0.1':
     resolution: {integrity: sha512-pOr5+q1fLYKwFN3LAJuGZEnfXDcQ73zqgDHMtGy+K+uIoUqyY+6MeDCWFwfu+4EFuq76I5EPFofoNAI+Bmmq4A==}
@@ -1476,11 +1476,11 @@ packages:
   '@shikijs/vscode-textmate@10.0.2':
     resolution: {integrity: sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg==}
 
-  '@slopmachine/core@0.4.0':
-    resolution: {integrity: sha512-wxQArkvKp2z7dfOErLpEfbFZJTrH9TwRgQDDOwH6kENrkNPuJ9JOYGTZIg7Zz0R+lOO+pt+HtOHskutO5w7JFg==}
+  '@slopmachine/core@0.5.0':
+    resolution: {integrity: sha512-vHxHDLuR0mwTgUIM3HJv/LsOafXspwCP1fr6iIncMA53Pa+hb0G3B+M1ayTcgxidqZIXJ+Loj1ENSc90ukUxEg==}
 
-  '@slopmachine/svelte@0.4.0':
-    resolution: {integrity: sha512-iT6qgW/d4SvCZeZIaxYetTNvf7L+q160R+9PIxyXUaW7CXxkfEtqw4YSasle+++iXt0QOFagwfNNa4P4weuJuA==}
+  '@slopmachine/svelte@0.5.0':
+    resolution: {integrity: sha512-MrdJF7vlVqfo00uliHNXNFKEs3XuIAJAtyrFZ+n+jjq3WzxLKJEeGvUCzvoOplfrAUbJj27KlQtVGwqio+NCLw==}
     peerDependencies:
       svelte: ^5.0.0
 
@@ -4623,7 +4623,7 @@ snapshots:
   '@pagefind/windows-x64@1.5.2':
     optional: true
 
-  '@pixerate/schemas@1.15.0':
+  '@pixerate/schemas@1.22.0':
     dependencies:
       zod: 3.25.76
 
@@ -4825,13 +4825,13 @@ snapshots:
 
   '@shikijs/vscode-textmate@10.0.2': {}
 
-  '@slopmachine/core@0.4.0':
+  '@slopmachine/core@0.5.0':
     dependencies:
-      '@pixerate/schemas': 1.15.0
+      '@pixerate/schemas': 1.22.0
 
-  '@slopmachine/svelte@0.4.0(svelte@5.56.10)':
+  '@slopmachine/svelte@0.5.0(svelte@5.56.10)':
     dependencies:
-      '@slopmachine/core': 0.4.0
+      '@slopmachine/core': 0.5.0
       '@types/marked': 5.0.2
       marked: 17.0.6
       svelte: 5.56.10
