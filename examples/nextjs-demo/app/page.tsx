@@ -3,14 +3,12 @@
 import React from 'react';
 import { CriticalPathProvider, useKanban, useProjects } from '@critical-path/react';
 
-function KanbanBoard() {
-  const { projects } = useProjects();
-  const { columns, moveTask, createTask } = useKanban('proj_next');
+function KanbanBoard({ projectId }: { projectId: string }) {
+  const { columns, moveTask } = useKanban(projectId);
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
       <h1>🚀 Critical Path - Next.js Demo Board</h1>
-      <p>Active Project: {projects[0]?.name || 'Loading...'}</p>
 
       <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
         {(['todo', 'in_progress', 'done'] as const).map((status) => (
@@ -24,8 +22,8 @@ function KanbanBoard() {
               minHeight: '300px'
             }}
           >
-            <h3 style={{ textTransform: 'capitalize' }}>{status.replace('_', ' ')} ({columns[status].length})</h3>
-            {columns[status].map((task) => (
+            <h3 style={{ textTransform: 'capitalize' }}>{status.replace('_', ' ')} ({columns[status]?.length ?? 0})</h3>
+            {(columns[status] ?? []).map((task) => (
               <div
                 key={task.id}
                 style={{
@@ -55,10 +53,22 @@ function KanbanBoard() {
   );
 }
 
+function Workspace() {
+  const { projects, loading } = useProjects();
+  const project = projects[0];
+  if (loading || !project) return <p style={{ fontFamily: 'sans-serif', padding: '2rem' }}>Loading project...</p>;
+  return (
+    <>
+      <p style={{ fontFamily: 'sans-serif', padding: '0 2rem' }}>Active Project: {project.name}</p>
+      <KanbanBoard projectId={project.id} />
+    </>
+  );
+}
+
 export default function App() {
   return (
     <CriticalPathProvider options={{ baseUrl: '/api/critical-path' }}>
-      <KanbanBoard />
+      <Workspace />
     </CriticalPathProvider>
   );
 }

@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'SvelteKit demo package built'",
+    "dev": "vite dev",
+    "build": "svelte-kit sync && vite build",
+    "preview": "vite preview",
+    "start": "node build",
     "test": "vitest run",
-    "clean": "rm -rf dist .svelte-kit *.tsbuildinfo"
+    "clean": "rm -rf build .svelte-kit *.tsbuildinfo"
   },
   "dependencies": {
     "@critical-path/client": "workspace:*",
@@ -16,9 +19,13 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "svelte": "^5.0.0",
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "svelte": "^5.57.2",
+    "typescript": "^6.0.0",
+    "vitest": "^3.0.0",
+    "@sveltejs/kit": "^3.0.1",
+    "@sveltejs/adapter-node": "^6.0.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "vite": "^8.3.3"
   },
   "engines": {
     "node": ">=24.0.0"

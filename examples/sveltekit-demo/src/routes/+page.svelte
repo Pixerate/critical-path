@@ -4,18 +4,22 @@
 
   const client = createCriticalPathClient({ baseUrl: '/api/critical-path' });
   const projectState = createProjectState(client);
-  const taskState = createTaskState(client, 'proj_svelte');
+  let taskState = $state<ReturnType<typeof createTaskState>>();
 
-  onMount(() => {
-    projectState.fetch();
-    taskState.fetch();
+  onMount(async () => {
+    await projectState.fetch();
+    const project = projectState.data[0];
+    if (project) {
+      taskState = createTaskState(client, project.id);
+      await taskState.fetch();
+    }
   });
 </script>
 
 <div style="font-family: sans-serif; padding: 2rem;">
   <h1>🧡 Critical Path - SvelteKit Demo Dashboard</h1>
 
-  {#if projectState.loading || taskState.loading}
+  {#if projectState.loading || !taskState || taskState.loading}
     <p>Loading project workspace...</p>
   {:else if projectState.error || taskState.error}
     <p style="color: red;">Error: {projectState.error?.message || taskState.error?.message}</p>

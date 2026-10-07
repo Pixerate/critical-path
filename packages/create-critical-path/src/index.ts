@@ -1,129 +1,91 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-export async function runCLI(): Promise<void> {
-  console.log(`
-  🚀 Welcome to Critical Path!
-  The Headless Project Management System Scaffolder
-  --------------------------------------------------
-  `);
+export type Framework = 'nextjs' | 'sveltekit';
 
-  const args = process.argv.slice(2);
-  const targetDir = args[0] || 'my-critical-path-app';
-  const frameworkArg = args.find((a) => a.startsWith('--framework='))?.split('=')[1] || 'nextjs';
+export interface ScaffoldOptions {
+  /** Directory to create. */
+  targetDir: string;
+  framework: Framework;
+  /** Versions for `@critical-path/*` packages. Default: latest from npm, falling back to bundled versions. */
+  versions?: Record<string, string>;
+}
 
-  console.log(`📂 Target Directory: ./${targetDir}`);
-  console.log(`🛠️  Framework Choice: ${frameworkArg}`);
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+// Templates and versions.json are produced in dist/ by the build; tests run from src/.
+const DIST_DIR = fs.existsSync(path.join(HERE, 'templates')) ? HERE : path.join(HERE, '..', 'dist');
 
+export function parseArgs(argv: string[]): { targetDir: string; framework: Framework } {
+  const positional = argv.filter((a) => !a.startsWith('--'));
+  const frameworkFlag = argv.find((a) => a.startsWith('--framework='))?.split('=')[1];
+  const framework = (frameworkFlag ?? 'nextjs') as Framework;
+  if (framework !== 'nextjs' && framework !== 'sveltekit') {
+    throw new Error(`Unknown framework "${framework}". Use --framework=nextjs or --framework=sveltekit.`);
+  }
+  return { targetDir: positional[0] ?? 'my-critical-path-app', framework };
+}
+
+function bundledVersions(): Record<string, string> {
+  return JSON.parse(fs.readFileSync(path.join(DIST_DIR, 'versions.json'), 'utf8'));
+}
+
+/** Looks up the latest published versions, keeping bundled versions for any that fail. */
+export async function resolveVersions(fetchImpl: typeof fetch = fetch): Promise<Record<string, string>> {
+  const versions = bundledVersions();
+  await Promise.all(
+    Object.keys(versions).map(async (name) => {
+      try {
+        const res = await fetchImpl(`https://registry.npmjs.org/${name}/latest`, { signal: AbortSignal.timeout(3000) });
+        if (res.ok) versions[name] = ((await res.json()) as { version: string }).version;
+      } catch {
+        // Offline or registry unavailable: keep the bundled version
+      }
+    })
+  );
+  return versions;
+}
+
+/** Creates a new app from the template for `framework`. */
+export function scaffold({ targetDir, framework, versions = bundledVersions() }: ScaffoldOptions): string {
   const fullPath = path.resolve(process.cwd(), targetDir);
-
-  if (fs.existsSync(fullPath)) {
-    console.log(`⚠️  Directory "${targetDir}" already exists. Skipping scaffolding creation.`);
-    return;
+  if (fs.existsSync(fullPath) && fs.readdirSync(fullPath).length > 0) {
+    throw new Error(`Directory "${targetDir}" already exists and is not empty.`);
   }
 
-  fs.mkdirSync(fullPath, { recursive: true });
+  fs.cpSync(path.join(DIST_DIR, 'templates', framework), fullPath, { recursive: true });
+  const gitignore = path.join(fullPath, '_gitignore');
+  if (fs.existsSync(gitignore)) fs.renameSync(gitignore, path.join(fullPath, '.gitignore'));
 
-  if (frameworkArg === 'sveltekit') {
-    scaffoldSvelteKitApp(fullPath, targetDir);
-  } else {
-    scaffoldNextJsApp(fullPath, targetDir);
+  const pkgPath = path.join(fullPath, 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  pkg.name = path.basename(fullPath).toLowerCase().replace(/[^a-z0-9._-]/g, '-');
+  pkg.version = '0.1.0';
+  delete pkg.scripts?.test;
+  delete pkg.devDependencies?.vitest;
+  for (const section of ['dependencies', 'devDependencies'] as const) {
+    for (const [name, range] of Object.entries<string>(pkg[section] ?? {})) {
+      if (range.startsWith('workspace:')) {
+        const version = versions[name];
+        if (!version) throw new Error(`No version available for ${name}.`);
+        pkg[section][name] = `^${version}`;
+      }
+    }
   }
+  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+  return fullPath;
+}
 
-  console.log(`
-  ✅ Successfully initialized Critical Path app in ./${targetDir}!
-  
-  Next steps:
+export async function runCLI(argv = process.argv.slice(2)): Promise<void> {
+  const { targetDir, framework } = parseArgs(argv);
+  console.log(`\n  Critical Path: creating a ${framework === 'nextjs' ? 'Next.js' : 'SvelteKit'} app in ./${targetDir}\n`);
+
+  scaffold({ targetDir, framework, versions: await resolveVersions() });
+
+  console.log(`  Done. Next steps:
+
     cd ${targetDir}
-    pnpm install  (or npm install)
-    pnpm dev      (or npm run dev)
-  `);
-}
-
-function scaffoldNextJsApp(destDir: string, appName: string) {
-  const pkg = {
-    name: appName,
-    version: '0.1.0',
-    private: true,
-    type: 'module',
-    scripts: {
-      dev: 'next dev',
-      build: 'next build',
-      start: 'next start'
-    },
-    dependencies: {
-      '@critical-path/core': '^0.1.0',
-      '@critical-path/server': '^0.1.0',
-      '@critical-path/react': '^0.1.0',
-      '@critical-path/client': '^0.1.0',
-      next: '^15.0.0',
-      react: '^19.0.0',
-      'react-dom': '^19.0.0'
-    }
-  };
-
-  fs.writeFileSync(path.join(destDir, 'package.json'), JSON.stringify(pkg, null, 2));
-
-  const routeDir = path.join(destDir, 'app/api/critical-path/[...path]');
-  fs.mkdirSync(routeDir, { recursive: true });
-
-  const routeContent = `import { createNextHandler } from '@critical-path/server';
-
-const handler = createNextHandler({
-  initialData: {
-    projects: [{ id: 'p1', key: 'CP', name: 'Critical Path Demo' }],
-    tasks: [
-      { id: 't1', projectId: 'p1', title: 'Setup Critical Path Framework', status: 'done', priority: 'urgent' },
-      { id: 't2', projectId: 'p1', title: 'Mount API Route Handler', status: 'in_progress', priority: 'high' }
-    ]
-  }
-});
-
-export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE };
-`;
-
-  fs.writeFileSync(path.join(routeDir, 'route.ts'), routeContent);
-}
-
-function scaffoldSvelteKitApp(destDir: string, appName: string) {
-  const pkg = {
-    name: appName,
-    version: '0.1.0',
-    private: true,
-    type: 'module',
-    scripts: {
-      dev: 'vite dev',
-      build: 'vite build'
-    },
-    dependencies: {
-      '@critical-path/core': '^0.1.0',
-      '@critical-path/server': '^0.1.0',
-      '@critical-path/svelte': '^0.1.0',
-      '@critical-path/client': '^0.1.0',
-      '@sveltejs/kit': '^2.0.0',
-      svelte: '^5.0.0',
-      vite: '^6.0.0'
-    }
-  };
-
-  fs.writeFileSync(path.join(destDir, 'package.json'), JSON.stringify(pkg, null, 2));
-
-  const endpointDir = path.join(destDir, 'src/routes/api/critical-path/[...path]');
-  fs.mkdirSync(endpointDir, { recursive: true });
-
-  const serverContent = `import { createSvelteKitHandler } from '@critical-path/server';
-
-const handler = createSvelteKitHandler({
-  initialData: {
-    projects: [{ id: 'p1', key: 'SVELTE', name: 'SvelteKit PM' }]
-  }
-});
-
-export const GET = handler.GET;
-export const POST = handler.POST;
-export const PATCH = handler.PATCH;
-export const DELETE = handler.DELETE;
-`;
-
-  fs.writeFileSync(path.join(endpointDir, '+server.ts'), serverContent);
+    npm install
+    npm run dev
+`);
 }
