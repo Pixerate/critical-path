@@ -762,6 +762,7 @@ export class CriticalPathEngine {
       completedAt,
       dueDate: processedInput.dueDate ?? taskInput.dueDate,
       estimatedHours: processedInput.estimatedHours ?? taskInput.estimatedHours,
+      allocation: processedInput.allocation ?? taskInput.allocation,
       loggedHours: processedInput.loggedHours ?? taskInput.loggedHours ?? 0,
       actualHours: processedInput.actualHours ?? taskInput.actualHours,
       billableHours: processedInput.billableHours ?? taskInput.billableHours,

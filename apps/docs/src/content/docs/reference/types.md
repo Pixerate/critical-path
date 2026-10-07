@@ -36,6 +36,7 @@ export interface Task {
   sprintId?: string;
   dueDate?: string;
   estimatedHours?: number;
+  allocation?: number; // share of the assignee's time, (0, 1]; default 1
   loggedHours?: number;
   tags?: string[];
   customFields?: Record<string, unknown>;

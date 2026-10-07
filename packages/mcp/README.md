@@ -166,8 +166,8 @@ handle.unregister();
 | `create_project` | Create a new project workspace | `{ name, description?, key? }` |
 | `list_tasks` | List tasks with filters, paginated (returns `{ tasks, nextCursor }`) | `{ projectId?, status?, priority?, assigneeId?, iterationId?, limit?, cursor? }` |
 | `get_task` | Get single task details | `{ id }` |
-| `create_task` | Create a new task (auto-scoped in WebMCP) | `{ projectId?, title, description?, priority?, status? }` |
-| `update_task` | Update task status, priority, or fields | `{ id, title?, status?, priority?, assigneeId? }` |
+| `create_task` | Create a new task (auto-scoped in WebMCP) | `{ projectId?, title, description?, priority?, status?, estimatedHours?, allocation? }` |
+| `update_task` | Update task status, priority, or fields | `{ id, title?, status?, priority?, assigneeId?, allocation? }` |
 | `delete_task` | Delete a task (requires confirmation) | `{ id }` |
 | `list_deliverables` | List project milestone deliverables | `{ projectId? }` |
 | `create_deliverable` | Create a milestone deliverable | `{ projectId?, title, dueDate? }` |

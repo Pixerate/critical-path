@@ -170,6 +170,7 @@ const taskFields = {
   completedAt: isoString.optional(),
   dueDate: isoString.optional(),
   estimatedHours: z.number().nonnegative().optional(),
+  allocation: z.number().gt(0).max(1).optional(),
   loggedHours: z.number().nonnegative().optional(),
   actualHours: z.number().nonnegative().optional(),
   billableHours: z.number().nonnegative().optional(),

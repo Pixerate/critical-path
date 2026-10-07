@@ -157,6 +157,7 @@ export const createTaskTool = defineTool<{
   dueDate?: string;
   tags?: string[];
   estimatedHours?: number;
+  allocation?: number;
   isBlocked?: boolean;
   blockedReason?: string;
 }>({
@@ -173,6 +174,12 @@ export const createTaskTool = defineTool<{
     dueDate: z.string().optional().describe('Due date (ISO string)'),
     tags: z.array(z.string()).optional().describe('Tags for categorization'),
     estimatedHours: z.number().optional().describe('Estimated hours to complete'),
+    allocation: z
+      .number()
+      .gt(0)
+      .max(1)
+      .optional()
+      .describe("Share of the assignee's time the task takes, in (0, 1]; e.g. 0.5 for half-time. Estimates are effort, so a 0.5 task takes twice as long"),
     isBlocked: z.boolean().optional().describe('Whether the task is blocked'),
     blockedReason: z.string().optional().describe('Reason why the task is blocked')
   }),
@@ -191,6 +198,7 @@ export const createTaskTool = defineTool<{
       dueDate: args.dueDate,
       tags: args.tags || [],
       estimatedHours: args.estimatedHours,
+      allocation: args.allocation,
       isBlocked: args.isBlocked,
       blockedReason: args.blockedReason
     };
@@ -208,6 +216,7 @@ export const updateTaskTool = defineTool<{
   dueDate?: string;
   tags?: string[];
   estimatedHours?: number;
+  allocation?: number;
   loggedHours?: number;
   isBlocked?: boolean;
   blockedReason?: string;
@@ -225,6 +234,12 @@ export const updateTaskTool = defineTool<{
     dueDate: z.string().optional(),
     tags: z.array(z.string()).optional(),
     estimatedHours: z.number().optional(),
+    allocation: z
+      .number()
+      .gt(0)
+      .max(1)
+      .optional()
+      .describe("Share of the assignee's time the task takes, in (0, 1]; e.g. 0.5 for half-time. Estimates are effort, so a 0.5 task takes twice as long"),
     loggedHours: z.number().optional(),
     isBlocked: z.boolean().optional().describe('Whether the task is blocked'),
     blockedReason: z.string().optional().describe('Reason why the task is blocked')
