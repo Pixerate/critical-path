@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-07T14:42:43.021Z
+> Documentation generated on: 2026-10-07T14:50:18.937Z
 
 ================================================================================
 
@@ -877,6 +877,10 @@ const inMemorySqlite = new SQLiteStore({
 
 ---
 
+## Transactions
+
+`SQLiteStore` implements `transaction(fn)`, so cascading deletes (`deleteTask`, `deleteProject`, `deleteContainer`, `deleteIteration`, `deleteDeliverable`) are atomic. All requests share one connection. While a transaction is open, calls made from inside it (including plugin hooks it triggers) join it, other calls wait until it ends, and the transaction itself starts only after in-flight calls finish. A failed cascade therefore cannot roll back an unrelated request's write.
+
 ## Auto-Migration
 
 `SQLiteStore` automatically checks and initializes required schema tables (`projects`, `tasks`, `dependencies`, `custom_statuses`, `audit_logs`) upon instantiation, so no external migration step is needed.
@@ -923,16 +927,25 @@ const engine = new CriticalPathEngine({ store });
 
 ## Firestore Collection Structure
 
-`FirebaseStore` organizes data into clean top-level collections or sub-collections:
+`FirebaseStore` uses one top-level collection per entity:
 
 ```
-cp_projects/{projectId}
-cp_tasks/{taskId}
-cp_dependencies/{dependencyId}
-cp_audit_logs/{logId}
+projects  workflows  tasks  teams  containers  deliverables  iterations
+comments  attachments  activities  time_entries  dependencies  webhooks
+webhook_outbox
 ```
 
-Queries automatically leverage Firestore compound indexes for fast filtering by `projectId`, `status`, and `priority`.
+Queries push equality filters such as `projectId` and `tenantId` down to Firestore, which uses its automatic single-field indexes. Further task and activity filters, sorting and pagination run in memory, so very large projects are better served by SQLite or a custom adapter.
+
+## Testing against the Firestore emulator
+
+The [conformance suite](/storage/custom/#verify-with-the-conformance-suite) runs against the Firestore emulator in CI, in addition to the in-memory mock. To run it locally (requires Java and the Firebase CLI):
+
+```bash
+pnpm --filter @critical-path/core test:firestore
+```
+
+Each store gets its own emulator project, so tests start from an empty database. Use the same approach for your own Firestore-backed tests: point `@google-cloud/firestore` or `firebase-admin` at `FIRESTORE_EMULATOR_HOST` and pass the instance as `db`.
 
 --------------------------------------------------------------------------------
 
@@ -978,6 +991,26 @@ const engine = new CriticalPathEngine({ store: new PostgresStore(pool) });
   - `queryTasks`: `(createdAt, id)` ascending.
   - `queryActivities`: `(createdAt, id)` descending.
 - **Filters.** Every filter passed to `getAttachments`, `getActivities`, `queryTasks` and `queryActivities` must be applied together. The exported helpers `matchesTaskQuery`, `matchesActivityQuery` and `paginate` implement the in-memory semantics if your database cannot push a filter down.
+- **Transactions (optional).** Implement `transaction(fn)` to make cascading deletes atomic. Run `fn` with an adapter (`tx`) whose calls all belong to one database transaction, commit when it resolves, and roll back when it throws. A nested `transaction` call should join the outer one. Keep unrelated concurrent calls out of the transaction, for example by giving `tx` its own connection from a pool:
+
+  ```ts
+  async transaction<T>(fn: (tx: StorageAdapter) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await fn(new PostgresStorageAdapter(client));
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  ```
+
+  The engine defers domain events, `afterTask*` hooks and file deletions until `fn` resolves. If your database retries transactions, `fn` may run more than once.
 
 ---
 

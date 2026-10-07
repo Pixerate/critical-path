@@ -1,5 +1,14 @@
 # @critical-path/react
 
+## 0.14.4
+
+### Patch Changes
+
+- Updated dependencies [c7ad4d4]
+  - @critical-path/core@0.39.0
+  - @critical-path/client@0.20.9
+  - @critical-path/mcp@0.11.11
+
 ## 0.14.3
 
 ### Patch Changes
