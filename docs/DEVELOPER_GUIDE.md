@@ -474,6 +474,8 @@ export const handler = createNextHandler({
 
 Critical Path provides three built-in storage adapter implementations and an extensible `StorageAdapter` interface:
 
+Pass adapters as instances (`store: new SQLiteStore({ filename })`); strings such as `'sqlite'` are rejected. The engine also accepts a `users` directory (array or `(actor) => users`), which supplies names, `weeklyCapacityHours` and `schedule` for workload calculations.
+
 ### 1. `InMemoryStore`
 - Fast, zero-config in-memory Map store. Ideal for local prototyping and fast unit tests.
 

@@ -1,5 +1,6 @@
 import type {
   Activity,
+  User,
   Actor,
   AuthorizationAction,
   CriticalPathConfig,
@@ -116,9 +117,13 @@ export class CriticalPathEngine {
 
   constructor(config: CriticalPathConfig = {}) {
     this.config = config;
-    this.store = typeof config.store === 'object' && config.store !== null
-      ? (config.store as StorageAdapter)
-      : new InMemoryStore();
+    if (config.store !== undefined && (typeof config.store !== 'object' || config.store === null)) {
+      // Strings like 'sqlite' used to fall back to an in-memory store silently.
+      throw new Error(
+        `CriticalPathEngine "store" must be a storage adapter instance, e.g. new SQLiteStore({ filename: 'app.db' }). Received ${JSON.stringify(config.store)}.`
+      );
+    }
+    this.store = config.store ?? new InMemoryStore();
 
     this.fileStorage = config.fileStorage;
     this.plugins = new PluginRegistry();
@@ -2248,6 +2253,7 @@ export class CriticalPathEngine {
     if (projectId) await this.requireProjectAccess('project.read', projectId);
     const tasks = await this.getTasks(projectId);
     const teams = await this.getTeams();
+    const users = await this.getUsers();
     const project = projectId ? await this.store.getProject(projectId) : undefined;
     const schedule = options.schedule || project?.schedule || this.config.defaultSchedule;
 
@@ -2259,6 +2265,7 @@ export class CriticalPathEngine {
         tasks,
         timeEntries,
         teams,
+        users,
         projectId
       },
       {
@@ -2266,6 +2273,20 @@ export class CriticalPathEngine {
         schedule
       }
     );
+  }
+
+  // --- Users ---
+
+  /**
+   * The user directory from `config.users` plus `initialData.users`. Users are owned by your app;
+   * the engine only reads them for names, capacity and schedules.
+   */
+  async getUsers(): Promise<User[]> {
+    const configured = typeof this.config.users === 'function' ? await this.config.users(this.actor) : this.config.users ?? [];
+    const seeded = this.config.initialData?.users ?? [];
+    const byId = new Map<string, User>();
+    for (const user of [...seeded, ...configured]) byId.set(user.id, user);
+    return Array.from(byId.values());
   }
 
   // --- Webhooks ---

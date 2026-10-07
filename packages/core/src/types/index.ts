@@ -527,7 +527,17 @@ export interface CriticalPathConfig {
    * When omitted, actors may do anything within their tenant.
    */
   authorize?: AuthorizationPolicy;
-  store?: 'memory' | 'sqlite' | unknown;
+  /**
+   * Storage adapter instance, e.g. `new SQLiteStore({ filename: 'app.db' })` or
+   * `new FirebaseStore({ db })`. Defaults to an `InMemoryStore`.
+   */
+  store?: import('../store/index.js').StorageAdapter;
+  /**
+   * Your app's user directory: names, weekly capacity and work schedules used by workload and
+   * capacity calculations. Critical Path does not store users; pass a list, or a function
+   * (called per calculation, with the calling actor) that loads them from your auth system.
+   */
+  users?: User[] | ((actor?: Actor) => User[] | Promise<User[]>);
   fileStorage?: FileStorageAdapter;
   plugins?: CriticalPathPlugin[];
   /** Static webhooks (not stored or editable through the API). */
@@ -538,6 +548,7 @@ export interface CriticalPathConfig {
   initialData?: {
     projects?: Project[];
     tasks?: Task[];
+    /** Added to the user directory (see `CriticalPathConfig.users`). */
     users?: User[];
     iterations?: Iteration[];
     teams?: Team[];

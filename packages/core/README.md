@@ -78,6 +78,15 @@ engine.events.subscribe('*', (event) => {
 });
 ```
 
+`store` must be an adapter instance (`InMemoryStore` by default). Critical Path does not store users: pass your app's user directory as `users` (an array, or a function called with the acting user) so workload and capacity calculations use real names, weekly capacity and schedules:
+
+```ts
+const engine = new CriticalPathEngine({
+  store,
+  users: async (actor) => (await myAuth.listUsers(actor?.tenantId)).map(toCriticalPathUser)
+});
+```
+
 ### 2. Rich Entities & Invariant Enforcement
 
 ```ts
