@@ -44,7 +44,7 @@ Retrieve single project by ID.
 Update project fields. `id`, `createdAt` and `updatedAt` in the body are rejected with `400`. Returns `404` if the project does not exist.
 
 ### `DELETE /projects/:projectId`
-Delete a project and its tasks. Each task deletion runs plugin hooks and publishes `task.deleted`, then `project.deleted` is published and dispatched to webhooks.
+Delete a project and everything in it: tasks (with their subtasks, dependencies, comments, attachments and time entries), containers, iterations, deliverables and project attachments. Stored attachment files are removed from the file storage adapter. Each task deletion runs plugin hooks and publishes `task.deleted`, then `project.deleted` is published with `deletedTaskIds`. The activity log is kept.
 
 ---
 
@@ -71,7 +71,10 @@ Create a new task.
 Update a task's title, status, priority, or custom fields.
 
 ### `DELETE /tasks/:taskId`
-Delete a task.
+Delete a task with its subtasks (recursively), dependencies, comments, attachments (including stored files) and time entries. Pass `?subtasks=detach` to keep subtasks and clear their `parentId` instead.
+
+### `DELETE /tasks/:taskId/dependencies/:dependencyId`
+Remove a dependency involving the task. Publishes `dependency.removed`.
 
 ---
 

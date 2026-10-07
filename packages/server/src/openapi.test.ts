@@ -27,7 +27,11 @@ describe('OpenAPI document', () => {
 
     const { webhook } = await engine.createWebhook({ name: 'Hook', url: 'https://hooks.example.com/oas', events: ['*'] });
 
+    const otherTask = await engine.createTask({ projectId: project.id, title: 'Upstream' });
+    const dependency = await engine.addDependency({ taskId: task.id, dependsOnTaskId: otherTask.id, type: 'blocking' });
+
     const ids: Record<string, string> = {
+      dependencyId: dependency.id,
       webhookId: webhook.id,
       projectId: project.id,
       taskId: task.id,

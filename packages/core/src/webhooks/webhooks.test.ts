@@ -78,7 +78,8 @@ describe('webhook delivery', () => {
     await engine.createTask({ projectId: project.id, title: 'T' });
     await engine.webhooks.idle();
 
-    expect(deliveries.map((d) => d.body.event)).toEqual(['project.created', 'task.created']);
+    // Deliveries are asynchronous, so arrival order is not guaranteed
+    expect(deliveries.map((d) => d.body.event).sort()).toEqual(['project.created', 'task.created']);
     expect(deliveries.every((d) => d.url.endsWith('/all'))).toBe(true);
   });
 

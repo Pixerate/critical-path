@@ -104,6 +104,10 @@ export interface FirebaseStoreConfig {
   db: FirestoreDBInterface;
 }
 
+/**
+ * Removes `undefined` values, which Firestore rejects. Update methods write the complete merged
+ * record without `{ merge: true }`, so a field cleared with `undefined` is actually removed.
+ */
 export function sanitizeFirestoreData<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') {
     return obj;
@@ -162,7 +166,7 @@ export class FirebaseStore implements StorageAdapter {
       ...updates,
       updatedAt: new Date().toISOString()
     };
-    await this.db.collection('projects').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
+    await this.db.collection('projects').doc(id).set(sanitizeFirestoreData(updated));
     return updated;
   }
 
@@ -202,7 +206,7 @@ export class FirebaseStore implements StorageAdapter {
       ...updates,
       updatedAt: new Date().toISOString()
     };
-    await this.db.collection('workflows').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
+    await this.db.collection('workflows').doc(id).set(sanitizeFirestoreData(updated));
     return updated;
   }
 
@@ -238,7 +242,7 @@ export class FirebaseStore implements StorageAdapter {
     if (!existing) return null;
 
     const updated: Team = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-    await this.db.collection('teams').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
+    await this.db.collection('teams').doc(id).set(sanitizeFirestoreData(updated));
     return updated;
   }
 
@@ -274,7 +278,7 @@ export class FirebaseStore implements StorageAdapter {
     if (!existing) return null;
 
     const updated: TaskContainer = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-    await this.db.collection('containers').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
+    await this.db.collection('containers').doc(id).set(sanitizeFirestoreData(updated));
     return updated;
   }
 
@@ -318,7 +322,7 @@ export class FirebaseStore implements StorageAdapter {
     if (!existing) return null;
 
     const updated: Deliverable = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-    await this.db.collection('deliverables').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
+    await this.db.collection('deliverables').doc(id).set(sanitizeFirestoreData(updated));
     return updated;
   }
 
@@ -363,7 +367,7 @@ export class FirebaseStore implements StorageAdapter {
       ...updates,
       updatedAt: new Date().toISOString()
     };
-    await this.db.collection('tasks').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
+    await this.db.collection('tasks').doc(id).set(sanitizeFirestoreData(updated));
     return updated;
   }
 
@@ -399,7 +403,7 @@ export class FirebaseStore implements StorageAdapter {
     if (!snap.exists) return null;
 
     const updated: Iteration = { ...snap.data(), id, ...updates };
-    await this.db.collection('iterations').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
+    await this.db.collection('iterations').doc(id).set(sanitizeFirestoreData(updated));
     return updated;
   }
 
@@ -439,7 +443,7 @@ export class FirebaseStore implements StorageAdapter {
       ...updates,
       updatedAt: new Date().toISOString()
     };
-    await this.db.collection('comments').doc(id).set(sanitizeFirestoreData(updated), { merge: true });
+    await this.db.collection('comments').doc(id).set(sanitizeFirestoreData(updated));
     return updated;
   }
 
@@ -565,6 +569,27 @@ export class FirebaseStore implements StorageAdapter {
     const newDep: TaskDependency = { ...dep, id: docRef.id };
     await docRef.set(sanitizeFirestoreData(newDep));
     return newDep;
+  }
+
+  async getDependency(id: string): Promise<TaskDependency | null> {
+    const doc = await this.db.collection('dependencies').doc(id).get();
+    return doc.exists ? ({ ...doc.data(), id: doc.id } as TaskDependency) : null;
+  }
+
+  async removeDependency(id: string): Promise<boolean> {
+    return this.deleteDoc('dependencies', id);
+  }
+
+  async deleteTimeEntry(id: string): Promise<boolean> {
+    return this.deleteDoc('time_entries', id);
+  }
+
+  private async deleteDoc(collection: string, id: string): Promise<boolean> {
+    const ref = this.db.collection(collection).doc(id);
+    const doc = await ref.get();
+    if (!doc.exists) return false;
+    await ref.delete();
+    return true;
   }
 
   // --- Webhooks ---

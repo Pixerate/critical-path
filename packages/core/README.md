@@ -120,6 +120,10 @@ try {
 }
 ```
 
+Remove a dependency with `engine.removeDependency(dependencyId)` (publishes `dependency.removed`).
+
+Deletes cascade: `deleteTask` removes subtasks (or detaches them with `{ subtasks: 'detach' }`), dependencies, comments, attachments with their stored files, and time entries; `deleteProject` also removes containers, iterations and deliverables; deleting a container, iteration or deliverable clears the reference on its tasks. The activity log is kept as an audit trail.
+
 Cycle detection follows the full upstream chain, so indirect cycles (A → B → C → D → A) are rejected as well as direct ones.
 
 #### Request Payload Schemas (`@critical-path/core/schemas`)

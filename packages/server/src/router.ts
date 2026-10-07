@@ -422,6 +422,16 @@ export class CriticalPathRouter {
           const attachment = await engine.createAttachment(body);
           return this.jsonResponse({ attachment }, 201);
         }
+      } else if (subResource === 'dependencies' && segments[3]) {
+        if (method === 'DELETE') {
+          // The dependency must involve this task (as dependent or upstream)
+          const dependency = await engine.store.getDependency(segments[3]);
+          const belongs = dependency && (dependency.taskId === taskId || dependency.dependsOnTaskId === taskId);
+          if (!belongs || !(await engine.removeDependency(segments[3]))) {
+            return this.jsonResponse({ error: 'Not found' }, 404);
+          }
+          return this.jsonResponse({ success: true });
+        }
       } else if (subResource === 'dependencies') {
         if (method === 'GET') {
           const graph = await engine.getTaskDependencyGraph(taskId);
@@ -479,7 +489,11 @@ export class CriticalPathRouter {
           return this.jsonResponse({ task: updated });
         }
         if (method === 'DELETE') {
-          const deleted = await engine.deleteTask(taskId);
+          const subtasks = url.searchParams.get('subtasks');
+          if (subtasks && subtasks !== 'delete' && subtasks !== 'detach') {
+            return this.jsonResponse({ error: 'subtasks must be "delete" or "detach"' }, 400);
+          }
+          const deleted = await engine.deleteTask(taskId, { subtasks: (subtasks as 'delete' | 'detach' | null) ?? 'delete' });
           if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
           return this.jsonResponse({ success: true });
         }

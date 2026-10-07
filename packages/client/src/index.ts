@@ -450,8 +450,17 @@ export class CriticalPathClient {
     return res.dependency;
   }
 
-  async deleteTask(id: string): Promise<boolean> {
-    return this.deleteRequest(`/tasks/${id}`);
+  /**
+   * Deletes a task with its subtasks, dependencies, comments, attachments and time entries.
+   * Pass `{ subtasks: 'detach' }` to keep subtasks (their parent link is cleared).
+   */
+  async deleteTask(id: string, options: { subtasks?: 'delete' | 'detach' } = {}): Promise<boolean> {
+    const query = options.subtasks ? `?subtasks=${options.subtasks}` : '';
+    return this.deleteRequest(`/tasks/${encodeURIComponent(id)}${query}`);
+  }
+
+  async removeDependency(taskId: string, dependencyId: string): Promise<boolean> {
+    return this.deleteRequest(`/tasks/${encodeURIComponent(taskId)}/dependencies/${encodeURIComponent(dependencyId)}`);
   }
 
   async getTaskDependencies(taskId: string): Promise<TaskDependencyGraph> {

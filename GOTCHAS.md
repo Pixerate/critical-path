@@ -207,3 +207,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Project `customFieldDefinitions` may only use built-in types or types registered by a plugin, so fields that could never validate are caught at configuration time.
 - **Solution / Workaround**: Register the plugin providing the type in `plugins` on every engine instance (including MCP servers and workers) that reads or writes those projects.
 
+### Deletes Cascade, but Without a Transaction
+- **Area / Package**: `@critical-path/core` (`deleteTask`, `deleteProject`, `deleteContainer`, `deleteIteration`, `deleteDeliverable`)
+- **Symptom / Behavior**: Deleting a task removes its subtasks, comments, attachments (and files), dependencies and time entries; deleting a project removes all its planning records. If the process crashes mid-cascade, some child records may remain.
+- **Root Cause**: The storage interface has no transaction API, so cascades run as a series of individual deletes (child records first, the parent last).
+- **Solution / Workaround**: Re-run the delete to finish an interrupted cascade (it is idempotent: missing records are skipped). Use `deleteTask(id, { subtasks: 'detach' })` to keep subtasks. Activity log entries are intentionally kept.
+
+### Storage Adapters Must Return Unset Optional Fields as Absent, and Must Be Able to Clear Them
+- **Area / Package**: `@critical-path/core` (`SQLiteStore`, `FirebaseStore`, custom adapters)
+- **Symptom / Behavior**: After clearing a field (e.g. `parentId`, `iterationId`, `completedAt` set to `undefined`), SQLite returned `null` while other adapters returned nothing, and Firestore kept the old value.
+- **Root Cause**: SQLite yields `NULL` columns as `null`. Firestore `set(..., { merge: true })` ignores fields that were stripped because they were `undefined`.
+- **Solution / Workaround**: `SQLiteStore` drops `null` values in every row mapper (`dropNulls`). `FirebaseStore` update methods write the complete merged record without `merge`, so cleared fields are removed. Custom adapters should behave the same way; `cascade.test.ts` exercises all three built-in adapters.
+

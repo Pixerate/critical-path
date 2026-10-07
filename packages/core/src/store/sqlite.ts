@@ -18,6 +18,14 @@ import type {
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
 
+/**
+ * SQLite returns NULL columns as `null`, while domain objects leave unset optional fields out.
+ * Dropping nulls keeps SQLiteStore results identical to the other adapters.
+ */
+function dropNulls<T extends object>(row: T): T {
+  return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null)) as T;
+}
+
 export interface SQLiteStoreConfig {
   /**
    * Database file path (e.g., 'critical-path.db' or ':memory:').
@@ -516,13 +524,13 @@ export class SQLiteStore implements StorageAdapter {
   async getContainers(projectId: string): Promise<TaskContainer[]> {
     const stmt = this.db.prepare('SELECT * FROM containers WHERE projectId = ?');
     const rows = stmt.all(projectId) as any[];
-    return rows;
+    return rows.map(dropNulls);
   }
 
   async getContainer(id: string): Promise<TaskContainer | null> {
     const stmt = this.db.prepare('SELECT * FROM containers WHERE id = ?');
     const row = stmt.get(id) as any;
-    return row || null;
+    return row ? dropNulls(row) : null;
   }
 
   async createContainer(container: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer> {
@@ -821,13 +829,13 @@ export class SQLiteStore implements StorageAdapter {
   async getIterations(projectId: string): Promise<Iteration[]> {
     const stmt = this.db.prepare('SELECT * FROM iterations WHERE projectId = ?');
     const rows = stmt.all(projectId) as any[];
-    return rows;
+    return rows.map(dropNulls);
   }
 
   async getIteration(id: string): Promise<Iteration | null> {
     const stmt = this.db.prepare('SELECT * FROM iterations WHERE id = ?');
     const row = stmt.get(id) as any;
-    return row || null;
+    return row ? dropNulls(row) : null;
   }
 
   async createIteration(iteration: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
@@ -883,7 +891,7 @@ export class SQLiteStore implements StorageAdapter {
 
   // --- Comments ---
   private mapComment(row: any): Comment {
-    return {
+    return dropNulls({
       id: row.id,
       taskId: row.taskId,
       authorId: row.authorId,
@@ -895,7 +903,7 @@ export class SQLiteStore implements StorageAdapter {
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt
-    };
+    });
   }
 
   async getComments(taskId: string): Promise<Comment[]> {
@@ -1028,22 +1036,24 @@ export class SQLiteStore implements StorageAdapter {
 
     const stmt = this.db.prepare(sql);
     const rows = stmt.all(...params) as any[];
-    return rows.map((r) => ({
-      ...r,
-      sizeBytes: Number(r.sizeBytes),
-      metadata: r.metadata ? JSON.parse(r.metadata) : undefined
-    }));
+    return rows.map((r) =>
+      dropNulls({
+        ...r,
+        sizeBytes: Number(r.sizeBytes),
+        metadata: r.metadata ? JSON.parse(r.metadata) : undefined
+      })
+    );
   }
 
   async getAttachment(id: string): Promise<Attachment | null> {
     const stmt = this.db.prepare('SELECT * FROM attachments WHERE id = ?');
     const row = stmt.get(id) as any;
     if (!row) return null;
-    return {
+    return dropNulls({
       ...row,
       sizeBytes: Number(row.sizeBytes),
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined
-    };
+    });
   }
 
   async createAttachment(attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
@@ -1106,10 +1116,12 @@ export class SQLiteStore implements StorageAdapter {
 
     const stmt = this.db.prepare(sql);
     const rows = stmt.all(...params) as any[];
-    return rows.map((r) => ({
-      ...r,
-      details: r.details ? JSON.parse(r.details) : undefined
-    }));
+    return rows.map((r) =>
+      dropNulls({
+        ...r,
+        details: r.details ? JSON.parse(r.details) : undefined
+      })
+    );
   }
 
   async logActivity(activity: Omit<Activity, 'id' | 'createdAt'>): Promise<Activity> {
@@ -1137,7 +1149,7 @@ export class SQLiteStore implements StorageAdapter {
   async getTimeEntries(taskId: string): Promise<TimeEntry[]> {
     const stmt = this.db.prepare('SELECT * FROM time_entries WHERE taskId = ?');
     const rows = stmt.all(taskId) as any[];
-    return rows.map((r) => ({ ...r, isBillable: r.isBillable !== null ? Boolean(r.isBillable) : undefined }));
+    return rows.map((r) => dropNulls({ ...r, isBillable: r.isBillable !== null ? Boolean(r.isBillable) : undefined }));
   }
 
   async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string }): Promise<TimeEntry> {
@@ -1164,7 +1176,7 @@ export class SQLiteStore implements StorageAdapter {
   // --- Dependencies ---
   async getDependencies(taskId: string): Promise<TaskDependency[]> {
     const stmt = this.db.prepare('SELECT * FROM dependencies WHERE taskId = ? OR dependsOnTaskId = ?');
-    return stmt.all(taskId, taskId) as any[];
+    return (stmt.all(taskId, taskId) as any[]).map(dropNulls);
   }
 
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
@@ -1177,6 +1189,19 @@ export class SQLiteStore implements StorageAdapter {
     `);
     stmt.run(newDep.id, newDep.taskId, newDep.dependsOnTaskId, newDep.type);
     return newDep;
+  }
+
+  async getDependency(id: string): Promise<TaskDependency | null> {
+    const row = this.db.prepare('SELECT * FROM dependencies WHERE id = ?').get(id) as any;
+    return row ? { id: row.id, taskId: row.taskId, dependsOnTaskId: row.dependsOnTaskId, type: row.type } : null;
+  }
+
+  async removeDependency(id: string): Promise<boolean> {
+    return Number(this.db.prepare('DELETE FROM dependencies WHERE id = ?').run(id).changes) > 0;
+  }
+
+  async deleteTimeEntry(id: string): Promise<boolean> {
+    return Number(this.db.prepare('DELETE FROM time_entries WHERE id = ?').run(id).changes) > 0;
   }
 
   // --- Webhooks ---
@@ -1215,7 +1240,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   private mapWebhook(row: any): Webhook {
-    return {
+    return dropNulls({
       id: row.id,
       name: row.name ?? '',
       url: row.url,
@@ -1224,7 +1249,7 @@ export class SQLiteStore implements StorageAdapter {
       active: Boolean(row.active),
       tenantId: row.tenantId ?? undefined,
       createdAt: row.createdAt
-    };
+    });
   }
 
   async addWebhook(webhook: Omit<Webhook, 'id' | 'createdAt'>): Promise<Webhook> {
@@ -1251,7 +1276,7 @@ export class SQLiteStore implements StorageAdapter {
 
   // Helper mappers
   private mapProject(row: any): Project {
-    return {
+    return dropNulls({
       ...row,
       tenantId: row.tenantId ?? undefined,
       workflowId: row.workflowId || undefined,
@@ -1261,30 +1286,30 @@ export class SQLiteStore implements StorageAdapter {
       statusDefinitions: row.statusDefinitions ? JSON.parse(row.statusDefinitions) : [],
       priorityDefinitions: row.priorityDefinitions ? JSON.parse(row.priorityDefinitions) : [],
       customFieldDefinitions: row.customFieldDefinitions ? JSON.parse(row.customFieldDefinitions) : []
-    };
+    });
   }
 
   private mapWorkflow(row: any): Workflow {
-    return {
+    return dropNulls({
       ...row,
       tenantId: row.tenantId ?? undefined,
       statuses: row.statuses ? JSON.parse(row.statuses) : [],
       transitions: row.transitions ? JSON.parse(row.transitions) : [],
       taskTypes: row.taskTypes ? JSON.parse(row.taskTypes) : undefined,
       isDefault: row.isDefault !== null && row.isDefault !== undefined ? Boolean(row.isDefault) : undefined
-    };
+    });
   }
 
   private mapTeam(row: any): Team {
-    return {
+    return dropNulls({
       ...row,
       tenantId: row.tenantId ?? undefined,
       memberIds: row.memberIds ? JSON.parse(row.memberIds) : []
-    };
+    });
   }
 
   private mapTask(row: any): Task {
-    return {
+    return dropNulls({
       ...row,
       actualDurationSeconds: row.actualDurationSeconds ?? undefined,
       inProgressSince: row.inProgressSince || undefined,
@@ -1299,15 +1324,15 @@ export class SQLiteStore implements StorageAdapter {
       tags: row.tags ? JSON.parse(row.tags) : [],
       assignees: row.assignees ? JSON.parse(row.assignees) : undefined,
       customFields: row.customFields ? JSON.parse(row.customFields) : {}
-    };
+    });
   }
 
   private mapDeliverable(row: any): Deliverable {
-    return {
+    return dropNulls({
       ...row,
       specs: row.specs ? JSON.parse(row.specs) : undefined,
       outputUrls: row.outputUrls ? JSON.parse(row.outputUrls) : [],
       customFields: row.customFields ? JSON.parse(row.customFields) : {}
-    };
+    });
   }
 }
