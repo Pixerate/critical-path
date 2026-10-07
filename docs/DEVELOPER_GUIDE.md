@@ -964,6 +964,9 @@ export const techTeamSchedule: WorkSchedule = {
 ### Hierarchical Schedule Resolution
 
 Schedules resolve automatically with explicit hierarchical fallback:
+
+> **Where this applies:** workload and capacity calculations resolve each assignee's schedule through this hierarchy (users come from the engine's `users` directory). Critical-path (CPM) date projections currently use a single calendar for the whole project: `options.schedule`, then `project.schedule`, then the engine's `defaultSchedule`.
+
 1. **Assignee User Schedule** (`user.schedule` if defined)
 2. **Team Schedule** (`team.schedule` if defined)
 3. **Project Schedule** (`project.schedule` if defined)

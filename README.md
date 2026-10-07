@@ -97,23 +97,23 @@ graph TD
 
 ## ✨ Key Features
 
-- 🎯 **Headless & Frontend-Agnostic**: Pure API-first architecture designed for Next.js (App Router), SvelteKit, Express, Fastify, and edge runtimes.
+- 🎯 **Headless & Frontend-Agnostic**: Pure API-first architecture with adapters for Next.js (App Router) and SvelteKit, plus `createUniversalHandler` for any Fetch-based runtime (Cloudflare Workers, Deno, Bun, Hono). Node frameworks such as Express or Fastify need a Request/Response bridge.
 - 🏛️ **Domain-Driven Design (DDD)**: Rich Domain Aggregates (`TaskEntity`, `ProjectEntity`), DAG dependency cycle prevention (`detectDependencyCycle`), custom field Value Object validation, and interface-segregated repositories.
-- 📡 **Typed Domain Event Bus**: In-memory pub/sub broker (`DomainEventBus`) emitting typed domain events (`task.created`, `task.status_changed`, `time.logged`, `dependency.added`) on all mutations.
+- 📡 **Typed Domain Event Bus**: In-memory pub/sub broker (`DomainEventBus`) emitting typed domain events (`task.created`, `task.status_changed`, `time.logged`, `dependency.added`, ...) for task, project, workflow, comment, attachment, deliverable, dependency and time-tracking changes (`DOMAIN_EVENT_NAMES`).
 - ⚡ **Built-in & Custom Industry Workflows**: Pre-configured workflow templates for Creative Agencies & Content Teams (`DEFAULT_CREATIVE_WORKFLOW`), Software Development (`DEFAULT_SOFTWARE_WORKFLOW`), VFX Production (`DEFAULT_VFX_WORKFLOW`), and Simple Tasks (`DEFAULT_SIMPLE_WORKFLOW`), or build fully custom status transition pipelines.
 - 🚦 **Universal Semantic & Implied Status Framework**: Clean 3-tier architecture separating universal semantic meaning (`not_started`, `in_progress`, `completed`, `canceled`), arbitrary workflow statuses, and automatic system-derived implied statuses (`isReady`, `isBlocked`, `blockingTaskIds`, `isOverdue`, `isUpcoming`, `isUnplanned`, `isUnassigned`, `isStalled`, `isOverEstimate`, `isPaceWarning`).
-- 🎨 **Creative Workflows & First-Class Deliverables**: Dedicated `Deliverable` entity (`planned`, `in_progress`, `in_review`, `approved`, `delivered`, `canceled`) with format specs, output URLs, multi-task assignment (`deliverableId`), and engine rollup summaries (`getDeliverableSummary` computing task counts, completion states, percentage progress, and hours).
+- 🎨 **Creative Workflows & First-Class Deliverables**: Dedicated `Deliverable` entity (`draft`, `planned`, `in_production`, `internal_review`, `client_review`, `revision_requested`, `approved`, `delivered`, `canceled`, or custom statuses) with format specs, output URLs, multi-task assignment (`deliverableId`), and engine rollup summaries (`getDeliverableSummary` computing task counts, completion states, percentage progress, and hours).
 - 📋 **Comprehensive PM Work Items**: Full CRUD for Projects, Workflows, Deliverables, Tasks, Sprints/Cycles, Deliverable Containers (`sequence`, `shot`, `epic`), Task Dependencies, Subtasks, Priorities, and Estimates.
 - 🔌 **Extensible Plugin Engine**: Lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`) whose output is validated like caller input, `init` at startup, custom field types (`customFieldTypes`), plus HTTP `routes` and `middleware` served by `@critical-path/server`.
-- ⚙️ **Dynamic Custom Fields**: Attach structured custom fields (text, select, user, date, number, boolean) to projects and tasks on the fly with strict runtime validation.
+- ⚙️ **Dynamic Custom Fields**: Attach structured custom fields (`text`, `number`, `date`, `boolean`, `single_select`, `multi_select`, `user`, or plugin-registered types) to projects and tasks, with required-field and type validation on every write.
 - 👥 **Multi-Assignee & Agent Collaboration**: First-class `TaskAssignee` taxonomy supporting co-assignments across users, autonomous AI agents, and teams with role metadata and custom avatar URLs.
 - 🔄 **Bidirectional Workflow Transitions**: Symmetrical transition helpers (`getAllowedNextStatuses`, `getAllowedPreviousStatuses`) and engine methods for moving tasks backwards and forwards through customized workflow states.
 - 🔔 **Webhooks & Audit Streams**: Signed (HMAC-SHA256), retried webhook deliveries for every domain event (`task.created`, `task.status_changed`, `time.logged`, ...), registered via API or config, scoped per tenant, with a pluggable delivery queue, plus immutable activity logs.
 - 💬 **Threaded Conversations & Discussions**: Hierarchical threaded discussions with parent/reply mapping, multi-author taxonomy (`user`, `agent`, `system`), and emoji reactions (`👍`, `🚀`, `❤️`, etc.).
 - 📁 **Attachment Management & Cloud Storage**: Attachment metadata tracking with adapters for **AWS S3** (`S3StorageAdapter`, with signed uploads and downloads via your AWS SDK client), **Google Cloud / Firebase Storage** (`FirebaseStorageAdapter`), and in-memory (`InMemoryFileStore`).
-- 🤖 **Model Context Protocol (MCP) & Client-Side WebMCP**: Dual AI integration with standard Server MCP (`@critical-path/mcp/server`) for Claude Desktop/Cursor/agents, and W3C WebML CG compliant WebMCP (`@critical-path/mcp/web`) with ambient project scoping for in-browser copilots across React (`useWebMCP`) and Svelte 5 (`WebMcpState`).
+- 🤖 **Model Context Protocol (MCP) & Client-Side WebMCP**: Dual AI integration with standard Server MCP (`@critical-path/mcp/server`) for Claude Desktop/Cursor/agents, and WebMCP (`@critical-path/mcp/web`, following the W3C Web Machine Learning Community Group proposal) with ambient project scoping for in-browser copilots across React (`useWebMCP`) and Svelte 5 (`WebMcpState`).
 - 🪜 **Ladder of Abstraction & Critical Path Method (CPM)**: Multi-scale timeline synthesis enabling fluid zooming between **Macro** phase envelopes (bird's-eye progress, health, deadlines), **Standard** Gantt tasks (CPM early/late bounds, slack/float, critical bottleneck identification), and **Concrete Grounding** (tangible deliverables, daily effort distribution, real-world attachments, and plan vs. actual reality deltas). Available across Engine, REST endpoints, Client SDK, MCP tools, React (`useTimelineLadder`, `useCriticalPath`, `useTaskLadder`), and Svelte 5 (`TimelineLadderState`, `CriticalPathState`).
-- 🗓️ **Work Schedules, Working Hours, Working Days & Holidays**: Configurable `WorkSchedule` subsystem supporting custom working shifts, weekend patterns, and organization or regional `Holiday` exemptions. Schedules resolve hierarchically (Assignee User / Team -> Project -> Global Engine Default). Automatically rolls forward task timelines, skips non-working days in CPM early/late passes, adjusts workload capacity, and calculates working-day schedule variances.
+- 🗓️ **Work Schedules, Working Hours, Working Days & Holidays**: Configurable `WorkSchedule` subsystem supporting custom working shifts, weekend patterns, and organization or regional `Holiday` exemptions. Critical-path (CPM) dates use the project schedule (or the engine default) and skip non-working days and holidays. Workload capacity uses each user's or team's own schedule and `weeklyCapacityHours` (from the `users` directory and teams), falling back to the project and engine defaults. Per-assignee calendars in CPM are not supported yet.
 - 📊 **Task Metrics, Inferred Actuals & EVM**: Automatic inferred actual start/end timestamps from activity transitions, multi-dimensional variance (effort, duration, accuracy ratio), smart progress inference waterfall (explicit slider > checklist todos > logged effort > elapsed schedule duration), Earned Value Management (PV, EV, AC, CV, SV, CPI, SPI), and historical progress curve profiling (linear, S-curve, early surge, late rush, stalled).
 - 🔀 **Base-62 Fractional Lexical Indexing**: Zero-dependency Base-62 fractional indexing (`generateKeyBetween`, `generateNKeysBetween`) enabling O(1) Kanban board and backlog reordering without array shifting or bulk database updates.
 - 💬 **Code-Immune Mention & Reference Extraction**: Robust mention parsing (`extractMentions`) with automatic markdown code suppression (`stripMarkdownCode`) ignoring code blocks, inline code, and URLs while extracting team, agent, and user handles.
@@ -131,7 +131,7 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 - [x] **RESTful API**: Endpoints for projects, tasks, sprints, comments, and activities
 - [x] **Domain Events & Event Bus**: Typed domain event contracts and in-memory event bus
 - [ ] **GraphQL API**: *(Planned)*
-- [x] **Webhook & Hook Support**: Async lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, etc.)
+- [x] **Webhook & Hook Support**: Signed, retried webhooks for every domain event, plus plugin lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, etc.)
 - [x] **Flexible Data Models**: Custom fields, custom statuses, and configurable priority levels
 - [x] **Role-Based Access Control & Multi-Tenancy**: `createRolePolicy()` with project membership roles (viewer, contributor, project manager, admin), workspace superusers, custom `authorize` policies, and `tenantId` isolation, enforced in the engine for REST and MCP alike
 
@@ -146,7 +146,7 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 ### Collaboration Features
 - [x] **Comments & Discussions**: Threaded comments on tasks with emoji reactions
 - [x] **Activity Streams**: Immutable audit log feed of entity updates
-- [ ] **File Attachments**: *(Planned)*
+- [x] **File Attachments**: Uploads, presigned direct-to-cloud uploads and attachment metadata with S3, Firebase Storage and in-memory adapters
 - [ ] **Wiki / Documentation**: *(Planned)*
 
 ### Time & Resource Management
@@ -156,7 +156,7 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 
 ### Reporting & Analytics
 - [ ] **Built-in Reports**: Burndown charts and velocity metrics *(Planned)*
-- [x] **Export Capabilities**: Structured JSON exports via REST API
+- [x] **Export Capabilities**: Paginated JSON via the REST API, described by an OpenAPI 3.1 document (`GET /openapi.json`)
 - [ ] **Dashboard Widgets**: *(Planned)*
 
 ### Integration & Extensibility
@@ -166,9 +166,9 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 
 ### Security & Compliance
 - [x] **Authentication**: Route handler `getContext` / `requireAuth` hooks with per-request actor attribution (`engine.withActor`)
-- [x] **Data Encryption**: Full TLS/HTTPS support across API edge runtimes
+- [ ] **Data Encryption**: Transport encryption (TLS) comes from your hosting platform; Critical Path does not encrypt data at rest itself, so use your database's encryption features
 - [x] **Audit Logging**: Structured mutation logging in `Activity` stream
-- [x] **Vulnerability Policy**: Standard `SECURITY.md` reporting workflow
+- [x] **Vulnerability Policy**: Private reporting process in [`SECURITY.md`](./SECURITY.md)
 
 ### Developer Experience & Headless Essentials
 - [x] **Comprehensive Documentation**: Developer guide and package-level READMEs
@@ -209,24 +209,25 @@ npm install @critical-path/core @critical-path/server @critical-path/react @crit
 #### 2. Create Route Handler (`app/api/critical-path/[...path]/route.ts`)
 ```ts
 import { createNextHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
 
-const handler = createNextHandler({
-  initialData: {
-    projects: [{ id: 'p1', key: 'PROJ', name: 'Main Product Roadmap' }]
-  }
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler({
+  store: new SQLiteStore({ filename: 'critical-path.db' })
 });
 
-export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE };
+// Add `{ getContext, requireAuth: true }` as a second argument to attribute changes to signed-in
+// users, and `authorize: createRolePolicy()` to the config for role-based permissions.
 ```
 
 #### 3. Render Component with React Hooks (`app/page.tsx`)
 ```tsx
 'use client';
 
-import { CriticalPathProvider, useKanban } from '@critical-path/react';
+import { CriticalPathProvider, useKanban, useProjects } from '@critical-path/react';
 
 function TaskBoard() {
-  const { columns, moveTask } = useKanban('p1');
+  const { projects } = useProjects(); // create one with POST /api/critical-path/projects
+  const { columns } = useKanban(projects[0]?.id);
 
   return (
     <div className="flex gap-4">
@@ -283,7 +284,7 @@ const autoTagPlugin: CriticalPathPlugin = {
   }
 };
 
-export const handler = createNextHandler({
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler({
   plugins: [autoTagPlugin]
 });
 ```
