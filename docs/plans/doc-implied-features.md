@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) shipped; phase 4 item 8 (client SDK) on `feat/client-sdk`.
+Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) shipped; phase 4 item 8 (client SDK) on `feat/client-sdk`, item 9 (S3) on `feat/s3-presign`.
 
 Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
@@ -229,6 +229,13 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 **Today**: `getPresignedUploadUrl` returns an unsigned object URL; credentials are stored and unused; `upload` swallows errors and passes plain objects to `client.send()`.
 
 **Design**: accept a user-supplied presigner (`presign?: (key, contentType, expiresIn) => Promise<string>`) so core keeps zero AWS dependencies, with a documented `@aws-sdk/s3-request-presigner` recipe; require a client or presigner (throw otherwise); propagate upload errors; generate storage keys server-side and validate `pathPrefix`; MIME allow-list and size limit.
+
+**Implemented**:
+- **S3 adapter:** `S3StorageAdapter` takes `client`, `commands` (`PutObjectCommand`/`DeleteObjectCommand`/`GetObjectCommand`) and `presign` (e.g. `getSignedUrl`). It sends real command objects, propagates errors, presigns PUTs covering `Content-Type`, and offers optional signed downloads for private buckets. The unused credential options are removed.
+- **Firebase storage:** `FirebaseStorageAdapter` no longer falls back to an in-memory mock or hands out a public URL as an upload URL.
+- **Shared `buildStorageKey`:** validates path prefixes, adds a crypto-random component, and is used by all adapters. Active content (HTML/SVG/JS) is stored with `Content-Disposition: attachment`.
+- **Engine-generated keys:** presigned upload keys are generated as `projects/<projectId>/...`. `createAttachment` through a view rejects storage keys outside the attachment's project. Uploads through views always use the project prefix.
+- **Deferred:** MIME allow-lists and size limits, which belong at the router or proxy level, are left as a follow-up.
 
 ---
 

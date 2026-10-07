@@ -88,6 +88,7 @@ import { validateCustomFieldValues, validateCustomFieldDefinitions } from '../do
 import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../domain/errors.js';
 import { WebhookDispatcher, assertWebhookUrl } from '../webhooks/dispatcher.js';
+import { buildStorageKey } from '../storage/file-storage.js';
 import { generateWebhookSecret } from '../webhooks/signature.js';
 import type { DomainEvent } from '../domain/events.js';
 import { calculateCPM, type CPMOptions } from '../domain/cpm.js';
@@ -1572,6 +1573,7 @@ export class CriticalPathEngine {
     input: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt' | 'uploaderId'> & { uploaderId?: string }
   ): Promise<Attachment> {
     await this.requireAttachmentCreate(input);
+    if (this.actor) await this.assertStorageKeyBelongs(input);
     const attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'> = this.actor
       ? { ...input, uploaderId: this.actor.userId, uploaderType: this.actor.actorType ?? 'user' }
       : { ...input, uploaderId: input.uploaderId ?? 'system' };
@@ -1646,12 +1648,17 @@ export class CriticalPathEngine {
     }
     // Check before uploading so denied requests do not leave orphaned files behind.
     await this.requireAttachmentCreate(input);
+    // Files always live under their project's prefix; only trusted base-engine calls may choose another.
+    const projectId = await this.projectIdOfAttachment(input);
+    if (this.actor && !projectId) {
+      throw new ValidationError('Attachments must reference a project, task or comment.');
+    }
 
     const uploadResult = await this.fileStorage.upload({
       filename: input.filename,
       data: input.data,
       mimeType: input.mimeType,
-      pathPrefix: input.pathPrefix || (input.projectId ? `projects/${input.projectId}` : input.taskId ? `tasks/${input.taskId}` : undefined)
+      pathPrefix: projectId && (this.actor || !input.pathPrefix) ? `projects/${projectId}` : input.pathPrefix
     });
 
     return this.createAttachment({
@@ -1703,25 +1710,46 @@ export class CriticalPathEngine {
     throw new Error(`Cannot read attachment "${id}": no valid storageKey or URL found.`);
   }
 
-  async getPresignedAttachmentUploadUrl(
-    options: PresignedUrlOptions & { projectId?: string }
-  ): Promise<PresignedUploadResult> {
+  /**
+   * Returns a URL the client can upload a file to directly (e.g. a signed S3 PUT). The engine
+   * chooses the storage key under `projects/<projectId>/`; register the uploaded file afterwards
+   * with `createAttachment({ projectId, storageKey, ... })` using the returned `storageKey`.
+   */
+  async getPresignedAttachmentUploadUrl(options: {
+    projectId: string;
+    filename: string;
+    contentType?: string;
+    expiresInSeconds?: number;
+  }): Promise<PresignedUploadResult> {
     if (!this.fileStorage || !this.fileStorage.getPresignedUploadUrl) {
       throw new Error('Presigned uploads are not supported by the configured FileStorageAdapter.');
     }
-    const { projectId, ...presign } = options;
+    if (!options.projectId) throw new ValidationError('projectId is required for presigned uploads.');
     if (this.enforcing) {
-      // Scoped callers may only write under their project's prefix.
-      if (!projectId) throw new ValidationError('projectId is required for presigned uploads.');
-      await this.requireProjectAccess('attachment.create', projectId);
-      const prefix = `projects/${projectId}/`;
-      const key = presign.storageKey.replace(/^\/+/, '');
-      if (key.split('/').some((segment) => segment === '..' || segment === '.')) {
-        throw new ValidationError('storageKey must not contain "." or ".." segments.');
-      }
-      presign.storageKey = key.startsWith(prefix) ? key : prefix + key;
+      await this.requireProjectAccess('attachment.create', options.projectId);
+    } else if (!(await this.store.getProject(options.projectId))) {
+      throw new NotFoundError(`Project "${options.projectId}" not found.`);
     }
-    return this.fileStorage.getPresignedUploadUrl(presign);
+    return this.fileStorage.getPresignedUploadUrl({
+      storageKey: buildStorageKey(`projects/${options.projectId}`, options.filename),
+      contentType: options.contentType,
+      expiresInSeconds: options.expiresInSeconds
+    });
+  }
+
+  /**
+   * A caller-supplied `storageKey` must live under the attachment's project prefix, because
+   * deleting the attachment deletes that file: otherwise anyone could register, then delete,
+   * another project's files.
+   */
+  private async assertStorageKeyBelongs(link: { projectId?: string; taskId?: string; commentId?: string; storageKey?: string }): Promise<void> {
+    if (!link.storageKey) return;
+    const projectId = await this.projectIdOfAttachment(link);
+    const prefix = `projects/${projectId}/`;
+    const segments = link.storageKey.split('/');
+    if (!projectId || !link.storageKey.startsWith(prefix) || segments.some((s) => s === '..' || s === '.')) {
+      throw new ValidationError(`storageKey must be under "${projectId ? prefix : 'projects/<projectId>/'}" for this attachment.`);
+    }
   }
 
   // --- Teams ---

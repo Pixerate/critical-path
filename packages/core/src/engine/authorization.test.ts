@@ -114,12 +114,20 @@ describe('role-based authorization (createRolePolicy)', () => {
     const project = await engine.createProject({ name: 'Files', members: [{ userId: 'up', role: 'contributor' }] });
     const up = engine.withActor({ userId: 'up' });
 
-    const presigned = await up.getPresignedAttachmentUploadUrl({ projectId: project.id, storageKey: 'spec.pdf' });
-    expect(presigned.storageKey).toBe(`projects/${project.id}/spec.pdf`);
-    await expect(up.getPresignedAttachmentUploadUrl({ storageKey: 'x' })).rejects.toThrow(/projectId is required/);
+    const presigned = await up.getPresignedAttachmentUploadUrl({ projectId: project.id, filename: 'spec.pdf' });
+    expect(presigned.storageKey).toMatch(new RegExp(`^projects/${project.id}/\\d+_[0-9a-f]+_spec\\.pdf$`));
+    await expect(up.getPresignedAttachmentUploadUrl({ filename: 'x' } as any)).rejects.toThrow(/projectId is required/);
+
+    const outsider = engine.withActor({ userId: 'nobody' });
+    await expect(outsider.getPresignedAttachmentUploadUrl({ projectId: project.id, filename: 'x' })).rejects.toThrow(/not found/);
+
+    // Registering someone else's file (so that deleting the attachment deletes it) is rejected
     await expect(
-      up.getPresignedAttachmentUploadUrl({ projectId: project.id, storageKey: '../other/x' })
-    ).rejects.toThrow(/segments/);
+      up.createAttachment({ projectId: project.id, filename: 'x', url: 'https://e.com/x', mimeType: 'text/plain', sizeBytes: 1, storageKey: 'projects/other/secret.pdf' })
+    ).rejects.toThrow(/storageKey must be under/);
+    await expect(
+      up.createAttachment({ projectId: project.id, filename: 'x', url: 'https://e.com/x', mimeType: 'text/plain', sizeBytes: 1, storageKey: presigned.storageKey })
+    ).resolves.toMatchObject({ storageKey: presigned.storageKey });
   });
 
   it('leaves the base engine and views without a policy unrestricted', async () => {

@@ -18,7 +18,7 @@
   - `FirebaseStore`: Firestore collection mapping for cloud-native web and mobile backends.
 - **File Storage Adapters for Attachments**:
   - `InMemoryFileStore`: Lightweight in-memory binary asset storage with presigned URL simulation.
-  - `S3StorageAdapter`: Zero-dependency S3 client adapter compatible with AWS SDK v3, v2, MinIO, and Cloudflare R2.
+  - `S3StorageAdapter`: S3 / MinIO / Cloudflare R2 adapter driven by your AWS SDK v3 client, command classes and `getSignedUrl` presigner (core itself has no AWS dependency). Supports signed uploads and private-bucket signed downloads.
   - `FirebaseStorageAdapter`: Google Cloud Storage & Firebase Storage bucket adapter.
 - **Threaded Conversations, Discussions & Emoji Reactions**:
   - Nested replies (`parentId`), multi-author taxonomy (`user`, `agent`, `system`), emoji reactions (`addCommentReaction`, `removeCommentReaction`), and real-time domain event streaming (`comment.created`, `comment.updated`, `comment.deleted`, `comment.reaction.added`, `comment.reaction.removed`).

@@ -15,6 +15,49 @@ export interface StoredFile {
   createdAt: string;
 }
 
+/**
+ * Builds a storage key `<prefix>/<timestamp>_<random>_<filename>`. The prefix is validated (no
+ * `.`/`..` segments, no leading slash, safe characters only) so callers cannot write outside it.
+ */
+export function buildStorageKey(pathPrefix: string | undefined, filename: string): string {
+  let prefix = '';
+  if (pathPrefix) {
+    const trimmed = pathPrefix.replace(/\/+$/, '');
+    const segments = trimmed.split('/');
+    if (
+      trimmed.startsWith('/') ||
+      segments.some((segment) => segment === '' || segment === '.' || segment === '..' || !/^[A-Za-z0-9._-]+$/.test(segment))
+    ) {
+      throw new Error(`Invalid storage path prefix "${pathPrefix}".`);
+    }
+    prefix = `${trimmed}/`;
+  }
+  const random = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(16).padStart(2, '0')).join('');
+  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+/, '_') || 'file';
+  return `${prefix}${Date.now()}_${random}_${safeName}`;
+}
+
+/** Content types a browser would execute or render as a page if opened from the storage host. */
+const ACTIVE_CONTENT_TYPES = new Set([
+  'text/html',
+  'application/xhtml+xml',
+  'image/svg+xml',
+  'text/javascript',
+  'application/javascript',
+  'text/xml',
+  'application/xml'
+]);
+
+/**
+ * `Content-Disposition` for stored files: active content (HTML, SVG, scripts) is forced to
+ * download so a stored file cannot run script on the storage origin.
+ */
+export function contentDispositionFor(mimeType: string, filename: string): string | undefined {
+  const base = mimeType.split(';')[0].trim().toLowerCase();
+  if (!ACTIVE_CONTENT_TYPES.has(base)) return undefined;
+  return `attachment; filename="${filename.replace(/["\\\r\n]/g, '_')}"`;
+}
+
 export function normalizeUploadData(
   data: Uint8Array | ArrayBuffer | Buffer | Blob | string | unknown,
   encoding?: 'base64' | 'utf-8' | 'binary',
@@ -92,10 +135,7 @@ export class InMemoryFileStore implements FileStorageAdapter {
   }
 
   async upload(input: UploadFileInput): Promise<UploadFileResult> {
-    const prefix = input.pathPrefix ? `${input.pathPrefix.replace(/\/+$/, '')}/` : '';
-    const randomId = Math.random().toString(36).substring(2, 9);
-    const sanitizedFilename = input.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storageKey = `${prefix}${Date.now()}_${randomId}_${sanitizedFilename}`;
+    const storageKey = buildStorageKey(input.pathPrefix, input.filename);
 
     const buffer = normalizeUploadData(input.data, input.encoding, input.mimeType);
     const mimeType = input.mimeType || 'application/octet-stream';
