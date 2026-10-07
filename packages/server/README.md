@@ -67,6 +67,27 @@ export const OPTIONS = handler.OPTIONS;
 
 `OPTIONS` preflight requests return `204` with CORS headers.
 
+### Reporting & Exposing Unexpected Errors
+
+Both adapters (and `new CriticalPathRouter(config, options)`) accept router options as a second argument:
+
+```ts
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(
+  { store },
+  {
+    // Called only for unexpected (500) errors. Return a Response to replace the default.
+    onError: (error, request) => {
+      Sentry.captureException(error, { extra: { url: request.url } });
+    },
+    // Include real error messages in 500 responses.
+    // Defaults to true only when NODE_ENV === 'development'.
+    exposeErrors: false
+  }
+);
+```
+
+Without `onError`, unexpected errors are logged with `console.error`. Expected errors (400, 404, 409) always include their message and never reach `onError`.
+
 ---
 
 ## 📄 License

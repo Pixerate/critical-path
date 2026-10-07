@@ -1,4 +1,4 @@
-import { CriticalPathRouter } from '../router.js';
+import { CriticalPathRouter, type CriticalPathRouterOptions } from '../router.js';
 import type { CriticalPathConfig } from '@critical-path/core';
 
 type NextRouteHandler = (request: Request) => Promise<Response>;
@@ -19,10 +19,13 @@ export type CriticalPathNextHandler = NextRouteHandler & {
  *   export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(config);
  *   export { handler as GET, handler as POST, ... };
  */
-export function createNextHandler(configOrRouter: CriticalPathConfig | CriticalPathRouter): CriticalPathNextHandler {
+export function createNextHandler(
+  configOrRouter: CriticalPathConfig | CriticalPathRouter,
+  options?: CriticalPathRouterOptions
+): CriticalPathNextHandler {
   const router = configOrRouter instanceof CriticalPathRouter
     ? configOrRouter
-    : new CriticalPathRouter(configOrRouter);
+    : new CriticalPathRouter(configOrRouter, options);
 
   const handler: NextRouteHandler = async (request: Request) => {
     return router.handleRequest(request);

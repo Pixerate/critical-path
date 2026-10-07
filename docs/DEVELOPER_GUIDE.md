@@ -264,7 +264,7 @@ All endpoints return JSON responses.
 - `400` - Malformed JSON body, `ValidationError`, illegal workflow transition, custom field or attachment validation failure.
 - `404` - Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ success: true }`; client SDK delete methods resolve to `false` on 404).
 - `409` - `CircularDependencyError` (response includes `cyclePath`).
-- `500` - Unexpected error. The response body is always `Internal Server Error`; the underlying error is logged server-side.
+- `500` - Unexpected error. The body is `Internal Server Error` unless `exposeErrors` is enabled (default: only when `NODE_ENV === 'development'`). Pass `onError(error, request)` as a router/adapter option to report errors or return a custom `Response`; otherwise they are logged with `console.error`.
 - `OPTIONS` preflight requests return `204` with CORS headers.
 
 ---

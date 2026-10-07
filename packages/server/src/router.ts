@@ -13,15 +13,37 @@ class BadRequestError extends Error {
   }
 }
 
+export interface CriticalPathRouterOptions {
+  /**
+   * Called for unexpected errors (those that would produce a 500), e.g. to report to Sentry.
+   * Return a `Response` to replace the default 500 response. When omitted, errors are logged
+   * with `console.error`.
+   */
+  onError?: (error: unknown, request: Request) => void | Response | Promise<void | Response>;
+  /**
+   * Include the real error message in 500 responses. Defaults to `true` only when
+   * `NODE_ENV === 'development'`, so production deployments never leak internals.
+   */
+  exposeErrors?: boolean;
+}
+
+function isDevelopment(): boolean {
+  return (globalThis as any).process?.env?.NODE_ENV === 'development';
+}
+
 export class CriticalPathRouter {
   public engine: CriticalPathEngine;
+  private readonly onError?: CriticalPathRouterOptions['onError'];
+  private readonly exposeErrors: boolean;
 
-  constructor(configOrEngine?: CriticalPathConfig | CriticalPathEngine) {
+  constructor(configOrEngine?: CriticalPathConfig | CriticalPathEngine, options: CriticalPathRouterOptions = {}) {
     if (configOrEngine instanceof CriticalPathEngine) {
       this.engine = configOrEngine;
     } else {
       this.engine = new CriticalPathEngine(configOrEngine);
     }
+    this.onError = options.onError;
+    this.exposeErrors = options.exposeErrors ?? isDevelopment();
   }
 
   async handleRequest(request: Request): Promise<Response> {
@@ -570,7 +592,7 @@ export class CriticalPathRouter {
 
       return this.jsonResponse({ error: `Route not found: ${method} ${pathname}` }, 404);
     } catch (err: unknown) {
-      return this.errorResponse(err);
+      return this.errorResponse(err, request);
     }
   }
 
@@ -582,7 +604,7 @@ export class CriticalPathRouter {
     }
   }
 
-  private errorResponse(err: unknown): Response {
+  private async errorResponse(err: unknown, request: Request): Promise<Response> {
     const name = err && typeof err === 'object' && 'name' in err ? (err as Error).name : undefined;
     const e = err as Record<string, any>;
 
@@ -601,9 +623,21 @@ export class CriticalPathRouter {
         return this.jsonResponse({ error: e.message }, 404);
     }
 
-    // Unexpected errors may carry internals (SQL, URLs, stack details); log them server-side only.
-    console.error('[CriticalPathRouter] Unhandled error:', err);
-    return this.jsonResponse({ error: 'Internal Server Error' }, 500);
+    // Unexpected errors may carry internals (SQL, URLs, config details), so they are only
+    // exposed to callers when explicitly enabled.
+    if (this.onError) {
+      try {
+        const custom = await this.onError(err, request);
+        if (custom instanceof Response) return custom;
+      } catch (hookErr) {
+        console.error('[CriticalPathRouter] onError hook threw:', hookErr);
+      }
+    } else {
+      console.error('[CriticalPathRouter] Unhandled error:', err);
+    }
+
+    const message = this.exposeErrors && err instanceof Error ? err.message : 'Internal Server Error';
+    return this.jsonResponse({ error: message }, 500);
   }
 
   private jsonResponse(data: unknown, status = 200): Response {

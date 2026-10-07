@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CriticalPathRouter } from './router.js';
 import { createNextHandler } from './adapters/next.js';
+import { InMemoryStore } from '@critical-path/core';
 
 describe('@critical-path/server Router Tests', () => {
   it('handles project creation and retrieval over HTTP Fetch Requests', async () => {
@@ -527,6 +528,86 @@ describe('@critical-path/server Router Tests', () => {
       );
       expect(res.status, path).toBe(404);
     }
+  });
+
+  describe('unexpected error handling options', () => {
+    const failingRouter = (options: ConstructorParameters<typeof CriticalPathRouter>[1]) => {
+      const router = new CriticalPathRouter(undefined, options);
+      router.engine.getProjects = async () => {
+        throw new Error('SQLITE_CORRUPT: secret internals');
+      };
+      return router;
+    };
+    const listProjects = () => new Request('http://localhost:3000/api/critical-path/projects');
+
+    it('passes unexpected errors and the request to onError instead of console.error', async () => {
+      const seen: Array<{ message: string; url: string }> = [];
+      const router = failingRouter({
+        onError: (err, request) => {
+          seen.push({ message: (err as Error).message, url: request.url });
+        }
+      });
+
+      const res = await router.handleRequest(listProjects());
+      expect(res.status).toBe(500);
+      expect((await res.json()).error).toBe('Internal Server Error');
+      expect(seen).toEqual([{ message: 'SQLITE_CORRUPT: secret internals', url: listProjects().url }]);
+    });
+
+    it('lets onError replace the response', async () => {
+      const router = failingRouter({
+        onError: () => new Response(JSON.stringify({ error: 'Try again later' }), { status: 503 })
+      });
+      const res = await router.handleRequest(listProjects());
+      expect(res.status).toBe(503);
+    });
+
+    it('does not call onError for expected client errors', async () => {
+      let calls = 0;
+      const router = new CriticalPathRouter(undefined, { onError: () => void calls++ });
+      const res = await router.handleRequest(
+        new Request('http://localhost:3000/api/critical-path/projects', { method: 'POST', body: '{bad' })
+      );
+      expect(res.status).toBe(400);
+      expect(calls).toBe(0);
+    });
+
+    it('exposes real messages only when exposeErrors is enabled', async () => {
+      const exposed = failingRouter({ exposeErrors: true, onError: () => {} });
+      expect((await (await exposed.handleRequest(listProjects())).json()).error).toBe('SQLITE_CORRUPT: secret internals');
+
+      const hidden = failingRouter({ exposeErrors: false, onError: () => {} });
+      expect((await (await hidden.handleRequest(listProjects())).json()).error).toBe('Internal Server Error');
+    });
+
+    it('defaults exposeErrors from NODE_ENV === development', async () => {
+      const original = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'development';
+        const dev = failingRouter({ onError: () => {} });
+        expect((await (await dev.handleRequest(listProjects())).json()).error).toContain('SQLITE_CORRUPT');
+
+        process.env.NODE_ENV = 'production';
+        const prod = failingRouter({ onError: () => {} });
+        expect((await (await prod.handleRequest(listProjects())).json()).error).toBe('Internal Server Error');
+      } finally {
+        process.env.NODE_ENV = original;
+      }
+    });
+
+    it('passes options through createNextHandler', async () => {
+      const store = new InMemoryStore();
+      store.getProjects = async () => {
+        throw new Error('adapter failure');
+      };
+      const errors: unknown[] = [];
+      const handler = createNextHandler({ store }, { exposeErrors: true, onError: (err) => void errors.push(err) });
+
+      const res = await handler(listProjects());
+      expect(res.status).toBe(500);
+      expect((await res.json()).error).toBe('adapter failure');
+      expect(errors).toHaveLength(1);
+    });
   });
 });
 

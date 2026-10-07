@@ -20,8 +20,9 @@ Fix correctness and safety issues found in a code audit.
 - `DELETE /projects/:id`, `POST /tasks/:id/dependencies` and `POST /time-entries` now go through the engine, so cycle checks, hour validation, roll-ups, events and webhooks apply.
 - Added `PATCH /projects/:id`.
 - `DELETE` on a resource that does not exist now returns `404` instead of `200 { success: false }`.
-- Malformed JSON returns `400`, validation errors `400`, `NotFoundError` `404`, and dependency cycles `409`. Unexpected errors return a generic `500` message and are logged server-side.
+- Malformed JSON returns `400`, validation errors `400`, `NotFoundError` `404`, and dependency cycles `409`. Unexpected errors return a generic `500` message outside development.
 - `OPTIONS` preflight requests return `204` with CORS headers.
+- New router/adapter options: `onError(error, request)` to report unexpected errors or return a custom response, and `exposeErrors` to include real messages in 500 responses (defaults to on only when `NODE_ENV === 'development'`).
 - `createNextHandler` returns a callable handler that also exposes per-method properties, so `export { handler as GET }` works as documented.
 
 **@critical-path/mcp**
