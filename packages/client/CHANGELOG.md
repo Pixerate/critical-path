@@ -1,5 +1,12 @@
 # @critical-path/client
 
+## 0.20.4
+
+### Patch Changes
+
+- Updated dependencies [b13f7c4]
+  - @critical-path/core@0.35.0
+
 ## 0.20.3
 
 ### Patch Changes
