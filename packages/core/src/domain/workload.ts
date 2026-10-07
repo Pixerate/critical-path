@@ -275,7 +275,7 @@ export function calculateWorkloadDistribution(
         options.schedule ||
         DEFAULT_WORK_SCHEDULE;
 
-      const workingDays = getWorkingDaysList(taskStart, taskEnd, taskSchedule);
+      const workingDays = getWorkingDaysList(toDateString(taskStart), toDateString(taskEnd), taskSchedule);
       const msPerDay = 1000 * 60 * 60 * 24;
 
       if (workingDays.length > 0) {
@@ -391,17 +391,17 @@ export function calculateWorkloadDistribution(
       if (key === 'unassigned') {
         bucketCap = 0;
       } else if (interval === 'week') {
-        const netWeekCap = getNetAvailableCapacity(ib.startDate, addDays(ib.endDate, -1), entitySchedule);
+        const netWeekCap = getNetAvailableCapacity(toDateString(ib.startDate), toDateString(addDays(ib.endDate, -1)), entitySchedule);
         const baseline = (entitySchedule.defaultHoursPerDay ?? 8) * 5;
         const scale = baseline > 0 ? weeklyCap / baseline : 1;
         bucketCap = Math.round(netWeekCap * scale * 100) / 100;
       } else if (interval === 'day') {
-        const dayHours = getWorkingHoursInDay(ib.startDate, entitySchedule);
+        const dayHours = getWorkingHoursInDay(toDateString(ib.startDate), entitySchedule);
         const baseline = (entitySchedule.defaultHoursPerDay ?? 8) * 5;
         const scale = baseline > 0 ? weeklyCap / baseline : 1;
         bucketCap = Math.round(dayHours * scale * 100) / 100;
       } else if (interval === 'month') {
-        const netMonthCap = getNetAvailableCapacity(ib.startDate, addDays(ib.endDate, -1), entitySchedule);
+        const netMonthCap = getNetAvailableCapacity(toDateString(ib.startDate), toDateString(addDays(ib.endDate, -1)), entitySchedule);
         const baseline = (entitySchedule.defaultHoursPerDay ?? 8) * 5;
         const scale = baseline > 0 ? weeklyCap / baseline : 1;
         bucketCap = Math.round(netMonthCap * scale * 100) / 100;

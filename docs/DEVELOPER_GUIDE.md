@@ -938,24 +938,24 @@ Critical Path features a production-ready calendar calculation and schedule inhe
 ### Schedule Data Model
 
 A `WorkSchedule` defines:
-- **`timezone`**: Canonical IANA timezone identifier (e.g. `'UTC'`, `'America/New_York'`).
-- **`days`**: Map of days (`monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`, `sunday`) specifying `isWorking: boolean` and one or more active shifts (`hours: [{ start: '09:00', end: '17:00' }]`).
-- **`holidays`**: Array of dates (`YYYY-MM-DD`) that are non-working or partial days (`isWorkingDay: false` or custom `hours`).
+- **`timezone`**: IANA time zone (e.g. `'America/New_York'`, default UTC). Hours, weekdays and holiday dates are wall-clock rules in this zone; working-time arithmetic follows its offsets and daylight-saving changes. Date-only and offset-less inputs are read as local times in the zone.
+- **`days`**: One entry per weekday: `dayOfWeek` (0 = Sunday), `isWorkingDay`, and one or more shifts (`hours: [{ start: '09:00', end: '17:00' }]`).
+- **`holidays`**: Local dates (`YYYY-MM-DD`) that are non-working, or half days with `halfDay: true`.
 
 ```ts
 import type { WorkSchedule } from '@critical-path/core';
 
 export const techTeamSchedule: WorkSchedule = {
   timezone: 'UTC',
-  days: {
-    monday:    { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    tuesday:   { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    wednesday: { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    thursday:  { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    friday:    { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    saturday:  { isWorking: false },
-    sunday:    { isWorking: false }
-  },
+  days: [
+    { dayOfWeek: 0, isWorkingDay: false }, // Sunday
+    { dayOfWeek: 1, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Monday
+    { dayOfWeek: 2, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Tuesday
+    { dayOfWeek: 3, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Wednesday
+    { dayOfWeek: 4, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Thursday
+    { dayOfWeek: 5, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Friday
+    { dayOfWeek: 6, isWorkingDay: false }  // Saturday
+  ],
   holidays: [
     { date: '2026-12-25', name: 'Christmas Day' },
     { date: '2026-12-26', name: 'Boxing Day' },
@@ -968,7 +968,7 @@ export const techTeamSchedule: WorkSchedule = {
 
 Schedules resolve automatically with explicit hierarchical fallback:
 
-> **Where this applies:** workload and capacity calculations resolve each assignee's schedule through this hierarchy (users come from the engine's `users` directory). Critical-path (CPM) date projections currently use a single calendar for the whole project: `options.schedule`, then `project.schedule`, then the engine's `defaultSchedule`.
+> **Where this applies:** workload and capacity calculations resolve each assignee's schedule through this hierarchy (users come from the engine's `users` directory). Critical-path (CPM) dates use one project calendar by default (`options.schedule`, then `project.schedule`, then the engine's `defaultSchedule`), or this hierarchy with `calendars: 'assignee'`.
 
 1. **Assignee User Schedule** (`user.schedule` if defined)
 2. **Team Schedule** (`team.schedule` if defined)
@@ -1011,7 +1011,7 @@ console.log('Project finishes on:', cpm.projectEndDate);
 const byAssignee = await engine.calculateCriticalPath('proj_123', { calendars: 'assignee' });
 ```
 
-In assignee mode the passes run on real dates, slack is counted in each task's own calendar, numeric offsets are project-calendar hours from the start, and a project without a start date starts today. All calendars are evaluated in UTC, and it does not level resources.
+In assignee mode the passes run on real dates, slack is counted in each task's own calendar, numeric offsets are project-calendar hours from the start, and a project without a start date starts today. Each calendar is evaluated in its own `timezone`. It does not level resources.
 
 ---
 

@@ -319,15 +319,15 @@ import { CriticalPathEngine, type WorkSchedule, addWorkingHours } from '@critica
 // Define a project schedule with 4-day workweeks and holidays
 const engineeringSchedule: WorkSchedule = {
   timezone: 'UTC',
-  days: {
-    monday: { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    tuesday: { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    wednesday: { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    thursday: { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    friday: { isWorking: false },
-    saturday: { isWorking: false },
-    sunday: { isWorking: false }
-  },
+  days: [
+    { dayOfWeek: 0, isWorkingDay: false }, // Sunday
+    { dayOfWeek: 1, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Monday
+    { dayOfWeek: 2, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Tuesday
+    { dayOfWeek: 3, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Wednesday
+    { dayOfWeek: 4, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Thursday
+    { dayOfWeek: 5, isWorkingDay: false }, // Friday
+    { dayOfWeek: 6, isWorkingDay: false }  // Saturday
+  ],
   holidays: [
     { date: '2026-12-25', name: 'Christmas Day' },
     { date: '2026-12-26', name: 'Boxing Day' }
@@ -351,7 +351,7 @@ console.log('Total Working Hours on Critical Path:', cpm.totalWorkingHours);
 const byAssignee = await engine.calculateCriticalPath('proj_123', { calendars: 'assignee' });
 ```
 
-With `calendars: 'assignee'` (or `criticalPathCalendars: 'assignee'` on the engine), each task uses its assignee's schedule, then its team's, then the project calendar. Passes run on dates, slack is measured in each task's calendar, and calendars are evaluated in UTC.
+With `calendars: 'assignee'` (or `criticalPathCalendars: 'assignee'` on the engine), each task uses its assignee's schedule, then its team's, then the project calendar. Passes run on dates, slack is measured in each task's calendar, and each calendar is evaluated in its own `timezone` (IANA name; default UTC), including daylight-saving changes.
 
 ### 9. Fractional Lexical Indexing (Kanban Reordering)
 

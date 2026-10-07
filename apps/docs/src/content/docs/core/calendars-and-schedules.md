@@ -20,16 +20,16 @@ A `WorkSchedule` defines working hours, working days, timezones, and regional ho
 import type { WorkSchedule } from '@critical-path/core';
 
 export const standardSchedule: WorkSchedule = {
-  timezone: 'UTC',
-  days: {
-    monday:    { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    tuesday:   { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    wednesday: { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    thursday:  { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    friday:    { isWorking: true, hours: [{ start: '09:00', end: '17:00' }] },
-    saturday:  { isWorking: false },
-    sunday:    { isWorking: false }
-  },
+  timezone: 'Europe/London', // IANA zone for the hours, weekdays and holiday dates below (default UTC)
+  days: [
+    { dayOfWeek: 0, isWorkingDay: false }, // Sunday
+    { dayOfWeek: 1, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Monday
+    { dayOfWeek: 2, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Tuesday
+    { dayOfWeek: 3, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Wednesday
+    { dayOfWeek: 4, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Thursday
+    { dayOfWeek: 5, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Friday
+    { dayOfWeek: 6, isWorkingDay: false }  // Saturday
+  ],
   holidays: [
     { date: '2026-12-25', name: 'Christmas Day' },
     { date: '2026-12-26', name: 'Boxing Day' },
@@ -40,12 +40,13 @@ export const standardSchedule: WorkSchedule = {
 
 ### Day Schedule & Split Shifts
 
-Each day specifies `isWorking: boolean` and an array of `hours: WorkingHoursRange[]`:
+Each day specifies `dayOfWeek` (0 = Sunday), `isWorkingDay` and an array of `hours: WorkingHoursRange[]`:
 
 ```ts
 // Split shift or lunch break configuration
 {
-  isWorking: true,
+  dayOfWeek: 1,
+  isWorkingDay: true,
   hours: [
     { start: '09:00', end: '13:00' },
     { start: '14:00', end: '18:00' }
@@ -55,22 +56,34 @@ Each day specifies `isWorking: boolean` and an array of `hours: WorkingHoursRang
 
 ### Regional & Half-Day Holidays
 
-Holidays can represent complete closures (`isWorkingDay: false` or omitted `hours`) or partial-working days:
+Holidays are local dates in the schedule's time zone. They are full closures, or half days with `halfDay: true`, which keeps the first half of that day's working hours:
 
 ```ts
 holidays: [
   // Full-day bank holiday
   { date: '2026-12-25', name: 'Christmas Day' },
-  
-  // Half-day holiday (e.g., Christmas Eve 09:00 - 13:00 only)
-  {
-    date: '2026-12-24',
-    name: 'Christmas Eve Half-Day',
-    isWorkingDay: true,
-    hours: [{ start: '09:00', end: '13:00' }]
-  }
+
+  // Half-day holiday: with 09:00-17:00 hours, only 09:00-13:00 is worked
+  { date: '2026-12-24', name: 'Christmas Eve', halfDay: true }
 ]
 ```
+
+### Time zones
+
+`timezone` is an IANA name such as `'America/New_York'` (default UTC). The schedule's hours, weekdays and holiday dates are wall-clock rules in that zone, so `09:00–17:00` in `'America/New_York'` and in `'Europe/London'` are different instants. Working-time arithmetic follows the zone's UTC offset and daylight-saving changes:
+
+```ts
+const newYork: WorkSchedule = { ...DEFAULT_WORK_SCHEDULE, timezone: 'America/New_York' };
+
+addWorkingHours('2026-10-05T13:00:00Z', 8, newYork); // 09:00 EDT + 8h = 2026-10-05T21:00:00Z
+// Across the fall-back weekend: Friday 09:00 EDT + 16h = Monday 17:00 EST (22:00Z)
+addWorkingHours('2026-10-30T13:00:00Z', 16, newYork);
+```
+
+- **Inputs:** strings with `Z` or an offset, and `Date` objects, are absolute instants. Date-only strings (`'2026-10-05'`) and date-times without an offset (`'2026-10-05T09:00'`) are wall-clock times in the schedule's zone.
+- **Day-level helpers** (`isWorkingDay`, `getWorkingDaysList`, capacity) use the local date an instant falls on: Sunday 23:30 in New York is a Sunday, even though it is Monday in UTC.
+- **Elapsed hours:** a window that spans a clock change has its real elapsed length. A 00:00–08:00 shift on a spring-forward night is 7 hours. `getWorkingHoursInDay` still reports the nominal 8.
+- **Validation:** unknown zone names are rejected by the API schemas, and the calendar functions throw a `RangeError` for them.
 
 ---
 
@@ -78,7 +91,7 @@ holidays: [
 
 Schedules can be declared at multiple levels of granularity and resolve with clean hierarchical fallback:
 
-> **Where this applies:** workload and capacity calculations resolve each assignee's schedule through this hierarchy (users come from the engine's `users` directory). Critical-path (CPM) date projections currently use a single calendar for the whole project: `options.schedule`, then `project.schedule`, then the engine's `defaultSchedule`.
+> **Where this applies:** workload and capacity calculations resolve each assignee's schedule through this hierarchy (users come from the engine's `users` directory). Critical-path (CPM) dates use a single project calendar by default (`options.schedule`, then `project.schedule`, then the engine's `defaultSchedule`), or this hierarchy with `calendars: 'assignee'` (see below).
 
 ```
   ┌────────────────────────────────────────────────────────┐
@@ -179,7 +192,7 @@ How the results differ from project mode:
 
 Limitations:
 
-- All calendars are evaluated in UTC; `WorkSchedule.timezone` is informational, so "09:00" means 09:00 UTC for everyone.
+- Each calendar is evaluated in its own `timezone`, so work handed from London to New York continues at the New York assignee's next working moment.
 - This is not resource levelling: one person's parallel tasks are still scheduled at the same time.
 
 Over HTTP use `GET /projects/:projectId/critical-path?calendars=assignee`; in the client, `calculateCriticalPath(projectId, { calendars: 'assignee' })`; in MCP, the `calendars` argument of `calculate_critical_path`.

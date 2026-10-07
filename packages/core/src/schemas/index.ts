@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { ValidationError, type ValidationIssue } from '../domain/errors.js';
 import { DOMAIN_EVENT_NAMES } from '../domain/events.js';
 import { MAX_PAGE_SIZE } from '../store/query.js';
+import { isValidTimeZone } from '../domain/calendar.js';
 
 /**
  * Parses `data` with `schema`, returning the cleaned value (unknown keys stripped, defaults
@@ -48,7 +49,7 @@ export const StatusDefinitionSchema = strictObject({
 export const WorkScheduleSchema = strictObject({
   id: z.string().optional(),
   name: z.string().optional(),
-  timezone: z.string().optional(),
+  timezone: z.string().refine(isValidTimeZone, 'must be an IANA time zone, e.g. "America/New_York"').optional(),
   defaultHoursPerDay: z.number().nonnegative().optional(),
   days: z.array(
     strictObject({

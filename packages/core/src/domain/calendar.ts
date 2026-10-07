@@ -81,7 +81,7 @@ function getHoliday(dateStr: string, schedule: WorkSchedule): Holiday | undefine
  * Checks whether a given calendar date is an active working day under the provided schedule.
  */
 export function isWorkingDay(input: Date | string, schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE): boolean {
-  const d = parseDate(input);
+  const d = localDate(input, schedule);
   const dateStr = toDateString(d);
   const holiday = getHoliday(dateStr, schedule);
   if (holiday && !holiday.halfDay) {
@@ -99,7 +99,7 @@ export function isWorkingDay(input: Date | string, schedule: WorkSchedule = DEFA
  * Returns the effective working hours available on a specific calendar day.
  */
 export function getWorkingHoursInDay(input: Date | string, schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE): number {
-  const d = parseDate(input);
+  const d = localDate(input, schedule);
   const dateStr = toDateString(d);
   const holiday = getHoliday(dateStr, schedule);
   if (holiday && !holiday.halfDay) {
@@ -129,7 +129,8 @@ export function getWorkingHoursInDay(input: Date | string, schedule: WorkSchedul
 }
 
 /**
- * Returns the normalized working time windows (in minutes from UTC midnight) for a given date.
+ * Returns the working windows (in minutes from local midnight) for a local calendar date, given
+ * as a UTC-midnight Date.
  */
 function getDayWorkingWindows(d: Date, schedule: WorkSchedule): Array<{ start: number; end: number }> {
   const dateStr = toDateString(d);
@@ -170,22 +171,153 @@ function getDayWorkingWindows(d: Date, schedule: WorkSchedule): Array<{ start: n
   return ranges;
 }
 
-const utcDay = (d: Date, offsetDays = 0, minuteOfDay = 0) =>
-  new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + offsetDays) + minuteOfDay * 60_000);
+// --- Time zones ---------------------------------------------------------------------------
+// Schedules are wall-clock rules ("Mon–Fri 09:00–17:00", holidays as local dates) in
+// `schedule.timezone`. Instant-based functions convert each local day's windows to absolute
+// instants, so they handle offsets and daylight-saving changes. Schedules without a time zone
+// (or with UTC) take a fast path with no Intl calls.
+
+const MINUTE = 60_000;
+const DAY = 86_400_000;
+
+const UTC_ZONES = new Set(['UTC', 'Etc/UTC', 'GMT', 'Etc/GMT', 'Z']);
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function zoneOf(schedule: WorkSchedule): string | undefined {
+  const tz = schedule.timezone;
+  return !tz || UTC_ZONES.has(tz) ? undefined : tz;
+}
+
+/** True if `timezone` is an IANA time zone name the runtime knows. */
+export function isValidTimeZone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Offsets are multiples of 15 minutes and transitions happen at local whole or half hours, so every
+// transition falls on a 15-minute UTC boundary and offsets can be cached per 15-minute slot.
+const offsetCache = new Map<string, Map<number, number>>();
+
+/** Offset of `tz` from UTC at instant `ms`, in milliseconds (local - UTC). */
+function zoneOffset(ms: number, tz: string | undefined): number {
+  if (!tz) return 0;
+  const slot = Math.floor(ms / 900_000);
+  let bySlot = offsetCache.get(tz);
+  const cached = bySlot?.get(slot);
+  if (cached !== undefined) return cached;
+  const offset = computeZoneOffset(ms, tz);
+  if (!bySlot) offsetCache.set(tz, (bySlot = new Map()));
+  if (bySlot.size > 100_000) bySlot.clear();
+  bySlot.set(slot, offset);
+  return offset;
+}
+
+function computeZoneOffset(ms: number, tz: string): number {
+  let formatter = formatters.get(tz);
+  if (!formatter) {
+    try {
+      formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        hourCycle: 'h23',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric'
+      });
+    } catch {
+      throw new RangeError(`Unknown schedule time zone "${tz}". Use an IANA name such as "America/New_York".`);
+    }
+    formatters.set(tz, formatter);
+  }
+  const parts: Record<string, number> = {};
+  for (const part of formatter.formatToParts(new Date(ms))) {
+    if (part.type !== 'literal') parts[part.type] = Number(part.value);
+  }
+  const local = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return local - (ms - (((ms % 1000) + 1000) % 1000));
+}
+
+/** The instant at local wall time `minuteOfDay` on local date `day` (a UTC-midnight Date). */
+function zonedInstant(day: Date, minuteOfDay: number, tz: string | undefined): number {
+  const wall = day.getTime() + minuteOfDay * MINUTE;
+  if (!tz) return wall;
+  const first = wall - zoneOffset(wall, tz);
+  const second = wall - zoneOffset(first, tz);
+  // In a spring-forward gap the wall time does not exist; use the later reading (after the jump).
+  return Math.max(first, second);
+}
+
+/** The local calendar date of instant `ms` in `tz`, as a UTC-midnight Date. */
+function zonedDay(ms: number, tz: string | undefined): Date {
+  const local = new Date(ms + zoneOffset(ms, tz));
+  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()));
+}
+
+const addDays = (day: Date, days: number) => new Date(day.getTime() + days * DAY);
+
+/**
+ * Parses an instant for `schedule`. Date-only strings (`2026-10-05`) and date-times without an
+ * offset (`2026-10-05T09:00`) are wall-clock times in the schedule's time zone; strings with `Z` or
+ * an offset, and Date objects, are absolute.
+ */
+function toInstant(input: Date | string, schedule: WorkSchedule): number {
+  if (input instanceof Date) return input.getTime();
+  const tz = zoneOf(schedule);
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?$/.exec(input);
+  if (!match) return new Date(input).getTime();
+  const [, y, m, d, hh = '0', mm = '0', ss = '0', frac = '0'] = match;
+  const day = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+  const ms = Number(ss) * 1000 + Math.round(Number(`0.${frac}`) * 1000);
+  return zonedInstant(day, Number(hh) * 60 + Number(mm), tz) + ms;
+}
+
+/**
+ * The local calendar date (as a UTC-midnight Date) that `input` falls on in the schedule's time
+ * zone. Date-only strings are taken as that date.
+ */
+function localDate(input: Date | string, schedule: WorkSchedule): Date {
+  if (typeof input === 'string' && !input.includes('T')) return parseDate(input);
+  return zonedDay(toInstant(input, schedule), zoneOf(schedule));
+}
+
+// Intervals per schedule object and day. Schedules are treated as immutable once used; the cache
+// is a WeakMap, so it goes away with the schedule.
+const intervalCache = new WeakMap<WorkSchedule, Map<number, ReadonlyArray<{ start: number; end: number }>>>();
+
+/** Working windows of one local day as absolute [start, end) instants. Do not mutate the result. */
+function dayIntervals(day: Date, schedule: WorkSchedule): ReadonlyArray<{ start: number; end: number }> {
+  let byDay = intervalCache.get(schedule);
+  const cached = byDay?.get(day.getTime());
+  if (cached) return cached;
+  const tz = zoneOf(schedule);
+  const intervals = getDayWorkingWindows(day, schedule).map((w) => ({
+    start: zonedInstant(day, w.start, tz),
+    end: zonedInstant(day, w.end, tz)
+  }));
+  if (!byDay) intervalCache.set(schedule, (byDay = new Map()));
+  if (byDay.size > 20_000) byDay.clear();
+  byDay.set(day.getTime(), intervals);
+  return intervals;
+}
 
 /**
  * Returns the first working instant at or after `input`: `input` itself if it falls inside a
  * working window, otherwise the start of the next window (skipping non-working days and holidays).
  */
 export function nextWorkingTime(input: Date | string, schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE): Date {
-  const start = parseDate(input);
-  for (let day = 0; day < 3650; day++) {
-    const date = utcDay(start, day);
-    const minute = day === 0 ? (start.getTime() - date.getTime()) / 60_000 : 0;
-    const window = getDayWorkingWindows(date, schedule).find((w) => w.end > minute);
-    if (window) return minute >= window.start ? start : utcDay(date, 0, window.start);
+  const t = toInstant(input, schedule);
+  const first = zonedDay(t, zoneOf(schedule));
+  for (let i = 0; i < 3650; i++) {
+    const window = dayIntervals(addDays(first, i), schedule).find((w) => w.end > t);
+    if (window) return new Date(Math.max(window.start, t));
   }
-  return start;
+  return new Date(t);
 }
 
 /**
@@ -193,14 +325,13 @@ export function nextWorkingTime(input: Date | string, schedule: WorkSchedule = D
  * the end of) a working window, otherwise the end of the previous window.
  */
 export function previousWorkingTime(input: Date | string, schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE): Date {
-  const end = parseDate(input);
-  for (let day = 0; day < 3650; day++) {
-    const date = utcDay(end, -day);
-    const minute = day === 0 ? (end.getTime() - date.getTime()) / 60_000 : 24 * 60;
-    const window = [...getDayWorkingWindows(date, schedule)].reverse().find((w) => w.start < minute);
-    if (window) return minute <= window.end ? end : utcDay(date, 0, window.end);
+  const t = toInstant(input, schedule);
+  const last = zonedDay(t, zoneOf(schedule));
+  for (let i = 0; i < 3650; i++) {
+    const window = [...dayIntervals(addDays(last, -i), schedule)].reverse().find((w) => w.start < t);
+    if (window) return new Date(Math.min(window.end, t));
   }
-  return end;
+  return new Date(t);
 }
 
 /**
@@ -212,74 +343,20 @@ export function addWorkingHours(
   hoursToAdd: number,
   schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE
 ): Date {
-  if (hoursToAdd <= 0) {
-    return parseDate(startInput);
-  }
-
-  let current = parseDate(startInput);
-  let remainingMinutes = Math.round(hoursToAdd * 60);
-
-  // Safety guard against infinite loops
-  let daysScanned = 0;
-  const maxDays = 3650; // 10 years
-
-  while (remainingMinutes > 0 && daysScanned < maxDays) {
-    const windows = getDayWorkingWindows(current, schedule);
-
-    if (windows.length === 0) {
-      // Non-working day or holiday: move to start of next UTC day
-      current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1, 0, 0, 0, 0));
-      daysScanned++;
-      continue;
+  let current = toInstant(startInput, schedule);
+  if (hoursToAdd <= 0) return new Date(current);
+  let remaining = Math.round(hoursToAdd * 60) * MINUTE;
+  const first = zonedDay(current, zoneOf(schedule));
+  for (let i = 0; i < 3650; i++) {
+    for (const w of dayIntervals(addDays(first, i), schedule)) {
+      if (w.end <= current) continue;
+      const from = Math.max(w.start, current);
+      if (remaining <= w.end - from) return new Date(from + remaining);
+      remaining -= w.end - from;
+      current = w.end;
     }
-
-    const currentMinuteOfDay = current.getUTCHours() * 60 + current.getUTCMinutes() + current.getUTCSeconds() / 60;
-
-    for (let i = 0; i < windows.length && remainingMinutes > 0; i++) {
-      const w = windows[i];
-      if (currentMinuteOfDay >= w.end) {
-        // Already past this window
-        continue;
-      }
-
-      // If current time is before the window starts, jump to window start
-      const windowStartMin = Math.max(w.start, currentMinuteOfDay);
-      const availableMinutes = w.end - windowStartMin;
-
-      if (remainingMinutes <= availableMinutes) {
-        const finalMinuteOfDay = windowStartMin + remainingMinutes;
-        const finalHour = Math.floor(finalMinuteOfDay / 60);
-        const finalMin = Math.round(finalMinuteOfDay % 60);
-        return new Date(Date.UTC(
-          current.getUTCFullYear(),
-          current.getUTCMonth(),
-          current.getUTCDate(),
-          finalHour,
-          finalMin,
-          0,
-          0
-        ));
-      } else {
-        remainingMinutes -= availableMinutes;
-        // Advance current time to end of this window
-        current = new Date(Date.UTC(
-          current.getUTCFullYear(),
-          current.getUTCMonth(),
-          current.getUTCDate(),
-          Math.floor(w.end / 60),
-          Math.round(w.end % 60),
-          0,
-          0
-        ));
-      }
-    }
-
-    // Finished processing windows for today; advance to tomorrow at 00:00
-    current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1, 0, 0, 0, 0));
-    daysScanned++;
   }
-
-  return current;
+  return new Date(current);
 }
 
 /**
@@ -291,71 +368,20 @@ export function subtractWorkingHours(
   hoursToSubtract: number,
   schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE
 ): Date {
-  if (hoursToSubtract <= 0) {
-    return parseDate(endInput);
-  }
-
-  let current = parseDate(endInput);
-  let remainingMinutes = Math.round(hoursToSubtract * 60);
-
-  let daysScanned = 0;
-  const maxDays = 3650;
-
-  while (remainingMinutes > 0 && daysScanned < maxDays) {
-    const windows = getDayWorkingWindows(current, schedule);
-
-    if (windows.length === 0) {
-      // Non-working day: move to end of previous UTC day (23:59:59)
-      current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() - 1, 23, 59, 59, 999));
-      daysScanned++;
-      continue;
+  let current = toInstant(endInput, schedule);
+  if (hoursToSubtract <= 0) return new Date(current);
+  let remaining = Math.round(hoursToSubtract * 60) * MINUTE;
+  const last = zonedDay(current, zoneOf(schedule));
+  for (let i = 0; i < 3650; i++) {
+    for (const w of [...dayIntervals(addDays(last, -i), schedule)].reverse()) {
+      if (w.start >= current) continue;
+      const to = Math.min(w.end, current);
+      if (remaining <= to - w.start) return new Date(to - remaining);
+      remaining -= to - w.start;
+      current = w.start;
     }
-
-    const currentMinuteOfDay = current.getUTCHours() * 60 + current.getUTCMinutes() + current.getUTCSeconds() / 60;
-
-    // Traverse windows backwards
-    for (let i = windows.length - 1; i >= 0 && remainingMinutes > 0; i--) {
-      const w = windows[i];
-      if (currentMinuteOfDay <= w.start) {
-        continue;
-      }
-
-      const windowEndMin = Math.min(w.end, currentMinuteOfDay);
-      const availableMinutes = windowEndMin - w.start;
-
-      if (remainingMinutes <= availableMinutes) {
-        const finalMinuteOfDay = windowEndMin - remainingMinutes;
-        const finalHour = Math.floor(finalMinuteOfDay / 60);
-        const finalMin = Math.round(finalMinuteOfDay % 60);
-        return new Date(Date.UTC(
-          current.getUTCFullYear(),
-          current.getUTCMonth(),
-          current.getUTCDate(),
-          finalHour,
-          finalMin,
-          0,
-          0
-        ));
-      } else {
-        remainingMinutes -= availableMinutes;
-        current = new Date(Date.UTC(
-          current.getUTCFullYear(),
-          current.getUTCMonth(),
-          current.getUTCDate(),
-          Math.floor(w.start / 60),
-          Math.round(w.start % 60),
-          0,
-          0
-        ));
-      }
-    }
-
-    // Move to end of previous day
-    current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() - 1, 23, 59, 59, 999));
-    daysScanned++;
   }
-
-  return current;
+  return new Date(current);
 }
 
 /**
@@ -366,39 +392,19 @@ export function getWorkingHoursBetween(
   endInput: Date | string,
   schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE
 ): number {
-  const start = parseDate(startInput);
-  const end = parseDate(endInput);
+  const start = toInstant(startInput, schedule);
+  const end = toInstant(endInput, schedule);
+  if (end <= start) return 0;
 
-  if (end <= start) {
-    return 0;
-  }
-
-  let totalMinutes = 0;
-  let current = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate(), 0, 0, 0, 0));
-  const endDay = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate(), 0, 0, 0, 0));
-
-  let days = 0;
-  while (current <= endDay && days < 3650) {
-    const windows = getDayWorkingWindows(current, schedule);
-    const isFirstDay = current.getTime() === Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate(), 0, 0, 0, 0);
-    const isLastDay = current.getTime() === endDay.getTime();
-
-    const startMin = isFirstDay ? start.getUTCHours() * 60 + start.getUTCMinutes() : 0;
-    const endMin = isLastDay ? end.getUTCHours() * 60 + end.getUTCMinutes() : 24 * 60;
-
-    for (const w of windows) {
-      const activeStart = Math.max(w.start, startMin);
-      const activeEnd = Math.min(w.end, endMin);
-      if (activeEnd > activeStart) {
-        totalMinutes += (activeEnd - activeStart);
-      }
+  const tz = zoneOf(schedule);
+  const lastDay = zonedDay(end, tz).getTime();
+  let total = 0;
+  for (let day = zonedDay(start, tz), i = 0; day.getTime() <= lastDay && i < 3650; day = addDays(day, 1), i++) {
+    for (const w of dayIntervals(day, schedule)) {
+      total += Math.max(0, Math.min(w.end, end) - Math.max(w.start, start));
     }
-
-    current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1, 0, 0, 0, 0));
-    days++;
   }
-
-  return Math.round((totalMinutes / 60) * 100) / 100;
+  return Math.round((total / (60 * MINUTE)) * 100) / 100;
 }
 
 /**
@@ -409,8 +415,8 @@ export function getWorkingDaysBetween(
   endInput: Date | string,
   schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE
 ): number {
-  const start = parseDate(startInput);
-  const end = parseDate(endInput);
+  const start = localDate(startInput, schedule);
+  const end = localDate(endInput, schedule);
 
   if (end < start) {
     return 0;
@@ -422,7 +428,7 @@ export function getWorkingDaysBetween(
   let count = 0;
   let days = 0;
   while (current <= endDay && days < 3650) {
-    if (isWorkingDay(current, schedule)) {
+    if (isWorkingDay(toDateString(current), schedule)) {
       const holiday = getHoliday(toDateString(current), schedule);
       count += (holiday && holiday.halfDay) ? 0.5 : 1;
     }
@@ -441,8 +447,8 @@ export function getWorkingDaysList(
   endInput: Date | string,
   schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE
 ): string[] {
-  const start = parseDate(startInput);
-  const end = parseDate(endInput);
+  const start = localDate(startInput, schedule);
+  const end = localDate(endInput, schedule);
 
   if (end < start) {
     return [];
@@ -454,7 +460,7 @@ export function getWorkingDaysList(
   const list: string[] = [];
   let days = 0;
   while (current <= endDay && days < 3650) {
-    if (isWorkingDay(current, schedule)) {
+    if (isWorkingDay(toDateString(current), schedule)) {
       list.push(toDateString(current));
     }
     current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1, 0, 0, 0, 0));
@@ -472,8 +478,8 @@ export function getNetAvailableCapacity(
   endInput: Date | string,
   schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE
 ): number {
-  const start = parseDate(startInput);
-  const end = parseDate(endInput);
+  const start = localDate(startInput, schedule);
+  const end = localDate(endInput, schedule);
 
   let current = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate(), 0, 0, 0, 0));
   const endDay = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate(), 0, 0, 0, 0));
@@ -481,7 +487,7 @@ export function getNetAvailableCapacity(
   let totalCapacity = 0;
   let days = 0;
   while (current <= endDay && days < 3650) {
-    totalCapacity += getWorkingHoursInDay(current, schedule);
+    totalCapacity += getWorkingHoursInDay(toDateString(current), schedule);
     current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1, 0, 0, 0, 0));
     days++;
   }
