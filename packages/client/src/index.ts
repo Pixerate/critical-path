@@ -349,9 +349,14 @@ export class CriticalPathClient {
     return this.deleteRequest(`/projects/${encodeURIComponent(id)}`);
   }
 
-  async calculateCriticalPath(projectId: string): Promise<CriticalPathAnalysis> {
+  /** `calendars: 'assignee'` schedules each task on its assignee's or team's calendar. */
+  async calculateCriticalPath(
+    projectId: string,
+    options: { calendars?: 'project' | 'assignee' } = {}
+  ): Promise<CriticalPathAnalysis> {
+    const query = options.calendars ? `?calendars=${options.calendars}` : '';
     const res = await this.request<{ analysis: CriticalPathAnalysis }>(
-      `/projects/${encodeURIComponent(projectId)}/critical-path`
+      `/projects/${encodeURIComponent(projectId)}/critical-path${query}`
     );
     return res.analysis;
   }

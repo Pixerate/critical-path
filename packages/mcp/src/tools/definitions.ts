@@ -326,12 +326,16 @@ export const addCommentTool = defineTool<{ taskId: string; content: string }>({
   }
 });
 
-export const calculateCriticalPathTool = defineTool<{ projectId?: string }>({
+export const calculateCriticalPathTool = defineTool<{ projectId?: string; calendars?: 'project' | 'assignee' }>({
   name: 'calculate_critical_path',
   title: 'Calculate Critical Path',
   description: 'Calculate Critical Path Method (CPM) schedule, early/late start and finish, total slack, and critical bottlenecks for a project.',
   zodSchema: z.object({
-    projectId: z.string().optional().describe('Project ID (falls back to ambient context if omitted)')
+    projectId: z.string().optional().describe('Project ID (falls back to ambient context if omitted)'),
+    calendars: z
+      .enum(['project', 'assignee'])
+      .optional()
+      .describe("'assignee' schedules each task on its assignee's or team's working calendar; default uses the project calendar")
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
@@ -339,7 +343,7 @@ export const calculateCriticalPathTool = defineTool<{ projectId?: string }>({
     if (!projectId) {
       throw new Error('projectId is required to calculate critical path.');
     }
-    return (target as any).calculateCriticalPath(projectId);
+    return (target as any).calculateCriticalPath(projectId, args.calendars ? { calendars: args.calendars } : undefined);
   }
 });
 

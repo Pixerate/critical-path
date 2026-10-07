@@ -849,7 +849,7 @@ Given a set of tasks with estimated durations and dependencies:
 
 ### REST API Endpoints
 
-- `GET /api/critical-path/projects/:id/critical-path`: Returns CPM schedule analysis, total duration, and bottleneck task IDs.
+- `GET /api/critical-path/projects/:id/critical-path`: Returns CPM schedule analysis, total duration, and bottleneck task IDs. `?calendars=assignee` schedules each task on its assignee's or team's calendar.
 - `GET /api/critical-path/projects/:id/ladder?level={all|macro|standard|concrete}`: Returns multi-scale ladder view filtered to requested rungs.
 - `GET /api/critical-path/tasks/:id/ladder`: Returns contextual 3-rung ladder slice for an individual task.
 
@@ -1005,7 +1005,13 @@ const cpm = await engine.calculateCriticalPath('proj_123', {
 // Since Dec 25 & 26 are holidays and Dec 27 & 28 are weekends,
 // the next 8-hour task scheduled from Dec 24 09:00 ends Dec 29 17:00.
 console.log('Project finishes on:', cpm.projectEndDate);
+
+// Per-assignee calendars: each task uses its assignee's schedule (from `users`), then its team's,
+// then the project calendar. Also available as `criticalPathCalendars: 'assignee'` on the engine.
+const byAssignee = await engine.calculateCriticalPath('proj_123', { calendars: 'assignee' });
 ```
+
+In assignee mode the passes run on real dates, slack is counted in each task's own calendar, numeric offsets are project-calendar hours from the start, and a project without a start date starts today. All calendars are evaluated in UTC, and it does not level resources.
 
 ---
 

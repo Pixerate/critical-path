@@ -70,7 +70,7 @@ const attachment = await client.uploadAttachmentFile({
 }); // binary data is base64-encoded automatically
 
 // Calculate Critical Path Method (CPM) schedule & bottlenecks
-const cpmAnalysis = await client.calculateCriticalPath('proj_1');
+const cpmAnalysis = await client.calculateCriticalPath('proj_1'); // or { calendars: 'assignee' }
 console.log('Total project duration:', cpmAnalysis.totalDurationHours);
 console.log('Bottleneck tasks:', cpmAnalysis.criticalTaskIds);
 

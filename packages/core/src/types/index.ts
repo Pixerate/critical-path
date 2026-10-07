@@ -558,6 +558,11 @@ export interface CriticalPathConfig {
   /** Delivery behaviour: queue, timeouts, retries, private URL policy, failure callbacks. */
   webhookDelivery?: import('../webhooks/dispatcher.js').WebhookDeliveryOptions;
   defaultSchedule?: WorkSchedule;
+  /**
+   * Default calendar mode for `calculateCriticalPath`: `'project'` (one project-wide calendar,
+   * the default) or `'assignee'` (each task on its assignee's or team's schedule).
+   */
+  criticalPathCalendars?: 'project' | 'assignee';
   initialData?: {
     projects?: Project[];
     tasks?: Task[];
@@ -633,6 +638,8 @@ export interface TaskCriticalPathSchedule {
   lateStartDate?: string;
   lateFinishDate?: string;
   slackWorkingHours?: number;
+  /** In assignee-calendar mode, the `id` of the schedule this task was planned on (if it has one). */
+  scheduleId?: string;
 }
 
 export interface CriticalPathAnalysis {
