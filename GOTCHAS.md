@@ -231,3 +231,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: The client combines caller signals with timeouts using `AbortSignal.any` (Node 20.3+, browsers from 2023) and `AbortSignal.timeout`.
 - **Solution / Workaround**: Use a supported runtime (the repo targets Node 24), or polyfill `AbortSignal.any`. Retries apply only to GET requests and stop as soon as the signal aborts.
 
+### `S3StorageAdapter` Needs Your AWS SDK Client, Commands and Presigner
+- **Area / Package**: `@critical-path/core` (`S3StorageAdapter`)
+- **Symptom / Behavior**: `cannot upload: configure "client" and "commands"` or `cannot presign uploads`.
+- **Root Cause**: Core has no AWS dependency, so it cannot construct S3 commands or SigV4 signatures itself. The old adapter silently "succeeded" without a client and returned unsigned URLs as "presigned".
+- **Solution / Workaround**: Pass `client` (`new S3Client(...)`), `commands: { PutObjectCommand, DeleteObjectCommand, GetObjectCommand }` from `@aws-sdk/client-s3`, and `presign: (command, { expiresIn }) => getSignedUrl(client, command, { expiresIn })` from `@aws-sdk/s3-request-presigner`. Set `signedDownloads: true` for private buckets.
+
+### Presigned Uploads Take a Filename; Registered Storage Keys Must Be in the Project Prefix
+- **Area / Package**: `@critical-path/core`, `@critical-path/server` (`POST /attachments/presign`, `POST /attachments`)
+- **Symptom / Behavior**: Requests sending `storageKey` to `/attachments/presign` fail with `Unrecognized key`, or registering an attachment fails with `storageKey must be under "projects/<projectId>/"`.
+- **Root Cause**: Deleting an attachment deletes its file, so a caller who could choose any key could overwrite or delete other projects' files.
+- **Solution / Workaround**: Send `{ projectId, filename, contentType }` to `/attachments/presign`, upload to the returned URL with the returned headers, then `POST /attachments` with the returned `storageKey` and the same `projectId`. Uploads through `/attachments/upload` are always stored under `projects/<projectId>/`.
+

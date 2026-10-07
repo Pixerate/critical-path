@@ -303,14 +303,14 @@ export const UploadAttachmentSchema = strictObject({
   filename: nonEmpty,
   data: z.string(),
   mimeType: z.string().optional(),
-  pathPrefix: z.string().optional(),
   encoding: z.enum(['base64', 'utf-8', 'binary']).optional()
 });
 
 export const PresignAttachmentSchema = strictObject({
-  /** Project the upload belongs to; scoped callers may only write under `projects/<projectId>/`. */
+  /** Project the upload belongs to; the file is stored under `projects/<projectId>/`. */
   projectId: nonEmpty,
-  storageKey: nonEmpty,
+  /** Original file name; the engine generates the storage key from it. */
+  filename: nonEmpty,
   expiresInSeconds: z.number().int().positive().optional(),
   contentType: z.string().optional()
 });

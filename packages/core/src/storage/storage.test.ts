@@ -42,43 +42,85 @@ describe('Storage Adapters', () => {
   });
 
   describe('S3StorageAdapter', () => {
-    it('generates correct URLs and handles duck-typed client calls', async () => {
-      let sentCommand: any = null;
-      const mockClient = {
-        send: async (cmd: any) => {
-          sentCommand = cmd;
-          return {};
-        }
-      };
+    // Stand-ins for @aws-sdk/client-s3 command classes: they just record their input
+    class PutObjectCommand { constructor(public input: Record<string, unknown>) {} }
+    class DeleteObjectCommand { constructor(public input: Record<string, unknown>) {} }
+    class GetObjectCommand { constructor(public input: Record<string, unknown>) {} }
+    const commands = { PutObjectCommand, DeleteObjectCommand, GetObjectCommand };
 
-      const s3 = new S3StorageAdapter({
+    function setup(send: (command: any) => Promise<unknown> = async () => ({})) {
+      const sent: any[] = [];
+      const presigned: Array<{ command: any; expiresIn: number }> = [];
+      const adapter = new S3StorageAdapter({
         bucket: 'my-project-bucket',
         region: 'eu-west-1',
-        s3Client: mockClient
+        client: { send: async (command) => { sent.push(command); return send(command); } },
+        commands,
+        presign: async (command, { expiresIn }) => {
+          presigned.push({ command, expiresIn });
+          return `https://signed.example/${(command as any).input.Key}?X-Amz-Expires=${expiresIn}`;
+        }
       });
+      return { adapter, sent, presigned };
+    }
 
-      const res = await s3.upload({
-        filename: 'spec.pdf',
-        data: new Uint8Array([1, 2, 3, 4]),
-        mimeType: 'application/pdf',
-        pathPrefix: 'docs'
-      });
+    it('uploads with a real command object and returns the object URL', async () => {
+      const { adapter, sent } = setup();
+      const res = await adapter.upload({ filename: 'spec.pdf', data: new Uint8Array([1, 2, 3, 4]), mimeType: 'application/pdf', pathPrefix: 'docs' });
 
-      expect(res.storageKey).toContain('docs/');
-      expect(res.storageKey).toContain('spec.pdf');
+      expect(res.storageKey).toMatch(/^docs\/\d+_[0-9a-f]{12}_spec\.pdf$/);
+      expect(res.sizeBytes).toBe(4);
       expect(res.url).toBe(`https://my-project-bucket.s3.eu-west-1.amazonaws.com/${res.storageKey}`);
-      expect(sentCommand).toBeDefined();
-      expect(sentCommand.input.Bucket).toBe('my-project-bucket');
+      expect(sent[0]).toBeInstanceOf(PutObjectCommand);
+      expect(sent[0].input).toMatchObject({ Bucket: 'my-project-bucket', Key: res.storageKey, ContentType: 'application/pdf' });
+      expect(sent[0].input.ContentDisposition).toBeUndefined();
 
-      const presigned = await s3.getPresignedUploadUrl({
-        storageKey: 'uploads/file.zip',
-        contentType: 'application/zip'
+      expect(await adapter.delete(res.storageKey)).toBe(true);
+      expect(sent[1]).toBeInstanceOf(DeleteObjectCommand);
+    });
+
+    it('forces active content to download', async () => {
+      const { adapter, sent } = setup();
+      await adapter.upload({ filename: 'x.svg', data: '<svg/>', mimeType: 'image/svg+xml', encoding: 'utf-8' });
+      expect(sent[0].input.ContentDisposition).toBe('attachment; filename="x.svg"');
+    });
+
+    it('propagates S3 errors instead of reporting success', async () => {
+      const { adapter } = setup(async () => {
+        throw new Error('AccessDenied');
       });
-      expect(presigned.uploadUrl).toContain('my-project-bucket');
-      expect(presigned.headers?.['Content-Type']).toBe('application/zip');
+      await expect(adapter.upload({ filename: 'a.txt', data: 'x' })).rejects.toThrow('AccessDenied');
+      await expect(adapter.delete('a.txt')).rejects.toThrow('AccessDenied');
+    });
 
-      const deleted = await s3.delete(res.storageKey);
-      expect(deleted).toBe(true);
+    it('refuses to upload or presign without the AWS pieces', async () => {
+      const bare = new S3StorageAdapter({ bucket: 'b' });
+      await expect(bare.upload({ filename: 'a.txt', data: 'x' })).rejects.toThrow(/configure "client"/);
+      await expect(bare.getPresignedUploadUrl({ storageKey: 'k' })).rejects.toThrow(/presign/);
+      expect(() => new S3StorageAdapter({ bucket: 'b', client: { send: async () => ({}) } })).toThrow(/commands/);
+    });
+
+    it('presigns uploads through the provided signer, covering the content type', async () => {
+      const { adapter, presigned } = setup();
+      const result = await adapter.getPresignedUploadUrl({ storageKey: 'projects/p1/file.zip', contentType: 'application/zip', expiresInSeconds: 60 });
+
+      expect(result.uploadUrl).toBe('https://signed.example/projects/p1/file.zip?X-Amz-Expires=60');
+      expect(result.headers).toEqual({ 'Content-Type': 'application/zip' });
+      expect(presigned[0].command).toBeInstanceOf(PutObjectCommand);
+      expect(presigned[0].command.input).toMatchObject({ Key: 'projects/p1/file.zip', ContentType: 'application/zip' });
+    });
+
+    it('serves signed download URLs for private buckets', async () => {
+      const presign = async (command: any, { expiresIn }: { expiresIn: number }) => `https://signed.example/get/${command.input.Key}?e=${expiresIn}`;
+      const adapter = new S3StorageAdapter({ bucket: 'b', client: { send: async () => ({}) }, commands, presign, signedDownloads: true });
+      expect(await adapter.getDownloadUrl('k')).toBe('https://signed.example/get/k?e=3600');
+    });
+
+    it('rejects path prefixes that escape their directory', async () => {
+      const { adapter } = setup();
+      for (const pathPrefix of ['../other', 'projects/../../x', '/abs', 'a//b', 'bad prefix']) {
+        await expect(adapter.upload({ filename: 'a.txt', data: 'x', pathPrefix })).rejects.toThrow(/Invalid storage path prefix/);
+      }
     });
   });
 
@@ -89,6 +131,7 @@ describe('Storage Adapters', () => {
         bucket: mockStorage,
         bucketName: 'my-app.appspot.com'
       });
+      expect(() => new FirebaseStorageAdapter()).toThrow(/requires a "bucket"/);
 
       const uploadResult = await adapter.upload({
         filename: 'architecture.png',
@@ -213,4 +256,19 @@ describe('Storage Adapters', () => {
       expect(reviewAttachments.length).toBe(0);
     });
   });
+
+  it('stores uploads made through an actor view under the project prefix', async () => {
+    const engine = new CriticalPathEngine({ fileStorage: new InMemoryFileStore() });
+    const project = await engine.createProject({ name: 'Uploads' });
+    const task = await engine.createTask({ projectId: project.id, title: 'T' });
+
+    const attachment = await engine.withActor({ userId: 'u1' }).uploadAttachmentFile({ taskId: task.id, filename: 'notes.txt', data: 'hi', encoding: 'utf-8' });
+    expect(attachment.storageKey?.startsWith(`projects/${project.id}/`)).toBe(true);
+    expect(attachment.uploaderId).toBe('u1');
+
+    await expect(
+      engine.withActor({ userId: 'u1' }).uploadAttachmentFile({ filename: 'orphan.txt', data: 'x' })
+    ).rejects.toThrow(/must reference a project/);
+  });
 });
+

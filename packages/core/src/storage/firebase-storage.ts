@@ -5,7 +5,7 @@ import type {
   PresignedUrlOptions,
   PresignedUploadResult
 } from '../types/index.js';
-import { normalizeUploadData } from './file-storage.js';
+import { buildStorageKey, contentDispositionFor, normalizeUploadData } from './file-storage.js';
 
 export interface FirebaseStorageBucketInterface {
   name?: string;
@@ -90,7 +90,11 @@ export class FirebaseStorageAdapter implements FileStorageAdapter {
   private publicUrlBase?: string;
 
   constructor(config: FirebaseStorageConfig = {}) {
-    this.bucket = config.bucket || new InMemoryFirebaseStorageMock(config.bucketName || 'default-bucket');
+    if (!config.bucket) {
+      // Never fall back to an in-memory mock silently: files would vanish on restart.
+      throw new Error('FirebaseStorageAdapter requires a "bucket" (e.g. getStorage().bucket()). Use InMemoryFirebaseStorageMock in tests.');
+    }
+    this.bucket = config.bucket;
     this.bucketName = config.bucketName || this.bucket.name || 'default-bucket';
     if (this.bucket && config.bucketName && this.bucket.name !== config.bucketName) {
       this.bucket.name = config.bucketName;
@@ -107,10 +111,7 @@ export class FirebaseStorageAdapter implements FileStorageAdapter {
   }
 
   async upload(input: UploadFileInput): Promise<UploadFileResult> {
-    const prefix = input.pathPrefix ? `${input.pathPrefix.replace(/\/+$/, '')}/` : '';
-    const randomId = Math.random().toString(36).substring(2, 9);
-    const sanitizedFilename = input.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storageKey = `${prefix}${Date.now()}_${randomId}_${sanitizedFilename}`;
+    const storageKey = buildStorageKey(input.pathPrefix, input.filename);
 
     const bodyData = normalizeUploadData(input.data, input.encoding, input.mimeType);
     const mimeType = input.mimeType || 'application/octet-stream';
@@ -124,6 +125,7 @@ export class FirebaseStorageAdapter implements FileStorageAdapter {
     await fileRef.save(bodyData, {
       metadata: {
         contentType: mimeType,
+        ...(contentDispositionFor(mimeType, input.filename) ? { contentDisposition: contentDispositionFor(mimeType, input.filename) } : {}),
         metadata: {
           firebaseStorageDownloadTokens: downloadToken
         }
@@ -201,12 +203,7 @@ export class FirebaseStorageAdapter implements FileStorageAdapter {
       };
     }
 
-    // Fallback to direct public upload url
-    return {
-      uploadUrl: this.getPublicUrl(storageKey),
-      storageKey,
-      method: 'PUT',
-      headers: options.contentType ? { 'Content-Type': options.contentType } : {}
-    };
+    // A public URL is not an upload credential; refuse rather than hand out a URL that cannot work.
+    throw new Error('FirebaseStorageAdapter cannot presign uploads: the bucket does not support getSignedUrl.');
   }
 }
