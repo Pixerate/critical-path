@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CriticalPathRouter } from './router.js';
+import { createNextHandler } from './adapters/next.js';
 
 describe('@critical-path/server Router Tests', () => {
   it('handles project creation and retrieval over HTTP Fetch Requests', async () => {
@@ -410,5 +411,111 @@ describe('@critical-path/server Router Tests', () => {
     expect(data.status).toBe('Executing compilation step');
     expect(typeof data.timestamp).toBe('number');
   });
-});
 
+  describe('engine invariants and error mapping', () => {
+    const base = 'http://localhost:3000/api/critical-path';
+    const post = (path: string, body: unknown) =>
+      new Request(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: typeof body === 'string' ? body : JSON.stringify(body)
+      });
+
+    it('rejects dependency cycles created over HTTP with 409', async () => {
+      const router = new CriticalPathRouter();
+      const proj = await router.engine.createProject({ key: 'CYC', name: 'Cycle' });
+      const a = await router.engine.createTask({ projectId: proj.id, title: 'A' });
+      const b = await router.engine.createTask({ projectId: proj.id, title: 'B' });
+
+      const first = await router.handleRequest(post(`/tasks/${a.id}/dependencies`, { dependsOnTaskId: b.id }));
+      expect(first.status).toBe(201);
+
+      const cyclic = await router.handleRequest(post(`/tasks/${b.id}/dependencies`, { dependsOnTaskId: a.id }));
+      expect(cyclic.status).toBe(409);
+      expect((await cyclic.json()).cyclePath).toBeDefined();
+
+      const missing = await router.handleRequest(post(`/tasks/${b.id}/dependencies`, {}));
+      expect(missing.status).toBe(400);
+    });
+
+    it('validates time entries and rolls hours up to the task', async () => {
+      const router = new CriticalPathRouter();
+      const proj = await router.engine.createProject({ key: 'TIME', name: 'Time' });
+      const task = await router.engine.createTask({ projectId: proj.id, title: 'Timed' });
+
+      const negative = await router.handleRequest(post('/time-entries', { taskId: task.id, hours: -3 }));
+      expect(negative.status).toBe(400);
+
+      const ok = await router.handleRequest(post('/time-entries', { taskId: task.id, hours: 2 }));
+      expect(ok.status).toBe(201);
+      expect((await router.engine.getTask(task.id))?.loggedHours).toBe(2);
+    });
+
+    it('deletes projects through the engine, removing their tasks', async () => {
+      const router = new CriticalPathRouter();
+      const proj = await router.engine.createProject({ key: 'GONE', name: 'Gone' });
+      const task = await router.engine.createTask({ projectId: proj.id, title: 'Child' });
+
+      const res = await router.handleRequest(new Request(`${base}/projects/${proj.id}`, { method: 'DELETE' }));
+      expect(res.status).toBe(200);
+      expect(await router.engine.getTask(task.id)).toBeNull();
+    });
+
+    it('returns 400 for malformed JSON and hides internal error messages', async () => {
+      const router = new CriticalPathRouter();
+      const bad = await router.handleRequest(post('/projects', '{not json'));
+      expect(bad.status).toBe(400);
+
+      router.engine.getProjects = async () => {
+        throw new Error('SQLITE_CORRUPT: secret internals');
+      };
+      const originalError = console.error;
+      console.error = () => {};
+      try {
+        const res = await router.handleRequest(new Request(`${base}/projects`));
+        expect(res.status).toBe(500);
+        expect((await res.json()).error).toBe('Internal Server Error');
+      } finally {
+        console.error = originalError;
+      }
+    });
+
+    it('answers CORS preflight requests', async () => {
+      const router = new CriticalPathRouter();
+      const res = await router.handleRequest(new Request(`${base}/tasks`, { method: 'OPTIONS' }));
+      expect(res.status).toBe(204);
+      expect(res.headers.get('Access-Control-Allow-Methods')).toContain('PATCH');
+    });
+  });
+
+  it('createNextHandler supports both callable and destructured exports', async () => {
+    const handler = createNextHandler({});
+    const { GET } = handler;
+    const req = () => new Request('http://localhost:3000/api/critical-path/projects');
+
+    expect((await handler(req())).status).toBe(200);
+    expect((await GET(req())).status).toBe(200);
+  });
+
+  it('updates projects via PATCH without allowing id or timestamp overrides', async () => {
+    const router = new CriticalPathRouter();
+    const proj = await router.engine.createProject({ key: 'UPD', name: 'Before' });
+    const patch = (id: string, body: unknown) =>
+      router.handleRequest(
+        new Request(`http://localhost:3000/api/critical-path/projects/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        })
+      );
+
+    const res = await patch(proj.id, { name: 'After', id: 'hijacked', createdAt: '1999-01-01T00:00:00.000Z' });
+    expect(res.status).toBe(200);
+    const { project } = await res.json();
+    expect(project.id).toBe(proj.id);
+    expect(project.name).toBe('After');
+    expect(project.createdAt).toBe(proj.createdAt);
+
+    expect((await patch('missing', { name: 'x' })).status).toBe(404);
+  });
+});

@@ -41,7 +41,13 @@ export class SQLiteStore implements StorageAdapter {
         throw new Error('SQLiteStore is only available in Node.js environments.');
       }
       try {
-        const nodeSqlite = eval("require('node:sqlite')");
+        // `require` is undefined in ESM, and a static import would break browser bundles of core.
+        const nodeSqlite = (globalThis as any).process?.getBuiltinModule?.('node:sqlite') as
+          | typeof import('node:sqlite')
+          | undefined;
+        if (!nodeSqlite) {
+          throw new Error('process.getBuiltinModule is unavailable (requires Node.js 22.3+)');
+        }
         this.db = new nodeSqlite.DatabaseSync(config.filename || ':memory:');
       } catch (err: any) {
         throw new Error(`Failed to load node:sqlite module: ${err.message}`);

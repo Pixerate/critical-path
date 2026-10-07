@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CriticalPathEngine, InMemoryStore } from '@critical-path/core';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
   ALL_TOOLS,
   TOOL_MAP,
@@ -191,6 +193,53 @@ describe('@critical-path/mcp', () => {
       expect(() => createCriticalPathMcpServer({} as any)).toThrow(
         'Either engine or client must be provided'
       );
+    });
+    async function connect(options: Parameters<typeof createCriticalPathMcpServer>[0]) {
+      const server = createCriticalPathMcpServer(options);
+      const client = new Client({ name: 'test-client', version: '1.0.0' });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      return client;
+    }
+
+    it('refuses to call tools excluded by the tools option', async () => {
+      const project = await engine.createProject({ name: 'Guarded', key: 'GRD' });
+      const task = await engine.createTask({ projectId: project.id, title: 'Keep me' });
+      const client = await connect({ engine, tools: ['list_tasks'] });
+
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name)).toEqual(['list_tasks']);
+
+      await expect(client.callTool({ name: 'delete_task', arguments: { id: task.id } })).rejects.toThrow(
+        /not registered/
+      );
+      expect(await engine.getTask(task.id)).not.toBeNull();
+    });
+
+    it('validates tool arguments and strips undeclared fields', async () => {
+      const source = await engine.createProject({ name: 'Source', key: 'SRC' });
+      const other = await engine.createProject({ name: 'Other', key: 'OTH' });
+      const task = await engine.createTask({ projectId: source.id, title: 'Stay put' });
+      const client = await connect({ engine });
+
+      const invalid = await client.callTool({ name: 'get_task', arguments: { id: 42 } });
+      expect(invalid.isError).toBe(true);
+      expect((invalid.content as Array<{ text: string }>)[0].text).toContain('Invalid arguments');
+
+      await client.callTool({
+        name: 'update_task',
+        arguments: { id: task.id, title: 'Renamed', projectId: other.id }
+      });
+      const updated = await engine.getTask(task.id);
+      expect(updated?.title).toBe('Renamed');
+      expect(updated?.projectId).toBe(source.id);
+    });
+
+    it('marks destructive tools with MCP annotations', async () => {
+      const client = await connect({ engine });
+      const { tools } = await client.listTools();
+      expect(tools.find((t) => t.name === 'delete_task')?.annotations?.destructiveHint).toBe(true);
+      expect(tools.find((t) => t.name === 'list_tasks')?.annotations?.readOnlyHint).toBe(true);
     });
   });
 

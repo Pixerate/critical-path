@@ -1,5 +1,18 @@
 import { CriticalPathEngine, type CriticalPathConfig } from '@critical-path/core';
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+};
+
+class BadRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BadRequestError';
+  }
+}
+
 export class CriticalPathRouter {
   public engine: CriticalPathEngine;
 
@@ -20,6 +33,11 @@ export class CriticalPathRouter {
     const subpath = pathname.replace(/^.*?\/critical-path\/?/, '').replace(/^\/+/, '');
     const segments = subpath.split('/').filter(Boolean);
 
+    // CORS preflight
+    if (method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
+    }
+
     try {
       // Workflows API
       if (segments[0] === 'workflows') {
@@ -30,7 +48,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ workflows });
           }
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const workflow = await this.engine.createWorkflow(body);
             return this.jsonResponse({ workflow }, 201);
           }
@@ -41,7 +59,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ workflow });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const updated = await this.engine.updateWorkflow(workflowId, body);
             if (!updated) return this.jsonResponse({ error: 'Workflow not found' }, 404);
             return this.jsonResponse({ workflow: updated });
@@ -63,7 +81,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ projects });
           }
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const project = await this.engine.createProject(body);
             return this.jsonResponse({ project }, 201);
           }
@@ -107,8 +125,14 @@ export class CriticalPathRouter {
             if (!project) return this.jsonResponse({ error: 'Project not found' }, 404);
             return this.jsonResponse({ project });
           }
+          if (method === 'PATCH' || method === 'PUT') {
+            const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...updates } = await this.readJson(request);
+            const project = await this.engine.updateProject(projectId, updates);
+            if (!project) return this.jsonResponse({ error: 'Project not found' }, 404);
+            return this.jsonResponse({ project });
+          }
           if (method === 'DELETE') {
-            const deleted = await this.engine.store.deleteProject(projectId);
+            const deleted = await this.engine.deleteProject(projectId);
             return this.jsonResponse({ success: deleted });
           }
         }
@@ -126,7 +150,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ tasks });
           }
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const task = await this.engine.createTask(body);
             return this.jsonResponse({ task }, 201);
           }
@@ -136,7 +160,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ comments });
           }
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const comment = await this.engine.addComment({ ...body, taskId });
             return this.jsonResponse({ comment }, 201);
           }
@@ -146,7 +170,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ attachments });
           }
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const attachment = await this.engine.createAttachment({ ...body, taskId });
             return this.jsonResponse({ attachment }, 201);
           }
@@ -156,8 +180,11 @@ export class CriticalPathRouter {
             return this.jsonResponse({ graph });
           }
           if (method === 'POST') {
-            const body = await request.json();
-            const dep = await this.engine.store.addDependency({
+            const body = await this.readJson(request);
+            if (typeof body.dependsOnTaskId !== 'string' || !body.dependsOnTaskId) {
+              return this.jsonResponse({ error: 'dependsOnTaskId is required' }, 400);
+            }
+            const dep = await this.engine.addDependency({
               taskId,
               dependsOnTaskId: body.dependsOnTaskId,
               type: body.type || 'blocking'
@@ -201,7 +228,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ task });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const updated = await this.engine.updateTask(taskId, body);
             if (!updated) return this.jsonResponse({ error: 'Task not found' }, 404);
             return this.jsonResponse({ task: updated });
@@ -222,7 +249,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ teams });
           }
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const team = await this.engine.createTeam(body);
             return this.jsonResponse({ team }, 201);
           }
@@ -233,7 +260,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ team });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const updated = await this.engine.updateTeam(teamId, body);
             if (!updated) return this.jsonResponse({ error: 'Team not found' }, 404);
             return this.jsonResponse({ team: updated });
@@ -256,7 +283,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ containers });
           }
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const container = await this.engine.createContainer(body);
             return this.jsonResponse({ container }, 201);
           }
@@ -267,7 +294,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ container });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const updated = await this.engine.updateContainer(containerId, body);
             if (!updated) return this.jsonResponse({ error: 'Container not found' }, 404);
             return this.jsonResponse({ container: updated });
@@ -290,7 +317,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ deliverables });
           }
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const deliverable = await this.engine.createDeliverable(body);
             return this.jsonResponse({ deliverable }, 201);
           }
@@ -307,7 +334,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ deliverable });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const updated = await this.engine.updateDeliverable(deliverableId, body);
             if (!updated) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
             return this.jsonResponse({ deliverable: updated });
@@ -330,7 +357,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ iterations });
           }
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const iteration = await this.engine.createIteration(body);
             return this.jsonResponse({ iteration }, 201);
           }
@@ -341,7 +368,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ iteration });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const updated = await this.engine.updateIteration(iterationId, body);
             if (!updated) return this.jsonResponse({ error: 'Iteration not found' }, 404);
             return this.jsonResponse({ iteration: updated });
@@ -369,7 +396,7 @@ export class CriticalPathRouter {
         const subResource = segments[2];
         if (commentId && subResource === 'reactions') {
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             if (!body.emoji || !body.userId) {
               return this.jsonResponse({ error: 'emoji and userId are required' }, 400);
             }
@@ -380,7 +407,7 @@ export class CriticalPathRouter {
           if (method === 'DELETE') {
             let body: any = {};
             try {
-              body = await request.json();
+              body = await this.readJson(request);
             } catch {
               // Body may be empty on DELETE, fallback to searchParams
             }
@@ -401,7 +428,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ comments });
           }
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const comment = await this.engine.addComment(body);
             return this.jsonResponse({ comment }, 201);
           }
@@ -412,7 +439,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ comment });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const updated = await this.engine.updateComment(commentId, body);
             if (!updated) return this.jsonResponse({ error: 'Comment not found' }, 404);
             return this.jsonResponse({ comment: updated });
@@ -429,13 +456,13 @@ export class CriticalPathRouter {
         const attachmentId = segments[1];
         if (attachmentId === 'presign') {
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const presigned = await this.engine.getPresignedAttachmentUploadUrl(body);
             return this.jsonResponse({ presigned });
           }
         } else if (attachmentId === 'upload') {
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const attachment = await this.engine.uploadAttachmentFile(body);
             return this.jsonResponse({ attachment }, 201);
           }
@@ -448,7 +475,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ attachments });
           }
           if (method === 'POST') {
-            const body = await request.json();
+            const body = await this.readJson(request);
             const attachment = await this.engine.createAttachment(body);
             return this.jsonResponse({ attachment }, 201);
           }
@@ -474,8 +501,8 @@ export class CriticalPathRouter {
           return this.jsonResponse({ timeEntries: entries });
         }
         if (method === 'POST') {
-          const body = await request.json();
-          const entry = await this.engine.store.logTime(body);
+          const body = await this.readJson(request);
+          const entry = await this.engine.logTime(body);
           return this.jsonResponse({ timeEntry: entry }, 201);
         }
       }
@@ -508,7 +535,7 @@ export class CriticalPathRouter {
       // Agent Status / Telemetry API
       if (segments[0] === 'status') {
         if (method === 'POST') {
-          const body = await request.json();
+          const body = await this.readJson(request);
           const status = typeof body.status === 'string' ? body.status : 'active';
           if (this.engine.events) {
             this.engine.events.publish({
@@ -534,19 +561,40 @@ export class CriticalPathRouter {
 
       return this.jsonResponse({ error: `Route not found: ${method} ${pathname}` }, 404);
     } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'name' in err) {
-        if (err.name === 'WorkflowValidationError') {
-          const wfErr = err as unknown as { message: string; fromStatus?: string; toStatus?: string };
-          return this.jsonResponse({ error: wfErr.message, fromStatus: wfErr.fromStatus, toStatus: wfErr.toStatus }, 400);
-        }
-        if (err.name === 'AttachmentValidationError') {
-          const attErr = err as unknown as { message: string };
-          return this.jsonResponse({ error: attErr.message }, 400);
-        }
-      }
-      const message = err instanceof Error ? err.message : 'Internal Server Error';
-      return this.jsonResponse({ error: message }, 500);
+      return this.errorResponse(err);
     }
+  }
+
+  private async readJson(request: Request): Promise<any> {
+    try {
+      return await request.json();
+    } catch {
+      throw new BadRequestError('Request body must be valid JSON.');
+    }
+  }
+
+  private errorResponse(err: unknown): Response {
+    const name = err && typeof err === 'object' && 'name' in err ? (err as Error).name : undefined;
+    const e = err as Record<string, any>;
+
+    switch (name) {
+      case 'BadRequestError':
+      case 'ValidationError':
+      case 'AttachmentValidationError':
+        return this.jsonResponse({ error: e.message }, 400);
+      case 'WorkflowValidationError':
+        return this.jsonResponse({ error: e.message, fromStatus: e.fromStatus, toStatus: e.toStatus }, 400);
+      case 'CustomFieldValidationError':
+        return this.jsonResponse({ error: e.message, fieldKey: e.fieldKey }, 400);
+      case 'CircularDependencyError':
+        return this.jsonResponse({ error: e.message, cyclePath: e.cyclePath }, 409);
+      case 'NotFoundError':
+        return this.jsonResponse({ error: e.message }, 404);
+    }
+
+    // Unexpected errors may carry internals (SQL, URLs, stack details); log them server-side only.
+    console.error('[CriticalPathRouter] Unhandled error:', err);
+    return this.jsonResponse({ error: 'Internal Server Error' }, 500);
   }
 
   private jsonResponse(data: unknown, status = 200): Response {
@@ -554,9 +602,7 @@ export class CriticalPathRouter {
       status,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        ...CORS_HEADERS
       }
     });
   }

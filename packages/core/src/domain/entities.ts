@@ -29,6 +29,7 @@ import { validateTransition, WorkflowValidationError } from '../utils/workflow.j
 import { resolveStatusDefinition } from '../utils/status.js';
 import { validateCustomFieldValues } from './custom-fields.js';
 import { generateProjectKey } from '../utils/key.js';
+import { ValidationError } from './errors.js';
 
 export abstract class BaseEntity {
   public readonly id: string;
@@ -294,8 +295,8 @@ export class TaskEntity extends BaseEntity {
   public logTime(
     entry: { hours: number; isBillable?: boolean; userId?: string; description?: string }
   ): TimeEntry {
-    if (entry.hours <= 0) {
-      throw new Error('Logged hours must be a positive number.');
+    if (!Number.isFinite(entry.hours) || entry.hours <= 0) {
+      throw new ValidationError('Logged hours must be a positive number.');
     }
 
     this.loggedHours = (this.loggedHours || 0) + entry.hours;

@@ -215,7 +215,8 @@ All endpoints return JSON responses.
 - `GET /api/critical-path/projects` - List all projects.
 - `POST /api/critical-path/projects` - Create project.
 - `GET /api/critical-path/projects/:id` - Get project by ID.
-- `DELETE /api/critical-path/projects/:id` - Delete project.
+- `PATCH /api/critical-path/projects/:id` - Update project (`id`, `createdAt`, `updatedAt` are ignored).
+- `DELETE /api/critical-path/projects/:id` - Delete project and its tasks (publishes `task.deleted` per task, then `project.deleted`).
 
 ### Deliverables
 - `GET /api/critical-path/deliverables?projectId=:id` - List deliverables for project.
@@ -239,6 +240,7 @@ All endpoints return JSON responses.
 - `PATCH /api/critical-path/tasks/:id` - Update task (enforces workflow transition rules; returns HTTP 400 on illegal transitions).
 - `DELETE /api/critical-path/tasks/:id` - Delete task.
 - `GET /api/critical-path/tasks/:id/transitions` - Get allowed next statuses for task.
+- `POST /api/critical-path/tasks/:id/dependencies` - Add dependency `{ dependsOnTaskId, type? }` (HTTP 409 if it would create a cycle, including indirect ones).
 
 ### Activity, Comments & Attachments
 - `GET /api/critical-path/activities?projectId=:id&taskId=:id` - Fetch audit stream.
@@ -256,7 +258,14 @@ All endpoints return JSON responses.
 
 ### Time Tracking
 - `GET /api/critical-path/time-entries?taskId=:id` - Get time logs for task.
-- `POST /api/critical-path/time-entries` - Log time against task.
+- `POST /api/critical-path/time-entries` - Log time against task (hours must be a positive number; rolls up into the task's `loggedHours`).
+
+### Error Responses
+- `400` - Malformed JSON body, `ValidationError`, illegal workflow transition, custom field or attachment validation failure.
+- `404` - Unknown route or `NotFoundError`.
+- `409` - `CircularDependencyError` (response includes `cyclePath`).
+- `500` - Unexpected error. The response body is always `Internal Server Error`; the underlying error is logged server-side.
+- `OPTIONS` preflight requests return `204` with CORS headers.
 
 ---
 
@@ -427,6 +436,7 @@ Critical Path provides three built-in storage adapter implementations and an ext
 ### 2. `SQLiteStore`
 - Embedded relational database powered by native Node.js SQLite (`node:sqlite`).
 - Automatic table initialization for projects, tasks, sprints, comments, activities, time entries, dependencies, and webhooks.
+- Loads `node:sqlite` via `process.getBuiltinModule`, so it works in plain Node ESM and stays out of browser bundles. No native addon (such as `better-sqlite3`) is required.
 
 ```ts
 import { SQLiteStore } from '@critical-path/core';

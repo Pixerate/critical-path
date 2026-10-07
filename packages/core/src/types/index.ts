@@ -409,6 +409,7 @@ export interface Webhook {
 export type WebhookEvent =
   | 'project.created'
   | 'project.updated'
+  | 'project.deleted'
   | 'task.created'
   | 'task.updated'
   | 'task.deleted'

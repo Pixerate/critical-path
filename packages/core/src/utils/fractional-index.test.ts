@@ -120,6 +120,43 @@ describe('fractional-index', () => {
         current = next;
       }
     });
+
+    it('handles repeated insertions directly after the same lower bound', () => {
+      const lower = 'a0';
+      let upper = 'a1';
+
+      // Repeatedly drop a card just below the first card
+      for (let i = 0; i < 50; i++) {
+        const next = generateKeyBetween(lower, upper);
+        expect(lower < next).toBe(true);
+        expect(next < upper).toBe(true);
+        upper = next;
+      }
+    });
+
+    it('keeps keys strictly ordered under random insertions', () => {
+      const keys = ['a0', 'a1'];
+      let seed = 42;
+      const random = () => {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return seed / 2147483648;
+      };
+
+      for (let i = 0; i < 500; i++) {
+        const idx = Math.floor(random() * (keys.length + 1));
+        const next = generateKeyBetween(keys[idx - 1] ?? null, keys[idx] ?? null);
+        keys.splice(idx, 0, next);
+      }
+
+      for (let i = 1; i < keys.length; i++) {
+        expect(keys[i - 1] < keys[i]).toBe(true);
+      }
+    });
+
+    it('throws when the lower bound does not sort before the upper bound', () => {
+      expect(() => generateKeyBetween('a1', 'a0')).toThrow(RangeError);
+      expect(() => generateKeyBetween('a0', 'a0')).toThrow(RangeError);
+    });
   });
 
   describe('generateNKeysBetween', () => {

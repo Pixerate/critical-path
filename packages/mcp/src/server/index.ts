@@ -12,7 +12,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { CriticalPathEngine } from '@critical-path/core';
 import type { CriticalPathClient } from '@critical-path/client';
-import { ALL_TOOLS, TOOL_MAP, type BackendContext } from '../tools/definitions.js';
+import { ALL_TOOLS, parseToolArgs, type BackendContext } from '../tools/definitions.js';
 
 export interface CriticalPathMcpServerOptions {
   engine?: CriticalPathEngine;
@@ -34,6 +34,7 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
   const activeTools = options.tools
     ? ALL_TOOLS.filter((t) => options.tools!.includes(t.name))
     : ALL_TOOLS;
+  const activeToolMap = new Map(activeTools.map((tool) => [tool.name, tool]));
 
   const server = new Server(
     {
@@ -54,8 +55,14 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
     return {
       tools: activeTools.map((tool) => ({
         name: tool.name,
+        title: tool.title,
         description: tool.description,
-        inputSchema: tool.inputSchema
+        inputSchema: tool.inputSchema,
+        annotations: {
+          title: tool.title,
+          readOnlyHint: tool.annotations?.readOnlyHint ?? false,
+          destructiveHint: tool.annotations?.requiresConfirmation ?? false
+        }
       }))
     };
   });
@@ -63,14 +70,15 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
   // 2. Tool Execution
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    const tool = TOOL_MAP.get(name);
+    // Look up only the tools this server exposes, so a filtered-out tool cannot be called by name.
+    const tool = activeToolMap.get(name);
 
     if (!tool) {
       throw new McpError(ErrorCode.MethodNotFound, `Tool "${name}" is not registered on this MCP server.`);
     }
 
     try {
-      const result = await tool.execute(args || {}, target);
+      const result = await tool.execute(parseToolArgs(tool, args), target);
       return {
         content: [
           {

@@ -30,6 +30,9 @@ const handler = createNextHandler({
 });
 
 export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE, handler as OPTIONS };
+
+// Equivalent: the handler also exposes one property per method
+// export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler({ ... });
 ```
 
 ---
@@ -50,6 +53,19 @@ export const PATCH = handler.PATCH;
 export const DELETE = handler.DELETE;
 export const OPTIONS = handler.OPTIONS;
 ```
+
+---
+
+## ⚠️ Error Responses
+
+| Status | When |
+| :--- | :--- |
+| `400` | Malformed JSON, `ValidationError`, workflow transition or custom field validation failures |
+| `404` | Unknown route or `NotFoundError` |
+| `409` | `CircularDependencyError` (body includes `cyclePath`) |
+| `500` | Unexpected errors. The body is always `{ "error": "Internal Server Error" }`; the real error is logged with `console.error`. |
+
+`OPTIONS` preflight requests return `204` with CORS headers.
 
 ---
 
