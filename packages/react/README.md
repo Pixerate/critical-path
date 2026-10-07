@@ -178,6 +178,11 @@ export function ProjectTimelineView({ projectId }: { projectId: string }) {
 
 ---
 
+## 🧹 Stale Requests & Server Components
+
+Data hooks (`useTasks`, `useProjects`, `useTaskActivity`, `useTimelineLadder`, ...) abort their in-flight request when their inputs change or the component unmounts, so a slow response for a previous project or task can never overwrite newer data. The package is marked `'use client'`, so you can import the hooks from files used by Next.js server components and render them in client components.
+
+
 ## 📄 License
 
 MIT © [Critical Path](https://github.com/Pixerate/Critical-Path)

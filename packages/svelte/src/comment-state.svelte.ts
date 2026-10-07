@@ -2,12 +2,14 @@
 import type { CreateCommentBody, UpdateCommentBody } from '@critical-path/core/schemas';
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Comment } from '@critical-path/core';
+import { LatestRequest } from './latest-request.js';
 
 export interface ThreadedComment extends Comment {
   replies: ThreadedComment[];
 }
 
 export class CommentState {
+  #fetchRequest = new LatestRequest();
   data = $state<Comment[]>([]);
   loading = $state<boolean>(false);
   error = $state<Error | null>(null);
@@ -35,6 +37,7 @@ export class CommentState {
   constructor(private client: CriticalPathClient, public taskId?: string) {}
 
   async fetch(taskId?: string) {
+    const { api, signal } = this.#fetchRequest.begin(this.client);
     const targetTaskId = taskId || this.taskId;
     if (!targetTaskId) {
       this.data = [];
@@ -44,11 +47,13 @@ export class CommentState {
     this.loading = true;
     this.error = null;
     try {
-      this.data = await this.client.getComments(targetTaskId);
+      this.data = await api.getComments(targetTaskId);
+      if (signal.aborted) return;
     } catch (err) {
+      if (signal.aborted) return;
       this.error = err instanceof Error ? err : new Error(String(err));
     } finally {
-      this.loading = false;
+      if (!signal.aborted) this.loading = false;
     }
   }
 
@@ -122,6 +127,11 @@ export class CommentState {
       this.error = errorObj;
       throw errorObj;
     }
+  }
+
+  /** Cancels in-flight requests, e.g. from a component's onDestroy. */
+  destroy() {
+    this.#fetchRequest.cancel();
   }
 }
 

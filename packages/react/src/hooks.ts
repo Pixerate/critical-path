@@ -1,3 +1,5 @@
+'use client';
+
 import type { CreateAttachmentBody, CreateCommentBody, CreateTaskBody, UpdateCommentBody, UpdateDeliverableBody, UpdateTaskBody } from '@critical-path/core/schemas';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type {
@@ -36,21 +38,28 @@ export function useWorkflows() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchWorkflows = useCallback(async () => {
+  const fetchWorkflows = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     try {
       setLoading(true);
-      const data = await client.getWorkflows();
+      const data = await api.getWorkflows();
+      if (signal?.aborted) return;
       setWorkflows(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client]);
 
   useEffect(() => {
-    fetchWorkflows();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchWorkflows(controller.signal);
+    return () => controller.abort();
   }, [fetchWorkflows]);
 
   const createWorkflow = async (input: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -88,7 +97,7 @@ export function useWorkflows() {
     }
   };
 
-  return { workflows, loading, error, refresh: fetchWorkflows, createWorkflow, updateWorkflow, deleteWorkflow };
+  return { workflows, loading, error, refresh: () => fetchWorkflows(), createWorkflow, updateWorkflow, deleteWorkflow };
 }
 
 export function useTaskTransitions(taskId?: string) {
@@ -97,28 +106,35 @@ export function useTaskTransitions(taskId?: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchTransitions = useCallback(async () => {
+  const fetchTransitions = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     if (!taskId) {
       setAllowedTransitions([]);
       return;
     }
     try {
       setLoading(true);
-      const data = await client.getAllowedTaskTransitions(taskId);
+      const data = await api.getAllowedTaskTransitions(taskId);
+      if (signal?.aborted) return;
       setAllowedTransitions(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client, taskId]);
 
   useEffect(() => {
-    fetchTransitions();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchTransitions(controller.signal);
+    return () => controller.abort();
   }, [fetchTransitions]);
 
-  return { allowedTransitions, loading, error, refresh: fetchTransitions };
+  return { allowedTransitions, loading, error, refresh: () => fetchTransitions() };
 }
 
 export function useProjects() {
@@ -127,21 +143,28 @@ export function useProjects() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchProjects = useCallback(async () => {
+  const fetchProjects = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     try {
       setLoading(true);
-      const data = await client.getProjects();
+      const data = await api.getProjects();
+      if (signal?.aborted) return;
       setProjects(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client]);
 
   useEffect(() => {
-    fetchProjects();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchProjects(controller.signal);
+    return () => controller.abort();
   }, [fetchProjects]);
 
   const createProject = async (input: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -168,7 +191,7 @@ export function useProjects() {
     }
   };
 
-  return { projects, loading, error, refresh: fetchProjects, createProject };
+  return { projects, loading, error, refresh: () => fetchProjects(), createProject };
 }
 
 export function useTasks(projectId?: string) {
@@ -177,16 +200,19 @@ export function useTasks(projectId?: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchTasks = useCallback(async () => {
+  const fetchTasks = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     try {
       setLoading(true);
-      const data = await client.getTasks(projectId);
+      const data = await api.getTasks(projectId);
+      if (signal?.aborted) return;
       setTasks(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client, projectId]);
 
@@ -194,7 +220,11 @@ export function useTasks(projectId?: string) {
   const tempToRealIdMapRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
-    fetchTasks();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchTasks(controller.signal);
+    return () => controller.abort();
   }, [fetchTasks]);
 
   const createTask = async (input: CreateTaskBody) => {
@@ -353,7 +383,7 @@ export function useTasks(projectId?: string) {
     }
   };
 
-  return { tasks, loading, error, refresh: fetchTasks, createTask, updateTask, updateTaskStatus, deleteTask };
+  return { tasks, loading, error, refresh: () => fetchTasks(), createTask, updateTask, updateTaskStatus, deleteTask };
 }
 
 export interface UseKanbanOptions {
@@ -424,7 +454,8 @@ export function useComments(taskId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchComments = useCallback(async () => {
+  const fetchComments = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     if (!taskId) {
       setComments([]);
       setLoading(false);
@@ -432,18 +463,24 @@ export function useComments(taskId: string) {
     }
     try {
       setLoading(true);
-      const data = await client.getComments(taskId);
+      const data = await api.getComments(taskId);
+      if (signal?.aborted) return;
       setComments(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client, taskId]);
 
   useEffect(() => {
-    fetchComments();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchComments(controller.signal);
+    return () => controller.abort();
   }, [fetchComments]);
 
   const addComment = async (input: Omit<CreateCommentBody, 'taskId'>) => {
@@ -541,7 +578,7 @@ export function useComments(taskId: string) {
     threads,
     loading,
     error,
-    refresh: fetchComments,
+    refresh: () => fetchComments(),
     addComment,
     updateComment,
     deleteComment,
@@ -558,21 +595,28 @@ export function useAttachments(filter?: { taskId?: string; projectId?: string; c
 
   const filterKey = JSON.stringify(filter || {});
 
-  const fetchAttachments = useCallback(async () => {
+  const fetchAttachments = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     try {
       setLoading(true);
-      const data = await client.getAttachments(filter);
+      const data = await api.getAttachments(filter);
+      if (signal?.aborted) return;
       setAttachments(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client, filterKey]);
 
   useEffect(() => {
-    fetchAttachments();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchAttachments(controller.signal);
+    return () => controller.abort();
   }, [fetchAttachments]);
 
   const createAttachment = async (input: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -602,7 +646,7 @@ export function useAttachments(filter?: { taskId?: string; projectId?: string; c
     attachments,
     loading,
     error,
-    refresh: fetchAttachments,
+    refresh: () => fetchAttachments(),
     createAttachment,
     deleteAttachment
   };
@@ -614,7 +658,8 @@ export function useDeliverables(projectId?: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchDeliverables = useCallback(async () => {
+  const fetchDeliverables = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     if (!projectId) {
       setDeliverables([]);
       setLoading(false);
@@ -622,18 +667,24 @@ export function useDeliverables(projectId?: string) {
     }
     try {
       setLoading(true);
-      const data = await client.getDeliverables(projectId);
+      const data = await api.getDeliverables(projectId);
+      if (signal?.aborted) return;
       setDeliverables(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client, projectId]);
 
   useEffect(() => {
-    fetchDeliverables();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchDeliverables(controller.signal);
+    return () => controller.abort();
   }, [fetchDeliverables]);
 
   const createDeliverable = async (input: CreateDeliverableInput) => {
@@ -675,7 +726,7 @@ export function useDeliverables(projectId?: string) {
     deliverables,
     loading,
     error,
-    refresh: fetchDeliverables,
+    refresh: () => fetchDeliverables(),
     createDeliverable,
     updateDeliverable,
     deleteDeliverable
@@ -688,7 +739,8 @@ export function useDeliverableSummary(deliverableId?: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchSummary = useCallback(async () => {
+  const fetchSummary = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     if (!deliverableId) {
       setSummary(null);
       setLoading(false);
@@ -696,25 +748,31 @@ export function useDeliverableSummary(deliverableId?: string) {
     }
     try {
       setLoading(true);
-      const data = await client.getDeliverableSummary(deliverableId);
+      const data = await api.getDeliverableSummary(deliverableId);
+      if (signal?.aborted) return;
       setSummary(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client, deliverableId]);
 
   useEffect(() => {
-    fetchSummary();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchSummary(controller.signal);
+    return () => controller.abort();
   }, [fetchSummary]);
 
   return {
     summary,
     loading,
     error,
-    refresh: fetchSummary
+    refresh: () => fetchSummary()
   };
 }
 
@@ -781,7 +839,8 @@ export function useTaskActivity(taskId?: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchActivity = useCallback(async () => {
+  const fetchActivity = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     if (!taskId) {
       setComments([]);
       setAttachments([]);
@@ -791,21 +850,27 @@ export function useTaskActivity(taskId?: string) {
     try {
       setLoading(true);
       const [fetchedComments, fetchedAttachments] = await Promise.all([
-        client.getComments(taskId),
-        client.getAttachments({ taskId })
+        api.getComments(taskId),
+        api.getAttachments({ taskId })
       ]);
+      if (signal?.aborted) return;
       setComments(fetchedComments);
       setAttachments(fetchedAttachments);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client, taskId]);
 
   useEffect(() => {
-    fetchActivity();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchActivity(controller.signal);
+    return () => controller.abort();
   }, [fetchActivity]);
 
   const threads = useMemo<ThreadedCommentWithAttachments[]>(() => {
@@ -969,7 +1034,7 @@ export function useTaskActivity(taskId?: string) {
     standaloneAttachments,
     loading,
     error,
-    refresh: fetchActivity,
+    refresh: () => fetchActivity(),
     addComment,
     addAttachment,
     deleteComment,
@@ -985,7 +1050,8 @@ export function useCriticalPath(projectId: string | undefined) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchCriticalPath = useCallback(async () => {
+  const fetchCriticalPath = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     if (!projectId) {
       setAnalysis(null);
       setLoading(false);
@@ -993,25 +1059,31 @@ export function useCriticalPath(projectId: string | undefined) {
     }
     try {
       setLoading(true);
-      const data = await client.calculateCriticalPath(projectId);
+      const data = await api.calculateCriticalPath(projectId);
+      if (signal?.aborted) return;
       setAnalysis(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client, projectId]);
 
   useEffect(() => {
-    fetchCriticalPath();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchCriticalPath(controller.signal);
+    return () => controller.abort();
   }, [fetchCriticalPath]);
 
   return {
     analysis,
     loading,
     error,
-    refresh: fetchCriticalPath
+    refresh: () => fetchCriticalPath()
   };
 }
 
@@ -1025,7 +1097,8 @@ export function useTimelineLadder(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchLadder = useCallback(async () => {
+  const fetchLadder = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     if (!projectId) {
       setLadder(null);
       setLoading(false);
@@ -1033,21 +1106,27 @@ export function useTimelineLadder(
     }
     try {
       setLoading(true);
-      const data = await client.getTimelineLadder(projectId, {
+      const data = await api.getTimelineLadder(projectId, {
         ...initialOptions,
         level
       });
+      if (signal?.aborted) return;
       setLadder(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client, projectId, level, initialOptions.containerId, initialOptions.iterationId]);
 
   useEffect(() => {
-    fetchLadder();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchLadder(controller.signal);
+    return () => controller.abort();
   }, [fetchLadder]);
 
   return {
@@ -1059,7 +1138,7 @@ export function useTimelineLadder(
     concrete: ladder?.concrete ?? null,
     loading,
     error,
-    refresh: fetchLadder
+    refresh: () => fetchLadder()
   };
 }
 
@@ -1069,7 +1148,8 @@ export function useTaskLadder(taskId: string | undefined) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchTaskLadder = useCallback(async () => {
+  const fetchTaskLadder = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     if (!taskId) {
       setTaskLadder(null);
       setLoading(false);
@@ -1077,18 +1157,24 @@ export function useTaskLadder(taskId: string | undefined) {
     }
     try {
       setLoading(true);
-      const data = await client.getTaskLadder(taskId);
+      const data = await api.getTaskLadder(taskId);
+      if (signal?.aborted) return;
       setTaskLadder(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client, taskId]);
 
   useEffect(() => {
-    fetchTaskLadder();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchTaskLadder(controller.signal);
+    return () => controller.abort();
   }, [fetchTaskLadder]);
 
   return {
@@ -1099,7 +1185,7 @@ export function useTaskLadder(taskId: string | undefined) {
     metrics: taskLadder?.metrics ?? null,
     loading,
     error,
-    refresh: fetchTaskLadder
+    refresh: () => fetchTaskLadder()
   };
 }
 
@@ -1110,7 +1196,8 @@ export function useTaskMetrics(taskId: string | undefined) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchMetrics = useCallback(async () => {
+  const fetchMetrics = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     if (!taskId) {
       setMetrics(null);
       setHistory(null);
@@ -1120,21 +1207,27 @@ export function useTaskMetrics(taskId: string | undefined) {
     try {
       setLoading(true);
       const [m, h] = await Promise.all([
-        client.getTaskMetrics(taskId),
-        client.getTaskProgressHistory(taskId)
+        api.getTaskMetrics(taskId),
+        api.getTaskProgressHistory(taskId)
       ]);
+      if (signal?.aborted) return;
       setMetrics(m);
       setHistory(h);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [client, taskId]);
 
   useEffect(() => {
-    fetchMetrics();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchMetrics(controller.signal);
+    return () => controller.abort();
   }, [fetchMetrics]);
 
   return {
@@ -1147,7 +1240,7 @@ export function useTaskMetrics(taskId: string | undefined) {
     curveProfile: history?.curveProfile ?? null,
     loading,
     error,
-    refresh: fetchMetrics
+    refresh: () => fetchMetrics()
   };
 }
 
@@ -1163,21 +1256,24 @@ export function useWorkloadDistribution(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchWorkload = useCallback(async () => {
+  const fetchWorkload = useCallback(async (signal?: AbortSignal) => {
+    const api = signal ? client.with({ signal }) : client;
     try {
       setLoading(true);
-      const data = await client.getWorkloadDistribution(projectId, {
+      const data = await api.getWorkloadDistribution(projectId, {
         ...initialOptions,
         interval,
         groupBy,
         metric
       });
+      if (signal?.aborted) return;
       setWorkload(data);
       setError(null);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [
     client,
@@ -1191,7 +1287,11 @@ export function useWorkloadDistribution(
   ]);
 
   useEffect(() => {
-    fetchWorkload();
+    // Abort the in-flight request when inputs change or the component unmounts, so a slow
+    // response for old inputs can never overwrite newer data.
+    const controller = new AbortController();
+    fetchWorkload(controller.signal);
+    return () => controller.abort();
   }, [fetchWorkload]);
 
   return {
@@ -1210,7 +1310,7 @@ export function useWorkloadDistribution(
     averageUtilization: workload?.averageUtilization,
     loading,
     error,
-    refresh: fetchWorkload
+    refresh: () => fetchWorkload()
   };
 }
 

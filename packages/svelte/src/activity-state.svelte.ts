@@ -2,6 +2,7 @@
 import type { CreateAttachmentBody, CreateCommentBody } from '@critical-path/core/schemas';
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Comment, Attachment } from '@critical-path/core';
+import { LatestRequest } from './latest-request.js';
 
 export interface ThreadedCommentWithAttachments extends Comment {
   attachments: Attachment[];
@@ -9,6 +10,7 @@ export interface ThreadedCommentWithAttachments extends Comment {
 }
 
 export class TaskActivityState {
+  #fetchRequest = new LatestRequest();
   comments = $state<Comment[]>([]);
   attachments = $state<Attachment[]>([]);
   loading = $state<boolean>(false);
@@ -56,6 +58,7 @@ export class TaskActivityState {
   constructor(private client: CriticalPathClient, public taskId?: string) {}
 
   async fetch(taskId?: string) {
+    const { api, signal } = this.#fetchRequest.begin(this.client);
     const targetTaskId = taskId || this.taskId;
     if (!targetTaskId) {
       this.comments = [];
@@ -67,15 +70,17 @@ export class TaskActivityState {
     this.error = null;
     try {
       const [comments, attachments] = await Promise.all([
-        this.client.getComments(targetTaskId),
-        this.client.getAttachments({ taskId: targetTaskId })
+        api.getComments(targetTaskId),
+        api.getAttachments({ taskId: targetTaskId })
       ]);
+      if (signal.aborted) return;
       this.comments = comments;
       this.attachments = attachments;
     } catch (err) {
+      if (signal.aborted) return;
       this.error = err instanceof Error ? err : new Error(String(err));
     } finally {
-      this.loading = false;
+      if (!signal.aborted) this.loading = false;
     }
   }
 
@@ -185,6 +190,11 @@ export class TaskActivityState {
       this.error = errorObj;
       throw errorObj;
     }
+  }
+
+  /** Cancels in-flight requests, e.g. from a component's onDestroy. */
+  destroy() {
+    this.#fetchRequest.cancel();
   }
 }
 

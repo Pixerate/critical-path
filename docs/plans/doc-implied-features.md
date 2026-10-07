@@ -218,7 +218,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - **Path ids:** all encoded.
 - **New methods:** `getWebhook`, `getContainer` and `getIteration`.
 - **Coverage test:** `routes.test.ts` maps every OpenAPI route to a client method.
-- **Follow-up:** have the React and Svelte data hooks use `with({ signal })` to cancel stale requests on unmount or when the project changes.
+- **Done (follow-up):** React data hooks abort stale requests on input change and unmount; Svelte state classes abort superseded fetches and expose `destroy()`. `@critical-path/react` is marked `'use client'`.
 
 ---
 

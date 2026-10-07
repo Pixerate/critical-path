@@ -2,8 +2,10 @@
 import type { UpdateDeliverableBody } from '@critical-path/core/schemas';
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Deliverable, DeliverableSummary, CreateDeliverableInput } from '@critical-path/core';
+import { LatestRequest } from './latest-request.js';
 
 export class DeliverableState {
+  #fetchRequest = new LatestRequest();
   data = $state<Deliverable[]>([]);
   loading = $state<boolean>(false);
   error = $state<Error | null>(null);
@@ -11,6 +13,7 @@ export class DeliverableState {
   constructor(private client: CriticalPathClient, public projectId?: string) {}
 
   async fetch(projectId?: string) {
+    const { api, signal } = this.#fetchRequest.begin(this.client);
     if (projectId) {
       this.projectId = projectId;
     }
@@ -19,11 +22,13 @@ export class DeliverableState {
     this.loading = true;
     this.error = null;
     try {
-      this.data = await this.client.getDeliverables(this.projectId);
+      this.data = await api.getDeliverables(this.projectId);
+      if (signal.aborted) return;
     } catch (err) {
+      if (signal.aborted) return;
       this.error = err instanceof Error ? err : new Error(String(err));
     } finally {
-      this.loading = false;
+      if (!signal.aborted) this.loading = false;
     }
   }
 
@@ -69,6 +74,11 @@ export class DeliverableState {
 
   async getSummary(deliverableId: string): Promise<DeliverableSummary> {
     return this.client.getDeliverableSummary(deliverableId);
+  }
+
+  /** Cancels in-flight requests, e.g. from a component's onDestroy. */
+  destroy() {
+    this.#fetchRequest.cancel();
   }
 }
 

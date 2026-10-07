@@ -1,5 +1,6 @@
 /// <reference types="svelte" />
 import type { CriticalPathClient } from '@critical-path/client';
+import { LatestRequest } from './latest-request.js';
 import type {
   TimelineLadder,
   TimelineLadderOptions,
@@ -9,6 +10,7 @@ import type {
 } from '@critical-path/core';
 
 export class TimelineLadderState {
+  #fetchRequest = new LatestRequest();
   data = $state<TimelineLadder | null>(null);
   level = $state<AbstractionLevel>('all');
   loading = $state<boolean>(false);
@@ -34,18 +36,26 @@ export class TimelineLadderState {
   }
 
   async fetch(options?: TimelineLadderOptions) {
+    const { api, signal } = this.#fetchRequest.begin(this.client);
     this.loading = true;
     this.error = null;
     try {
-      this.data = await this.client.getTimelineLadder(this.projectId, {
+      this.data = await api.getTimelineLadder(this.projectId, {
         level: this.level,
         ...options
       });
+      if (signal.aborted) return;
     } catch (err) {
+      if (signal.aborted) return;
       this.error = err instanceof Error ? err : new Error(String(err));
     } finally {
-      this.loading = false;
+      if (!signal.aborted) this.loading = false;
     }
+  }
+
+  /** Cancels in-flight requests, e.g. from a component's onDestroy. */
+  destroy() {
+    this.#fetchRequest.cancel();
   }
 }
 
