@@ -18,6 +18,7 @@ import type {
   CreateDeliverableInput
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
+import type { WebhookOutboxEntry, WebhookOutboxStore } from '../webhooks/outbox.js';
 
 /**
  * SQLite returns NULL columns as `null`, while domain objects leave unset optional fields out.
@@ -42,7 +43,7 @@ export interface SQLiteStoreConfig {
   db?: DatabaseSync;
 }
 
-export class SQLiteStore implements StorageAdapter {
+export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
   private db: DatabaseSync;
 
   constructor(config: SQLiteStoreConfig = {}) {
@@ -329,6 +330,15 @@ export class SQLiteStore implements StorageAdapter {
       }
     }
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_projects_tenant ON projects (tenantId)');
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS webhook_outbox (
+        key TEXT PRIMARY KEY,
+        job TEXT NOT NULL,
+        runAt INTEGER NOT NULL,
+        leaseUntil INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_webhook_outbox_run_at ON webhook_outbox (runAt);
+    `);
   }
 
   private columnCache = new Map<string, Set<string>>();
@@ -1383,6 +1393,36 @@ export class SQLiteStore implements StorageAdapter {
   async deleteWebhook(id: string): Promise<boolean> {
     const result = this.db.prepare('DELETE FROM webhooks WHERE id = ?').run(id);
     return Number(result.changes) > 0;
+  }
+
+  // --- Webhook outbox ---
+  async putWebhookJob(entry: WebhookOutboxEntry): Promise<void> {
+    this.db
+      .prepare('INSERT OR REPLACE INTO webhook_outbox (key, job, runAt, leaseUntil) VALUES (?, ?, ?, NULL)')
+      .run(entry.key, JSON.stringify(entry.job), entry.runAt);
+  }
+
+  async claimWebhookJobs(now: number, limit: number, leaseMs: number): Promise<WebhookOutboxEntry[]> {
+    // IMMEDIATE takes the write lock up front, so workers in other processes cannot claim the same rows.
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const rows = this.db
+        .prepare(
+          'SELECT key, job, runAt FROM webhook_outbox WHERE runAt <= ? AND (leaseUntil IS NULL OR leaseUntil <= ?) ORDER BY runAt LIMIT ?'
+        )
+        .all(now, now, limit) as Array<{ key: string; job: string; runAt: number }>;
+      const lease = this.db.prepare('UPDATE webhook_outbox SET leaseUntil = ? WHERE key = ?');
+      for (const row of rows) lease.run(now + leaseMs, row.key);
+      this.db.exec('COMMIT');
+      return rows.map((row) => ({ key: row.key, job: JSON.parse(row.job), runAt: Number(row.runAt) }));
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  async deleteWebhookJob(key: string): Promise<void> {
+    this.db.prepare('DELETE FROM webhook_outbox WHERE key = ?').run(key);
   }
 
   private mapWebhook(row: any): Webhook {

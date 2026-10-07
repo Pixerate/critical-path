@@ -896,6 +896,7 @@ describe('@critical-path/server Router Tests', () => {
     const delivered: string[] = [];
     const router = new CriticalPathRouter({
       webhookDelivery: {
+        resolveHost: async () => ['93.184.215.14'],
         fetch: (async (_url: string, init: RequestInit) => {
           delivered.push(JSON.parse(init.body as string).event);
           return new Response(null, { status: 204 });

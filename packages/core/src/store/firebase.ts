@@ -17,6 +17,7 @@ import type {
   CreateDeliverableInput
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
+import type { WebhookOutboxEntry, WebhookOutboxStore } from '../webhooks/outbox.js';
 
 export interface FirestoreDBInterface {
   collection(name: string): {
@@ -84,6 +85,7 @@ export class InMemoryFirestoreMock implements FirestoreDBInterface {
             const docs = Array.from(colMap.entries())
               .filter(([_, data]) => {
                 if (op === '==') return data[field] === value;
+                if (op === '<=') return data[field] <= value;
                 return true;
               })
               .map(([id, data]) => ({
@@ -125,7 +127,7 @@ export function sanitizeFirestoreData<T>(obj: T): T {
   return clean as T;
 }
 
-export class FirebaseStore implements StorageAdapter {
+export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
   private db: FirestoreDBInterface;
 
   constructor(config: FirebaseStoreConfig) {
@@ -656,5 +658,32 @@ export class FirebaseStore implements StorageAdapter {
     if (!doc.exists) return false;
     await ref.delete();
     return true;
+  }
+
+  // --- Webhook outbox ---
+  // Claims are not transactional: two workers polling at once can both deliver a job. Delivery is
+  // at-least-once anyway, so receivers de-duplicate on X-CriticalPath-Delivery.
+  async putWebhookJob(entry: WebhookOutboxEntry): Promise<void> {
+    await this.db
+      .collection('webhook_outbox')
+      .doc(encodeURIComponent(entry.key))
+      .set(sanitizeFirestoreData({ key: entry.key, job: JSON.stringify(entry.job), runAt: entry.runAt, leaseUntil: 0 }));
+  }
+
+  async claimWebhookJobs(now: number, limit: number, leaseMs: number): Promise<WebhookOutboxEntry[]> {
+    const snap = await this.db.collection('webhook_outbox').where('runAt', '<=', now).get();
+    const due = snap.docs
+      .map((doc) => doc.data() as { key: string; job: string; runAt: number; leaseUntil: number })
+      .filter((d) => d.leaseUntil <= now)
+      .sort((a, b) => a.runAt - b.runAt)
+      .slice(0, limit);
+    await Promise.all(
+      due.map((d) => this.db.collection('webhook_outbox').doc(encodeURIComponent(d.key)).set({ leaseUntil: now + leaseMs }, { merge: true }))
+    );
+    return due.map((d) => ({ key: d.key, job: JSON.parse(d.job), runAt: d.runAt }));
+  }
+
+  async deleteWebhookJob(key: string): Promise<void> {
+    await this.db.collection('webhook_outbox').doc(encodeURIComponent(key)).delete();
   }
 }

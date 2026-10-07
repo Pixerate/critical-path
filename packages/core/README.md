@@ -201,7 +201,7 @@ const { webhook, secret } = await engine.createWebhook({
 // Receivers: verifyWebhookSignature({ secret, body, timestamp, signature })
 ```
 
-Every domain event can be delivered. Deliveries carry `X-CriticalPath-Signature` (HMAC-SHA256 over `"<timestamp>.<body>"`), time out after 10s, and retry with exponential backoff (`webhookDelivery` options). The default queue is in-process; pass `webhookDelivery.queue` for durable delivery and call `engine.webhooks.deliver(job)` from your worker. Secrets are only returned on creation.
+Every domain event can be delivered. Deliveries carry `X-CriticalPath-Signature` (HMAC-SHA256 over `"<timestamp>.<body>"`), time out after 10s, and retry with exponential backoff (`webhookDelivery` options). The default queue is in-process. For durable delivery, pass `new OutboxWebhookQueue(store)` as `webhookDelivery.queue` and call `outbox.start()` (or `processDue()` from a cron job), or bring your own queue that calls `engine.webhooks.deliver(job)`. Targets resolving to private addresses are refused before every attempt, and redirects are not followed. Secrets are only returned on creation.
 
 #### Attributing Mutations to a User (`withActor`)
 

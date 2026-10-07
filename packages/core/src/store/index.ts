@@ -18,6 +18,7 @@ import type {
   CreateDeliverableInput
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
+import type { WebhookOutboxEntry, WebhookOutboxStore } from '../webhooks/outbox.js';
 import {
   matchesActivityQuery,
   matchesTaskQuery,
@@ -158,7 +159,7 @@ export interface StorageAdapter
  * Map-backed store for development and tests. Reads and writes are deep-copied, so it behaves
  * like a database: returned records can be mutated freely without affecting stored state.
  */
-export class InMemoryStore implements StorageAdapter {
+export class InMemoryStore implements StorageAdapter, WebhookOutboxStore {
   private projects = new Map<string, Project>();
   private workflows = new Map<string, Workflow>();
   private tasks = new Map<string, Task>();
@@ -172,6 +173,7 @@ export class InMemoryStore implements StorageAdapter {
   private timeEntries = new Map<string, TimeEntry>();
   private dependencies = new Map<string, TaskDependency>();
   private webhooks = new Map<string, Webhook>();
+  private webhookOutbox = new Map<string, WebhookOutboxEntry & { leaseUntil?: number }>();
 
   constructor() {
     // Hand out copies: callers mutating a returned record (or an input they keep using) must not
@@ -626,5 +628,23 @@ export class InMemoryStore implements StorageAdapter {
 
   async deleteWebhook(id: string): Promise<boolean> {
     return this.webhooks.delete(id);
+  }
+
+  // Webhook outbox
+  async putWebhookJob(entry: WebhookOutboxEntry): Promise<void> {
+    this.webhookOutbox.set(entry.key, entry);
+  }
+
+  async claimWebhookJobs(now: number, limit: number, leaseMs: number): Promise<WebhookOutboxEntry[]> {
+    const due = Array.from(this.webhookOutbox.values())
+      .filter((e) => e.runAt <= now && (e.leaseUntil === undefined || e.leaseUntil <= now))
+      .sort((a, b) => a.runAt - b.runAt)
+      .slice(0, limit);
+    for (const entry of due) entry.leaseUntil = now + leaseMs;
+    return due.map(({ key, job, runAt }) => ({ key, job, runAt }));
+  }
+
+  async deleteWebhookJob(key: string): Promise<void> {
+    this.webhookOutbox.delete(key);
   }
 }
