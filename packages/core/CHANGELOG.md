@@ -1,5 +1,14 @@
 # @critical-path/core
 
+## 0.36.1
+
+### Patch Changes
+
+- 85d9bb5: Publish only what consumers need.
+  
+  - Packages no longer ship compiled tests or TypeScript sources (`files: ["dist", "!dist/**/*.test.*"]`). `@critical-path/core` goes from 330 files to 146.
+  - `exports` maps list `types` first, as TypeScript's resolution expects.
+
 ## 0.36.0
 
 ### Minor Changes
