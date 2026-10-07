@@ -2312,7 +2312,9 @@ export class CriticalPathEngine {
       throw new ValidationError(`Unknown levelingPriority "${levelingPriority}"; use "slack", "priority", "dueDate" or "order".`);
     }
     if (calendars === 'project') return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate });
-    const [users, teams] = await Promise.all([options.users ?? this.getUsers(), options.teams ?? this.store.getTeams()]);
+    const [users, allTeams] = await Promise.all([options.users ?? this.getUsers(), options.teams ?? this.store.getTeams()]);
+    // Only the project's tenant: team pools match members by user id.
+    const teams = options.teams ? allTeams : allTeams.filter((t) => (t.tenantId ?? undefined) === (project?.tenantId ?? undefined));
     return calculateCPM(projectId, tasks, dependencies, {
       schedule,
       projectStartDate,

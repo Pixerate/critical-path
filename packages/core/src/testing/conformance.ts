@@ -199,6 +199,7 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
         leaderId: 'u1',
         memberIds: ['u1', 'u2'],
         weeklyCapacityHours: 80,
+        headcount: 2.5,
         schedule,
         tenantId: 'tenant-1'
       };

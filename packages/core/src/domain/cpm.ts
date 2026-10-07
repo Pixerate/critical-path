@@ -204,13 +204,14 @@ function calculateCalendarCPM(
 
   const early = forwardPass(topoOrder, prerequisites, ctx);
   const late = backwardPass([...topoOrder].reverse(), (id) => successors.get(id)!, latest(early.finish, projectStart), ctx);
+  const resourcesOf = resourceModel(options.teams);
   if (!options.levelResources) {
     const analysis = buildAnalysis(projectId, calculatedAt, taskIds, early, late, projectSchedule, ctx);
-    return { ...analysis, overallocations: findOverallocations(taskMap, early) };
+    return { ...analysis, overallocations: findOverallocations(taskMap, early, resourcesOf) };
   }
 
   const unleveledSlack = new Map(taskIds.map((id) => [id, slackHours(early.finish.get(id)!, late.finish.get(id)!, calendarOf.get(id)!)]));
-  const leveled = levelSchedule(graph, ctx, unleveledSlack, options.levelingPriority ?? 'slack');
+  const leveled = levelSchedule(graph, ctx, unleveledSlack, options.levelingPriority ?? 'slack', resourcesOf);
   const leveledLate = backwardPass(
     leveled.backwardOrder,
     (id) => [...successors.get(id)!, ...(leveled.resourceSuccessors.get(id) ?? [])],
@@ -226,7 +227,7 @@ function calculateCalendarCPM(
     ...analysis,
     leveled: true,
     unleveledProjectEndDate: latest(early.finish, projectStart).toISOString(),
-    overallocations: findOverallocations(taskMap, leveled.early)
+    overallocations: findOverallocations(taskMap, leveled.early, resourcesOf)
   };
 }
 
@@ -297,19 +298,21 @@ const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, l
 /**
  * Resource levelling with a serial schedule-generation scheme: repeatedly take the eligible task
  * (all predecessors placed) that ranks first under `rule`, and place it at the earliest time its
- * predecessors are finished and its assignee has `allocation` spare for its whole span on their
- * calendar. Each assignee's bookings total at most 1 at any moment; tasks are not split.
- * Unassigned tasks and zero-duration milestones do not occupy anyone.
+ * predecessors are finished and every resource it uses (see `resourceModel`) has `allocation`
+ * spare for its whole span on the task's calendar. Tasks are not split. Tasks without resources
+ * and zero-duration milestones do not occupy anything.
  *
  * Returns the levelled early dates, which task each delayed task waited for, and resource links
- * (`resourceSuccessors`): for every two tasks of one assignee that cannot overlap (allocations
- * sum above 1), the earlier one precedes the later one, so the backward pass keeps them apart.
+ * (`resourceSuccessors`) so the backward pass keeps the levelling: for every two tasks on one
+ * resource whose allocations exceed its capacity the earlier precedes the later, and each delayed
+ * task follows the task whose finish freed its capacity.
  */
 function levelSchedule(
   { taskMap, taskIds, prerequisites, successors, topoOrder }: TaskGraph,
   ctx: PassContext,
   unleveledSlack: Map<string, number>,
-  rule: LevelingPriority
+  rule: LevelingPriority,
+  resourcesOf: (task: Task) => Resource[]
 ) {
   const creation = new Map(
     [...taskIds]
@@ -338,6 +341,7 @@ function levelSchedule(
   const finish = new Map<string, Date>();
   const waitingOn = new Map<string, string>();
   const busy = new Map<string, Booking[]>();
+  const capacityOf = new Map<string, number>();
   const placed: string[] = [];
   const remaining = new Map(taskIds.map((id) => [id, prerequisites.get(id)!.size]));
   const eligible = new Set(taskIds.filter((id) => remaining.get(id) === 0));
@@ -355,14 +359,16 @@ function levelSchedule(
     }
     const calendar = ctx.calendarOf.get(id)!;
     const duration = ctx.durationOf.get(id)!;
-    const assignee = taskMap.get(id)!.assigneeId;
-    const slots = assignee && duration > 0 ? busy.get(assignee) ?? [] : [];
-
+    const resources = duration > 0 ? resourcesOf(taskMap.get(id)!) : [];
     const allocation = getTaskAllocation(taskMap.get(id)!);
     let es = nextWorkingTime(ready, calendar);
     let ef = addWorkingHours(es, duration, calendar);
     for (;;) {
-      const release = firstCapacityRelease(slots, es.getTime(), ef.getTime(), allocation);
+      let release: Booking | undefined;
+      for (const resource of resources) {
+        release = firstCapacityRelease(busy.get(resource.key) ?? [], es.getTime(), ef.getTime(), allocation, resource.capacity);
+        if (release) break;
+      }
       if (!release) break;
       waitingOn.set(id, release.taskId);
       es = nextWorkingTime(new Date(release.end), calendar);
@@ -370,8 +376,9 @@ function levelSchedule(
     }
     start.set(id, es);
     finish.set(id, ef);
-    if (assignee && duration > 0) {
-      busy.set(assignee, [...slots, { start: es.getTime(), end: ef.getTime(), allocation, taskId: id }]);
+    for (const resource of resources) {
+      busy.set(resource.key, [...(busy.get(resource.key) ?? []), { start: es.getTime(), end: ef.getTime(), allocation, taskId: id }]);
+      capacityOf.set(resource.key, resource.capacity);
     }
     placed.push(id);
 
@@ -382,18 +389,23 @@ function levelSchedule(
     }
   }
 
-  const resourceSuccessors = new Map<string, string[]>();
-  for (const slots of busy.values()) {
+  const resourceSuccessors = new Map<string, Set<string>>();
+  const link = (from: string, to: string) => {
+    if (from !== to) resourceSuccessors.set(from, (resourceSuccessors.get(from) ?? new Set()).add(to));
+  };
+  for (const [key, slots] of busy) {
+    const capacity = capacityOf.get(key)!;
     const ordered = [...slots].sort((a, b) => a.start - b.start);
     for (let i = 0; i < ordered.length; i++) {
       for (let j = i + 1; j < ordered.length; j++) {
         const [u, v] = [ordered[i], ordered[j]];
-        if (u.end <= v.start && u.allocation + v.allocation > 1 + EPSILON) {
-          resourceSuccessors.set(u.taskId, [...(resourceSuccessors.get(u.taskId) ?? []), v.taskId]);
-        }
+        if (u.end <= v.start && u.allocation + v.allocation > capacity + EPSILON) link(u.taskId, v.taskId);
       }
     }
   }
+  // In pools a delayed task may not conflict pairwise with anything; it still follows the task
+  // whose finish freed its capacity.
+  for (const [taskId, blocker] of waitingOn) link(blocker, taskId);
 
   // Every edge (dependency or resource chain) goes forward in levelled start time; ties are
   // zero-duration tasks, ordered by placement.
@@ -402,7 +414,12 @@ function levelSchedule(
     (a, b) => start.get(b)!.getTime() - start.get(a)!.getTime() || placement.get(b)! - placement.get(a)!
   );
 
-  return { early: { start, finish } as Dates, waitingOn, resourceSuccessors, backwardOrder };
+  return {
+    early: { start, finish } as Dates,
+    waitingOn,
+    resourceSuccessors: new Map([...resourceSuccessors].map(([k, v]) => [k, [...v]])),
+    backwardOrder
+  };
 }
 
 const EPSILON = 1e-9;
@@ -415,10 +432,10 @@ interface Booking {
 }
 
 /**
- * If `allocation` does not fit alongside `bookings` somewhere in [start, end), returns the booking
+ * If `allocation` does not fit alongside `bookings` within `capacity` somewhere in [start, end), returns the booking
  * whose end frees enough capacity soonest after the first overloaded moment; otherwise undefined.
  */
-function firstCapacityRelease(bookings: Booking[], start: number, end: number, allocation: number): Booking | undefined {
+function firstCapacityRelease(bookings: Booking[], start: number, end: number, allocation: number, capacity: number): Booking | undefined {
   const overlapping = bookings.filter((b) => b.start < end && b.end > start);
   if (overlapping.length === 0) return undefined;
   // Usage only rises at booking starts, so check the window start and every start inside it.
@@ -426,41 +443,81 @@ function firstCapacityRelease(bookings: Booking[], start: number, end: number, a
   for (const t of points) {
     const active = overlapping.filter((b) => b.start <= t && b.end > t);
     const used = active.reduce((sum, b) => sum + b.allocation, 0);
-    if (used + allocation <= 1 + EPSILON) continue;
+    if (used + allocation <= capacity + EPSILON) continue;
     // Release bookings in end order until the task fits.
     let freed = used;
     for (const b of [...active].sort((x, y) => x.end - y.end)) {
       freed -= b.allocation;
-      if (freed + allocation <= 1 + EPSILON) return b;
+      if (freed + allocation <= capacity + EPSILON) return b;
     }
   }
   return undefined;
 }
 
-/** Periods in which an assignee's overlapping tasks need more than 100% of them. */
-function findOverallocations(taskMap: Map<string, Task>, dates: Dates): Overallocation[] {
-  const byAssignee = new Map<string, Booking[]>();
+/** A capacity a task draws on while levelling: its assignee (capacity 1) or a team pool. */
+interface Resource {
+  key: string;
+  capacity: number;
+  assigneeId?: string;
+  teamId?: string;
+}
+
+/**
+ * Which resources each task uses. An assigned task uses its assignee and every team pool the
+ * assignee belongs to (their own work takes up team capacity); a task with only `teamId` uses that
+ * team's pool. A pool's capacity is `team.headcount`, else its member count; pools with no capacity
+ * are ignored, so their tasks stay unconstrained.
+ */
+function resourceModel(teams: Team[] = []): (task: Task) => Resource[] {
+  const pools = teams
+    .map((team) => ({ team, capacity: team.headcount ?? team.memberIds.length }))
+    .filter((pool) => pool.capacity > 0);
+  const poolResource = ({ team, capacity }: (typeof pools)[number]): Resource => ({ key: `team:${team.id}`, capacity, teamId: team.id });
+  return (task) => {
+    if (task.assigneeId) {
+      return [
+        { key: `user:${task.assigneeId}`, capacity: 1, assigneeId: task.assigneeId },
+        ...pools.filter((pool) => pool.team.memberIds.includes(task.assigneeId!)).map(poolResource)
+      ];
+    }
+    const pool = task.teamId ? pools.find((p) => p.team.id === task.teamId) : undefined;
+    return pool ? [poolResource(pool)] : [];
+  };
+}
+
+/** Periods in which an assignee or team pool is booked above its capacity. */
+function findOverallocations(taskMap: Map<string, Task>, dates: Dates, resourcesOf: (task: Task) => Resource[]): Overallocation[] {
+  const byResource = new Map<string, { resource: Resource; bookings: Booking[] }>();
   for (const [id, task] of taskMap) {
     const s = dates.start.get(id)!.getTime();
     const e = dates.finish.get(id)!.getTime();
-    if (!task.assigneeId || e <= s) continue;
-    byAssignee.set(task.assigneeId, [...(byAssignee.get(task.assigneeId) ?? []), { start: s, end: e, allocation: getTaskAllocation(task), taskId: id }]);
+    if (e <= s) continue;
+    for (const resource of resourcesOf(task)) {
+      const entry = byResource.get(resource.key) ?? { resource, bookings: [] };
+      entry.bookings.push({ start: s, end: e, allocation: getTaskAllocation(task), taskId: id });
+      byResource.set(resource.key, entry);
+    }
   }
 
   const result: Overallocation[] = [];
-  for (const [assigneeId, bookings] of byAssignee) {
+  for (const { resource, bookings } of byResource.values()) {
+    const owner = resource.assigneeId ? { assigneeId: resource.assigneeId } : { teamId: resource.teamId! };
     const points = [...new Set(bookings.flatMap((b) => [b.start, b.end]))].sort((a, b) => a - b);
+    let previous: Overallocation | undefined;
     for (let i = 0; i + 1 < points.length; i++) {
       const [from, to] = [points[i], points[i + 1]];
       const active = bookings.filter((b) => b.start <= from && b.end >= to);
       const allocation = round2(active.reduce((sum, b) => sum + b.allocation, 0));
-      if (allocation <= 1 + EPSILON) continue;
+      if (allocation <= resource.capacity + EPSILON) {
+        previous = undefined;
+        continue;
+      }
       const taskIds = active.map((b) => b.taskId).sort();
-      const previous = result.at(-1);
-      if (previous && previous.assigneeId === assigneeId && previous.end === new Date(from).toISOString() && previous.taskIds.join() === taskIds.join()) {
+      if (previous && previous.end === new Date(from).toISOString() && previous.taskIds.join() === taskIds.join()) {
         previous.end = new Date(to).toISOString();
       } else {
-        result.push({ assigneeId, start: new Date(from).toISOString(), end: new Date(to).toISOString(), allocation, taskIds });
+        previous = { ...owner, start: new Date(from).toISOString(), end: new Date(to).toISOString(), allocation, capacity: resource.capacity, taskIds };
+        result.push(previous);
       }
     }
   }

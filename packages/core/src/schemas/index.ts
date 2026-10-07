@@ -236,6 +236,7 @@ export const CreateTeamSchema = strictObject({
   description: z.string().optional(),
   leaderId: z.string().optional(),
   memberIds: z.array(z.string()).default([]),
+  headcount: z.number().nonnegative().optional(),
   weeklyCapacityHours: z.number().nonnegative().optional(),
   schedule: WorkScheduleSchema.optional()
 });
