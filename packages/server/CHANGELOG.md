@@ -1,5 +1,19 @@
 # @critical-path/server
 
+## 0.24.0
+
+### Minor Changes
+
+- 810d8d1: Upload and request body limits.
+  
+  - **@critical-path/core:** new `uploads: { maxBytes, allowedMimeTypes }` engine option, with `type/*` wildcards. It applies to direct uploads (decoded size), presigned uploads (content type) and registered attachments (declared size and type). Violations throw `ValidationError` (400).
+  - **@critical-path/server:** new `maxBodyBytes` router option (default 10 MiB). Larger bodies get `413`, checked while streaming rather than only through `Content-Length`. Previously bodies were read without any limit.
+
+### Patch Changes
+
+- Updated dependencies [810d8d1]
+  - @critical-path/core@0.36.0
+
 ## 0.23.4
 
 ### Patch Changes
