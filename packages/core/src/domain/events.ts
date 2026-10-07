@@ -174,6 +174,41 @@ export interface TeamCreatedEvent extends DomainEvent<{ team: Team }> {
   readonly aggregateType: 'Team';
 }
 
+export interface TeamUpdatedEvent extends DomainEvent<{ team: Team; previous: Team }> {
+  readonly name: 'team.updated';
+  readonly aggregateType: 'Team';
+}
+
+export interface TeamDeletedEvent extends DomainEvent<{ teamId: string; name: string; tenantId?: string }> {
+  readonly name: 'team.deleted';
+  readonly aggregateType: 'Team';
+}
+
+export interface ContainerUpdatedEvent extends DomainEvent<{ container: TaskContainer; previous: TaskContainer }> {
+  readonly name: 'container.updated';
+  readonly aggregateType: 'Container';
+}
+
+export interface ContainerDeletedEvent extends DomainEvent<{ containerId: string; projectId: string; name: string }> {
+  readonly name: 'container.deleted';
+  readonly aggregateType: 'Container';
+}
+
+export interface IterationCreatedEvent extends DomainEvent<{ iteration: Iteration }> {
+  readonly name: 'iteration.created';
+  readonly aggregateType: 'Iteration';
+}
+
+export interface IterationUpdatedEvent extends DomainEvent<{ iteration: Iteration; previous: Iteration }> {
+  readonly name: 'iteration.updated';
+  readonly aggregateType: 'Iteration';
+}
+
+export interface IterationDeletedEvent extends DomainEvent<{ iterationId: string; projectId: string; name: string }> {
+  readonly name: 'iteration.deleted';
+  readonly aggregateType: 'Iteration';
+}
+
 export interface ContainerCreatedEvent extends DomainEvent<{ container: TaskContainer }> {
   readonly name: 'container.created';
   readonly aggregateType: 'Container';
@@ -225,7 +260,14 @@ export type CriticalPathDomainEvent =
   | IterationStartedEvent
   | IterationCompletedEvent
   | TeamCreatedEvent
+  | TeamUpdatedEvent
+  | TeamDeletedEvent
   | ContainerCreatedEvent
+  | ContainerUpdatedEvent
+  | ContainerDeletedEvent
+  | IterationCreatedEvent
+  | IterationUpdatedEvent
+  | IterationDeletedEvent
   | DeliverableCreatedEvent
   | DeliverableUpdatedEvent
   | DeliverableStatusChangedEvent
@@ -289,6 +331,8 @@ export const DOMAIN_EVENT_NAMES = [
   'comment.reaction.removed',
   'comment.updated',
   'container.created',
+  'container.deleted',
+  'container.updated',
   'deliverable.created',
   'deliverable.deleted',
   'deliverable.status_changed',
@@ -296,7 +340,10 @@ export const DOMAIN_EVENT_NAMES = [
   'dependency.added',
   'dependency.removed',
   'iteration.completed',
+  'iteration.created',
+  'iteration.deleted',
   'iteration.started',
+  'iteration.updated',
   'project.created',
   'project.deleted',
   'project.updated',
@@ -307,6 +354,8 @@ export const DOMAIN_EVENT_NAMES = [
   'task.unblocked',
   'task.updated',
   'team.created',
+  'team.deleted',
+  'team.updated',
   'time.logged',
   'workflow.created',
   'workflow.deleted',

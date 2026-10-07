@@ -373,7 +373,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project> {
-    const id = `proj_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `proj_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const key = project.key || generateProjectKey(project.name);
     const newProj: Project = { ...project, key, id, createdAt: now, updatedAt: now };
@@ -451,7 +451,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async createWorkflow(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow> {
-    const id = `wf_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `wf_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newWf: Workflow = { ...workflow, id, createdAt: now, updatedAt: now };
 
@@ -529,7 +529,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async createTeam(team: Omit<Team, 'id' | 'createdAt' | 'updatedAt'>): Promise<Team> {
-    const id = `team_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `team_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newTeam: Team = { ...team, id, createdAt: now, updatedAt: now };
 
@@ -592,7 +592,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async createContainer(container: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer> {
-    const id = `cnt_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `cnt_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newContainer: TaskContainer = { ...container, id, createdAt: now, updatedAt: now };
 
@@ -655,7 +655,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async createDeliverable(deliverable: CreateDeliverableInput): Promise<Deliverable> {
-    const id = `deliv_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `deliv_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newDeliverable: Deliverable = {
       ...deliverable,
@@ -802,7 +802,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async createTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task> {
-    const id = `task_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `task_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newTask: Task = { ...task, id, createdAt: now, updatedAt: now };
 
@@ -948,7 +948,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async createIteration(iteration: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
-    const id = `iter_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `iter_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newIteration: Iteration = { ...iteration, id, createdAt: now };
 
@@ -1029,7 +1029,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
-    const id = `cmt_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `cmt_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newComment: Comment = { ...comment, id, createdAt: now, updatedAt: now };
 
@@ -1166,7 +1166,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async createAttachment(attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
-    const id = `att_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `att_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newAtt: Attachment = {
       ...attachment,
@@ -1267,7 +1267,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async logActivity(activity: Omit<Activity, 'id' | 'createdAt'>): Promise<Activity> {
-    const id = `act_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `act_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newAct: Activity = { ...activity, id, createdAt: now };
 
@@ -1295,7 +1295,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string }): Promise<TimeEntry> {
-    const id = `time_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `time_${crypto.randomUUID()}`;
     const now = entry.loggedAt || new Date().toISOString();
     const newEntry: TimeEntry = { ...entry, id, loggedAt: now };
 
@@ -1322,7 +1322,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
-    const id = `dep_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `dep_${crypto.randomUUID()}`;
     const newDep: TaskDependency = { ...dep, id };
 
     const stmt = this.db.prepare(`
@@ -1395,7 +1395,7 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   async addWebhook(webhook: Omit<Webhook, 'id' | 'createdAt'>): Promise<Webhook> {
-    const id = `wh_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `wh_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newWh: Webhook = { ...webhook, id, createdAt: now };
 

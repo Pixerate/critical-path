@@ -172,7 +172,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project> {
-    const id = `proj_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `proj_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const key = project.key || generateProjectKey(project.name);
     const newProject: Project = {
@@ -212,7 +212,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async createWorkflow(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow> {
-    const id = `wf_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `wf_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newWorkflow: Workflow = {
       ...workflow,
@@ -258,7 +258,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async createTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task> {
-    const id = `task_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `task_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newTask: Task = {
       ...task,
@@ -296,7 +296,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async createTeam(team: Omit<Team, 'id' | 'createdAt' | 'updatedAt'>): Promise<Team> {
-    const id = `team_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `team_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newTeam: Team = { ...team, id, createdAt: now, updatedAt: now };
     this.teams.set(id, newTeam);
@@ -325,7 +325,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async createContainer(container: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer> {
-    const id = `cnt_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `cnt_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newContainer: TaskContainer = { ...container, id, createdAt: now, updatedAt: now };
     this.containers.set(id, newContainer);
@@ -354,7 +354,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async createDeliverable(deliverable: CreateDeliverableInput): Promise<Deliverable> {
-    const id = (deliverable as any).id || `deliv_${Math.random().toString(36).substring(2, 9)}`;
+    const id = (deliverable as any).id || `deliv_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newDeliverable: Deliverable = {
       ...deliverable,
@@ -395,7 +395,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async createIteration(iteration: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
-    const id = `iter_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `iter_${crypto.randomUUID()}`;
     const newIteration: Iteration = {
       ...iteration,
       id,
@@ -427,7 +427,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
-    const id = `cmt_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `cmt_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newComment: Comment = { ...comment, id, createdAt: now, updatedAt: now };
     this.comments.set(id, newComment);
@@ -501,7 +501,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async createAttachment(attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
-    const id = `att_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `att_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const newAttachment: Attachment = {
       ...attachment,
@@ -532,7 +532,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async logActivity(activity: Omit<Activity, 'id' | 'createdAt'>): Promise<Activity> {
-    const id = `act_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `act_${crypto.randomUUID()}`;
     const newAct: Activity = { ...activity, id, createdAt: new Date().toISOString() };
     this.activities.unshift(newAct);
     return newAct;
@@ -544,7 +544,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string }): Promise<TimeEntry> {
-    const id = `time_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `time_${crypto.randomUUID()}`;
     const newEntry: TimeEntry = { ...entry, id, loggedAt: entry.loggedAt || new Date().toISOString() };
     this.timeEntries.set(id, newEntry);
     return newEntry;
@@ -566,7 +566,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
-    const id = `dep_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `dep_${crypto.randomUUID()}`;
     const newDep: TaskDependency = { ...dep, id };
     this.dependencies.set(id, newDep);
     return newDep;
@@ -586,7 +586,7 @@ export class InMemoryStore implements StorageAdapter {
   }
 
   async addWebhook(webhook: Omit<Webhook, 'id' | 'createdAt'>): Promise<Webhook> {
-    const id = `wh_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `wh_${crypto.randomUUID()}`;
     const newWh: Webhook = { ...webhook, id, createdAt: new Date().toISOString() };
     this.webhooks.set(id, newWh);
     return newWh;
