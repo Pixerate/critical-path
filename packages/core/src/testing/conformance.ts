@@ -140,6 +140,24 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
       expect(updated.parentId === null).toBe(false);
     });
 
+    it('returns copies, so mutating results or reused inputs does not change stored records', async () => {
+      const store = await createStore();
+      const project = await store.createProject({ name: 'P' });
+      const input = { projectId: project.id, title: 'Original', status: 'todo', priority: 'medium', tags: ['a'] };
+      const created = await store.createTask(input);
+
+      input.tags.push('mutated-input');
+      input.title = 'Mutated input';
+      const fetched = (await store.getTask(created.id))!;
+      fetched.tags!.push('mutated-result');
+      fetched.title = 'Mutated result';
+      (await store.getTasks(project.id))[0].title = 'Mutated list';
+
+      const stored = await store.getTask(created.id);
+      expect(stored?.title).toBe('Original');
+      expect(stored?.tags).toEqual(['a']);
+    });
+
     it('follows the not-found contract', async () => {
       const store = await createStore();
       expect(await store.getProject('missing')).toBeNull();

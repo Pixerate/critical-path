@@ -148,6 +148,10 @@ export interface StorageAdapter
     DependencyRepository,
     WebhookRepository {}
 
+/**
+ * Map-backed store for development and tests. Reads and writes are deep-copied, so it behaves
+ * like a database: returned records can be mutated freely without affecting stored state.
+ */
 export class InMemoryStore implements StorageAdapter {
   private projects = new Map<string, Project>();
   private workflows = new Map<string, Workflow>();
@@ -162,6 +166,19 @@ export class InMemoryStore implements StorageAdapter {
   private timeEntries = new Map<string, TimeEntry>();
   private dependencies = new Map<string, TaskDependency>();
   private webhooks = new Map<string, Webhook>();
+
+  constructor() {
+    // Hand out copies: callers mutating a returned record (or an input they keep using) must not
+    // change what is stored, matching the database-backed adapters. Internal calls between
+    // methods use the unwrapped instance, so each call clones only at the boundary.
+    return new Proxy(this, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (typeof value !== 'function' || property === 'constructor') return value;
+        return async (...args: unknown[]) => structuredClone(await value.apply(target, structuredClone(args)));
+      }
+    });
+  }
 
   async getProjects(): Promise<Project[]> {
     return Array.from(this.projects.values());

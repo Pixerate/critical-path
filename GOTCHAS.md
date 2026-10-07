@@ -249,11 +249,11 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Critical Path has no user table. Names, `weeklyCapacityHours` and per-user `schedule` come from the `users` engine option (plus `initialData.users`). Before this option existed, `initialData.users` was ignored.
 - **Solution / Workaround**: Pass `users: User[]` or `users: (actor) => Promise<User[]>` to load them from your auth system, per tenant if needed. Critical-path (CPM) date projections still use one project-wide calendar, not per-assignee schedules.
 
-### `InMemoryStore` Returns Live References
-- **Area / Package**: `@critical-path/core` (`InMemoryStore`)
-- **Symptom / Behavior**: Mutating an object returned by the in-memory store (e.g. pushing to `task.tags`) changes the stored record without an update call; SQLite and Firestore return independent copies.
-- **Root Cause**: `InMemoryStore` returns the objects it holds rather than copies.
-- **Solution / Workaround**: Treat returned records as read-only and call `update*` to change them. Copying on read and write is a known follow-up.
+### Stores Return Copies; In-Memory Copies Use `structuredClone`
+- **Area / Package**: `@critical-path/core` (`InMemoryStore`, `InMemoryFirestoreMock`, custom adapters)
+- **Symptom / Behavior**: Code that relied on mutating a record returned by `InMemoryStore` (e.g. pushing to `task.tags` without calling `update*`) no longer changes stored state. Storing values `structuredClone` cannot copy (functions, class instances with private fields) throws `DataCloneError`.
+- **Root Cause**: `InMemoryStore` (and the Firestore test mock) deep-copy every argument and result, so they behave like real databases. Earlier versions returned live references.
+- **Solution / Workaround**: Call `update*` to change records. Keep entity fields plain JSON-compatible data. Custom adapters should also return copies; the conformance suite checks this.
 
 ### Demo Apps Are the Scaffolder Templates
 - **Area / Package**: `examples/*`, `create-critical-path`
