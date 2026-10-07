@@ -116,7 +116,7 @@ Errors are returned as JSON with an `error` message and, where useful, extra det
 | Status | When |
 | :--- | :--- |
 | `400` | Malformed JSON body, `ValidationError`, invalid workflow transition (`fromStatus`, `toStatus`), custom field validation failure (`fieldKey`), invalid attachment |
-| `404` | Unknown route or missing resource (`NotFoundError`) |
+| `404` | Unknown route, missing resource (`NotFoundError`), or `DELETE` of a resource that does not exist |
 | `409` | Dependency would create a cycle (`cyclePath`) |
 | `500` | Unexpected server error. The message is always `Internal Server Error`; details are logged server-side with `console.error`. |
 

@@ -66,7 +66,8 @@ export class CriticalPathRouter {
           }
           if (method === 'DELETE') {
             const deleted = await this.engine.deleteWorkflow(workflowId);
-            return this.jsonResponse({ success: deleted });
+            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+            return this.jsonResponse({ success: true });
           }
         }
       }
@@ -133,7 +134,8 @@ export class CriticalPathRouter {
           }
           if (method === 'DELETE') {
             const deleted = await this.engine.deleteProject(projectId);
-            return this.jsonResponse({ success: deleted });
+            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+            return this.jsonResponse({ success: true });
           }
         }
       }
@@ -235,7 +237,8 @@ export class CriticalPathRouter {
           }
           if (method === 'DELETE') {
             const deleted = await this.engine.deleteTask(taskId);
-            return this.jsonResponse({ success: deleted });
+            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+            return this.jsonResponse({ success: true });
           }
         }
       }
@@ -267,7 +270,8 @@ export class CriticalPathRouter {
           }
           if (method === 'DELETE') {
             const deleted = await this.engine.deleteTeam(teamId);
-            return this.jsonResponse({ success: deleted });
+            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+            return this.jsonResponse({ success: true });
           }
         }
       }
@@ -301,7 +305,8 @@ export class CriticalPathRouter {
           }
           if (method === 'DELETE') {
             const deleted = await this.engine.deleteContainer(containerId);
-            return this.jsonResponse({ success: deleted });
+            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+            return this.jsonResponse({ success: true });
           }
         }
       }
@@ -341,7 +346,8 @@ export class CriticalPathRouter {
           }
           if (method === 'DELETE') {
             const deleted = await this.engine.deleteDeliverable(deliverableId);
-            return this.jsonResponse({ success: deleted });
+            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+            return this.jsonResponse({ success: true });
           }
         }
       }
@@ -375,7 +381,8 @@ export class CriticalPathRouter {
           }
           if (method === 'DELETE') {
             const deleted = await this.engine.deleteIteration(iterationId);
-            return this.jsonResponse({ success: deleted });
+            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+            return this.jsonResponse({ success: true });
           }
         }
       }
@@ -446,7 +453,8 @@ export class CriticalPathRouter {
           }
           if (method === 'DELETE') {
             const deleted = await this.engine.deleteComment(commentId);
-            return this.jsonResponse({ success: deleted });
+            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+            return this.jsonResponse({ success: true });
           }
         }
       }
@@ -487,7 +495,8 @@ export class CriticalPathRouter {
           }
           if (method === 'DELETE') {
             const deleted = await this.engine.deleteAttachment(attachmentId);
-            return this.jsonResponse({ success: deleted });
+            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+            return this.jsonResponse({ success: true });
           }
         }
       }

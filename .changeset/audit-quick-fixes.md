@@ -3,6 +3,7 @@
 "@critical-path/server": minor
 "@critical-path/mcp": minor
 "@critical-path/svelte": patch
+"@critical-path/client": patch
 ---
 
 Fix correctness and safety issues found in a code audit.
@@ -18,6 +19,7 @@ Fix correctness and safety issues found in a code audit.
 **@critical-path/server**
 - `DELETE /projects/:id`, `POST /tasks/:id/dependencies` and `POST /time-entries` now go through the engine, so cycle checks, hour validation, roll-ups, events and webhooks apply.
 - Added `PATCH /projects/:id`.
+- `DELETE` on a resource that does not exist now returns `404` instead of `200 { success: false }`.
 - Malformed JSON returns `400`, validation errors `400`, `NotFoundError` `404`, and dependency cycles `409`. Unexpected errors return a generic `500` message and are logged server-side.
 - `OPTIONS` preflight requests return `204` with CORS headers.
 - `createNextHandler` returns a callable handler that also exposes per-method properties, so `export { handler as GET }` works as documented.
@@ -29,3 +31,6 @@ Fix correctness and safety issues found in a code audit.
 
 **@critical-path/svelte**
 - Rebuilt with the bundled `@critical-path/mcp` WebMCP argument validation.
+
+**@critical-path/client**
+- Delete methods resolve to `false` when the server returns `404`, keeping their boolean contract with the new server behaviour.

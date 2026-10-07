@@ -262,7 +262,7 @@ All endpoints return JSON responses.
 
 ### Error Responses
 - `400` - Malformed JSON body, `ValidationError`, illegal workflow transition, custom field or attachment validation failure.
-- `404` - Unknown route or `NotFoundError`.
+- `404` - Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ success: true }`; client SDK delete methods resolve to `false` on 404).
 - `409` - `CircularDependencyError` (response includes `cyclePath`).
 - `500` - Unexpected error. The response body is always `Internal Server Error`; the underlying error is logged server-side.
 - `OPTIONS` preflight requests return `204` with CORS headers.

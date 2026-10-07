@@ -61,7 +61,7 @@ export const OPTIONS = handler.OPTIONS;
 | Status | When |
 | :--- | :--- |
 | `400` | Malformed JSON, `ValidationError`, workflow transition or custom field validation failures |
-| `404` | Unknown route or `NotFoundError` |
+| `404` | Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ "success": true }`) |
 | `409` | `CircularDependencyError` (body includes `cyclePath`) |
 | `500` | Unexpected errors. The body is always `{ "error": "Internal Server Error" }`; the real error is logged with `console.error`. |
 

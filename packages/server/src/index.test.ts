@@ -518,4 +518,15 @@ describe('@critical-path/server Router Tests', () => {
 
     expect((await patch('missing', { name: 'x' })).status).toBe(404);
   });
+
+  it('returns 404 when deleting a resource that does not exist', async () => {
+    const router = new CriticalPathRouter();
+    for (const path of ['projects', 'tasks', 'workflows', 'comments', 'attachments', 'deliverables', 'teams', 'containers', 'iterations']) {
+      const res = await router.handleRequest(
+        new Request(`http://localhost:3000/api/critical-path/${path}/missing`, { method: 'DELETE' })
+      );
+      expect(res.status, path).toBe(404);
+    }
+  });
 });
+
