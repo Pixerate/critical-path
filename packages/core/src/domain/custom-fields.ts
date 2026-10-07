@@ -1,4 +1,5 @@
-import type { CustomFieldDefinition } from '../types/index.js';
+import type { CustomFieldDefinition, CustomFieldType } from '../types/index.js';
+import { BUILT_IN_CUSTOM_FIELD_TYPES } from '../plugins/index.js';
 
 export class CustomFieldValidationError extends Error {
   public readonly fieldKey: string;
@@ -16,7 +17,8 @@ export class CustomFieldValidationError extends Error {
 
 export function validateCustomFieldValues(
   definitions: CustomFieldDefinition[] | undefined,
-  values: Record<string, unknown> | undefined
+  values: Record<string, unknown> | undefined,
+  customTypes?: ReadonlyMap<string, CustomFieldType>
 ): void {
   if (!definitions || definitions.length === 0) return;
   const customValues = values || {};
@@ -126,6 +128,45 @@ export function validateCustomFieldValues(
           }
         }
         break;
+      default: {
+        const custom = customTypes?.get(def.type);
+        if (!custom) {
+          throw new CustomFieldValidationError(
+            `Custom field "${def.label || def.key}" has unknown type "${def.type}". Register it with a plugin's customFieldTypes.`,
+            def.key,
+            def.type,
+            value
+          );
+        }
+        const problem = custom.validate(value, def);
+        if (problem) {
+          throw new CustomFieldValidationError(
+            `Custom field "${def.label || def.key}" ${problem}`,
+            def.key,
+            def.type,
+            value
+          );
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Checks that every definition uses a built-in type or one registered by a plugin, so projects
+ * cannot be configured with fields that would reject every value.
+ */
+export function validateCustomFieldDefinitions(
+  definitions: CustomFieldDefinition[] | undefined,
+  customTypes?: ReadonlyMap<string, CustomFieldType>
+): void {
+  for (const def of definitions ?? []) {
+    if (!(BUILT_IN_CUSTOM_FIELD_TYPES as readonly string[]).includes(def.type) && !customTypes?.has(def.type)) {
+      throw new CustomFieldValidationError(
+        `Custom field "${def.label || def.key}" has unknown type "${def.type}". Register it with a plugin's customFieldTypes.`,
+        def.key,
+        def.type
+      );
     }
   }
 }

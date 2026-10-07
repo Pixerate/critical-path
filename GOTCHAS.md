@@ -195,3 +195,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: The SSRF guard only inspects literal hostnames and IPs.
 - **Solution / Workaround**: Set `webhookDelivery.allowPrivateUrls: true` for local development. In production, also restrict outbound traffic at the network or egress-proxy level.
 
+### Plugin Hooks Are Validated, Isolated, and Cannot Move Tasks
+- **Area / Package**: `@critical-path/core` (`PluginRegistry`, `CriticalPathEngine`)
+- **Symptom / Behavior**: A `beforeTaskUpdate` hook that sets `status` now fails with `WorkflowValidationError`, a hook that changes `projectId` is rejected (create) or ignored (update), or an `afterTask*` hook error no longer reaches the caller.
+- **Root Cause**: Hooks used to run after validation, so their output bypassed workflow and custom-field rules; after-hook errors failed writes that had already been stored.
+- **Solution / Workaround**: Have hooks produce valid transitions only. Handle integration failures inside after-hooks (they are logged with the plugin id). Use `engine.ready` before serving traffic, since plugin `init` runs asynchronously; `@critical-path/server` and the MCP server already await it.
+
+### Custom Field Types Must Be Registered Before Projects Use Them
+- **Area / Package**: `@critical-path/core` (`customFieldTypes`, `validateCustomFieldDefinitions`)
+- **Symptom / Behavior**: Creating or updating a project fails with `has unknown type "<type>"`.
+- **Root Cause**: Project `customFieldDefinitions` may only use built-in types or types registered by a plugin, so fields that could never validate are caught at configuration time.
+- **Solution / Workaround**: Register the plugin providing the type in `plugins` on every engine instance (including MCP servers and workers) that reads or writes those projects.
+

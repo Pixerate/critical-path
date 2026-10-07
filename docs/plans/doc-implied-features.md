@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) on `feat/webhooks`.
+Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`.
 
 Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
@@ -141,6 +141,14 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - Define hook error semantics: `before*` errors abort the operation; `after*` errors are logged and do not fail an already-persisted write.
 
 **Tests**: init order, custom type validation, middleware short-circuit, plugin attempting illegal transition is rejected.
+
+**Implemented**:
+- `init(engine)` runs through `engine.ready`. The router and MCP server await it, and failures reject `ready` without causing unhandled rejections.
+- `customFieldTypes` are `{ type, validate }` validators, registered without clashes. Project definitions with unknown types are rejected.
+- Plugin `routes` (`:param` patterns) run before the built-in routes, and `middleware` wraps every routed request after auth. Both receive the caller's `withActor` engine.
+- Before-hook output is validated (workflow transitions, custom fields) and cannot change `projectId`, `id` or `createdAt`. After-hook errors are logged. Delete hooks receive the task.
+- Required custom fields are enforced even when `customFields` is omitted.
+- Plugin routes are not in the OpenAPI document yet.
 
 ---
 

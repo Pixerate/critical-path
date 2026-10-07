@@ -83,7 +83,7 @@ import {
   AttachmentDeletedEvent
 } from '../domain/events.js';
 import { validateAttachmentUrl, AttachmentValidationError } from '../domain/entities.js';
-import { validateCustomFieldValues } from '../domain/custom-fields.js';
+import { validateCustomFieldValues, validateCustomFieldDefinitions } from '../domain/custom-fields.js';
 import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../domain/errors.js';
 import { WebhookDispatcher, assertWebhookUrl } from '../webhooks/dispatcher.js';
@@ -136,9 +136,9 @@ export class CriticalPathEngine {
       }
     }
 
-    if (config.initialData) {
-      this.ready = this.seedInitialData(config.initialData);
-    }
+    this.ready = this.initialize(config);
+    // Callers that never await `ready` should not crash on an unhandled rejection; awaiting it still throws.
+    this.ready.catch(() => {});
   }
 
   /**
@@ -262,6 +262,15 @@ export class CriticalPathEngine {
     if (!this.actor || !('tenantId' in updates)) return updates;
     const { tenantId: _ignored, ...rest } = updates;
     return rest as T;
+  }
+
+  private async initialize(config: CriticalPathConfig): Promise<void> {
+    if (config.initialData) {
+      await this.seedInitialData(config.initialData);
+    }
+    for (const plugin of this.plugins.getPlugins()) {
+      await plugin.init?.(this);
+    }
   }
 
   private async seedInitialData(data: NonNullable<CriticalPathConfig['initialData']>): Promise<void> {
@@ -442,6 +451,7 @@ export class CriticalPathEngine {
 
   async createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project> {
     await this.requireWorkspaceAccess('project.create');
+    validateCustomFieldDefinitions(project.customFieldDefinitions, this.plugins.getCustomFieldTypes());
     // Views always use the actor's tenant (possibly none); only trusted base-engine calls may set it.
     const input = { ...project, tenantId: this.actor ? this.actor.tenantId : project.tenantId };
     // The creator administers the project they create.
@@ -475,6 +485,7 @@ export class CriticalPathEngine {
     if (!existing) return null;
     await this.requireProjectAccess('project.update', id);
     if ('members' in updates) await this.requireProjectAccess('project.manage_members', id);
+    validateCustomFieldDefinitions(updates.customFieldDefinitions, this.plugins.getCustomFieldTypes());
     updates = this.withoutTenant(updates);
 
     const updated = await this.store.updateProject(id, updates);
@@ -561,17 +572,19 @@ export class CriticalPathEngine {
       taskInput = { ...taskInput, reporterId: this.actor.userId };
     }
     const processedInput = await this.plugins.runBeforeTaskCreate(taskInput);
-    const projectId = processedInput.projectId || taskInput.projectId;
+    if (processedInput.projectId && processedInput.projectId !== taskInput.projectId) {
+      throw new ValidationError('Plugins cannot move a task to another project in beforeTaskCreate.');
+    }
+    const projectId = taskInput.projectId;
     const project = await this.store.getProject(projectId);
     const workflow = await this.resolveProjectWorkflow(projectId);
 
-    // Validate custom field domain invariants
-    if (project?.customFieldDefinitions && (processedInput.customFields || taskInput.customFields)) {
-      validateCustomFieldValues(
-        project.customFieldDefinitions,
-        processedInput.customFields || taskInput.customFields
-      );
-    }
+    // Validate custom fields on the final (post-plugin) input, including required fields when none are given
+    validateCustomFieldValues(
+      project?.customFieldDefinitions,
+      processedInput.customFields ?? taskInput.customFields,
+      this.plugins.getCustomFieldTypes()
+    );
 
     const defaultStatus = workflow?.defaultStatusKey || 'todo';
     const initialStatus = processedInput.status || taskInput.status || defaultStatus;
@@ -680,23 +693,31 @@ export class CriticalPathEngine {
     const project = await this.store.getProject(existing.projectId);
     const workflow = await this.resolveProjectWorkflow(existing.projectId);
 
+    // Plugins run first; their output is then validated like caller input. Identity and
+    // ownership fields are never changed by hooks.
+    const {
+      id: _id,
+      projectId: _projectId,
+      createdAt: _createdAt,
+      ...processedUpdates
+    } = await this.plugins.runBeforeTaskUpdate(id, taskUpdates) as Partial<Task>;
+
     // Validate workflow transition invariant
-    if (taskUpdates.status && taskUpdates.status !== existing.status) {
-      const isValid = validateTransition(workflow || undefined, existing.status, taskUpdates.status);
+    if (processedUpdates.status && processedUpdates.status !== existing.status) {
+      const isValid = validateTransition(workflow || undefined, existing.status, processedUpdates.status);
       if (!isValid) {
-        throw new WorkflowValidationError(existing.status, taskUpdates.status, workflow?.id);
+        throw new WorkflowValidationError(existing.status, processedUpdates.status, workflow?.id);
       }
     }
 
     // Validate custom field invariants
-    if (project?.customFieldDefinitions && taskUpdates.customFields) {
-      validateCustomFieldValues(project.customFieldDefinitions, {
-        ...existing.customFields,
-        ...taskUpdates.customFields
-      });
+    if (processedUpdates.customFields) {
+      validateCustomFieldValues(
+        project?.customFieldDefinitions,
+        { ...existing.customFields, ...processedUpdates.customFields },
+        this.plugins.getCustomFieldTypes()
+      );
     }
-
-    const processedUpdates = await this.plugins.runBeforeTaskUpdate(id, taskUpdates);
 
     const now = new Date().toISOString();
     const existingStatusDef = resolveStatusDefinition(
@@ -1050,11 +1071,11 @@ export class CriticalPathEngine {
     if (!existing) return false;
     await this.requireProjectAccess('task.delete', existing.projectId);
 
-    await this.plugins.runBeforeTaskDelete(id);
+    await this.plugins.runBeforeTaskDelete(id, existing);
     const deleted = await this.store.deleteTask(id);
 
     if (deleted) {
-      await this.plugins.runAfterTaskDelete(id);
+      await this.plugins.runAfterTaskDelete(id, existing);
       const now = new Date().toISOString();
 
       const event: TaskDeletedEvent = {
@@ -1703,7 +1724,7 @@ export class CriticalPathEngine {
     await this.requireProjectAccess('plan.manage', input.projectId);
     const project = await this.store.getProject(input.projectId);
     if (project?.customFieldDefinitions && input.customFields) {
-      validateCustomFieldValues(project.customFieldDefinitions, input.customFields);
+      validateCustomFieldValues(project.customFieldDefinitions, input.customFields, this.plugins.getCustomFieldTypes());
     }
 
     const created = await this.store.createDeliverable({

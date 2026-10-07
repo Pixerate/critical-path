@@ -3,7 +3,7 @@ import { CriticalPathRouter } from './router.js';
 import { createNextHandler } from './adapters/next.js';
 import { createSvelteKitHandler } from './adapters/sveltekit.js';
 import { createUniversalHandler } from './adapters/universal.js';
-import { InMemoryStore, createRolePolicy } from '@critical-path/core';
+import { InMemoryStore, createRolePolicy, ForbiddenError, type CriticalPathPlugin } from '@critical-path/core';
 
 describe('@critical-path/server Router Tests', () => {
   it('handles project creation and retrieval over HTTP Fetch Requests', async () => {
@@ -928,6 +928,70 @@ describe('@critical-path/server Router Tests', () => {
 
     expect((await call('DELETE', `/webhooks/${webhook.id}`)).status).toBe(200);
     expect((await call('GET', `/webhooks/${webhook.id}`)).status).toBe(404);
+  });
+
+  describe('plugin routes and middleware', () => {
+    const reports: CriticalPathPlugin = {
+      id: 'reports',
+      name: 'Reports',
+      version: '1',
+      init: async (engine) => {
+        await engine.createProject({ key: 'SEED', name: 'Seeded during init' });
+      },
+      routes: [
+        {
+          method: 'GET',
+          path: '/reports/:projectId/summary',
+          handler: async (_request, { engine, params, context }) => {
+            const tasks = await engine.getTasks(params.projectId);
+            return Response.json({ projectId: params.projectId, taskCount: tasks.length, caller: context?.userId ?? null });
+          }
+        },
+        {
+          method: 'POST',
+          path: '/reports/forbidden',
+          handler: () => {
+            throw new ForbiddenError('reports are read-only');
+          }
+        }
+      ],
+      middleware: async (request, _ctx, next) => {
+        if (request.headers.get('X-Block') === 'yes') return Response.json({ error: 'blocked' }, { status: 429 });
+        const response = await next();
+        response.headers.set('X-Plugin', 'reports');
+        return response;
+      }
+    };
+    const router = new CriticalPathRouter(
+      { plugins: [reports] },
+      { getContext: (request) => (request.headers.get('X-User') ? { userId: request.headers.get('X-User')! } : null) }
+    );
+    const call = (path: string, init: RequestInit = {}) =>
+      router.handleRequest(new Request(`http://localhost/api/critical-path${path}`, init));
+
+    it('serves plugin routes with params, the caller and an actor-scoped engine, after init', async () => {
+      const [project] = await router.engine.getProjects();
+      expect(project.name).toBe('Seeded during init');
+      await router.engine.createTask({ projectId: project.id, title: 'T' });
+
+      const res = await call(`/reports/${project.id}/summary`, { headers: { 'X-User': 'ana' } });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ projectId: project.id, taskCount: 1, caller: 'ana' });
+    });
+
+    it('wraps built-in and plugin routes in middleware, which can short-circuit', async () => {
+      const builtIn = await call('/projects');
+      expect(builtIn.status).toBe(200);
+      expect(builtIn.headers.get('X-Plugin')).toBe('reports');
+
+      const blocked = await call('/projects', { headers: { 'X-Block': 'yes' } });
+      expect(blocked.status).toBe(429);
+    });
+
+    it('maps errors thrown by plugin routes like built-in errors', async () => {
+      const res = await call('/reports/forbidden', { method: 'POST' });
+      expect(res.status).toBe(403);
+    });
   });
 });
 

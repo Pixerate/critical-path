@@ -447,6 +447,15 @@ export const slackNotificationPlugin: CriticalPathPlugin = {
 };
 ```
 
+Beyond hooks, plugins can provide:
+
+- `init(engine)`: runs once at startup; `engine.ready` resolves after every plugin's `init` (the router and MCP server await it).
+- `customFieldTypes`: `[{ type: 'url', validate: (value, def) => errorMessage | null }]`, usable in project `customFieldDefinitions`.
+- `routes`: `[{ method, path: '/reports/:projectId', handler: (request, { engine, params, context, url }) => Response }]`, served by `@critical-path/server` before built-in routes, with `engine` scoped to the caller.
+- `middleware`: `(request, { engine, context, url }, next) => Response`, wrapping every routed request after authentication.
+
+Before-hook output is validated like caller input (workflow transitions, custom fields) and cannot change a task's project. After-hook errors are logged, not thrown. See `apps/docs/src/content/docs/plugins/creating-plugins.md`.
+
 Mounting plugins in the engine config:
 
 ```ts

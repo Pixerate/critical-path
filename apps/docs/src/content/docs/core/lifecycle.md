@@ -13,10 +13,12 @@ Critical Path includes an asynchronous lifecycle event system that enables plugi
 | :--- | :--- | :--- |
 | `beforeTaskCreate` | `(task: Partial<Task>)` | Intercept, validate, or enrich a task before insertion |
 | `afterTaskCreate` | `(task: Task)` | Post-creation side effects (e.g. notify Slack) |
-| `beforeTaskUpdate` | `(task: Task, updates: Partial<Task>)` | Intercept or disallow unauthorized field updates |
+| `beforeTaskUpdate` | `(taskId: string, updates: Partial<Task>)` | Intercept or transform updates |
 | `afterTaskUpdate` | `(task: Task, previous: Task)` | Detect status transitions, trigger unblock checks |
-| `beforeTaskDelete` | `(taskId: string)` | Verify permissions before deletion |
-| `afterTaskDelete` | `(taskId: string)` | Clean up related dependencies |
+| `beforeTaskDelete` | `(taskId: string, task: Task)` | Throw to prevent deletion |
+| `afterTaskDelete` | `(taskId: string, task: Task)` | Clean up related records |
+
+Before-hook output is validated (workflow transitions, custom fields) exactly like caller input, and hooks cannot change a task's project. After-hook errors are logged rather than thrown, because the change is already stored.
 
 ---
 

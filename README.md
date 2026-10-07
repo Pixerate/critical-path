@@ -104,7 +104,7 @@ graph TD
 - 🚦 **Universal Semantic & Implied Status Framework**: Clean 3-tier architecture separating universal semantic meaning (`not_started`, `in_progress`, `completed`, `canceled`), arbitrary workflow statuses, and automatic system-derived implied statuses (`isReady`, `isBlocked`, `blockingTaskIds`, `isOverdue`, `isUpcoming`, `isUnplanned`, `isUnassigned`, `isStalled`, `isOverEstimate`, `isPaceWarning`).
 - 🎨 **Creative Workflows & First-Class Deliverables**: Dedicated `Deliverable` entity (`planned`, `in_progress`, `in_review`, `approved`, `delivered`, `canceled`) with format specs, output URLs, multi-task assignment (`deliverableId`), and engine rollup summaries (`getDeliverableSummary` computing task counts, completion states, percentage progress, and hours).
 - 📋 **Comprehensive PM Work Items**: Full CRUD for Projects, Workflows, Deliverables, Tasks, Sprints/Cycles, Deliverable Containers (`sequence`, `shot`, `epic`), Task Dependencies, Subtasks, Priorities, and Estimates.
-- 🔌 **Extensible Plugin Engine**: Lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`), custom field type registries, and custom route middlewares.
+- 🔌 **Extensible Plugin Engine**: Lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`) whose output is validated like caller input, `init` at startup, custom field types (`customFieldTypes`), plus HTTP `routes` and `middleware` served by `@critical-path/server`.
 - ⚙️ **Dynamic Custom Fields**: Attach structured custom fields (text, select, user, date, number, boolean) to projects and tasks on the fly with strict runtime validation.
 - 👥 **Multi-Assignee & Agent Collaboration**: First-class `TaskAssignee` taxonomy supporting co-assignments across users, autonomous AI agents, and teams with role metadata and custom avatar URLs.
 - 🔄 **Bidirectional Workflow Transitions**: Symmetrical transition helpers (`getAllowedNextStatuses`, `getAllowedPreviousStatuses`) and engine methods for moving tasks backwards and forwards through customized workflow states.
@@ -161,7 +161,7 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 
 ### Integration & Extensibility
 - [ ] **Third-Party Integrations**: GitHub/GitLab native connectors *(Planned)*
-- [x] **Plugin Architecture**: `PluginRegistry` with lifecycle hooks and route middlewares
+- [x] **Plugin Architecture**: `PluginRegistry` with `init`, lifecycle hooks, custom field types, HTTP routes and middleware
 - [ ] **Import/Export Tools**: Jira/Trello migration importers *(Planned)*
 
 ### Security & Compliance
