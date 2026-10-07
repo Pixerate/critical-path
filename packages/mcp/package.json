@@ -1,6 +1,6 @@
 {
   "name": "@critical-path/mcp",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Standard Model Context Protocol (MCP) server and client-side WebMCP support for Critical Path",
   "author": "Jack James",
   "license": "MIT",
