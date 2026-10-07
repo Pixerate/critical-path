@@ -179,7 +179,7 @@ handle.unregister();
 
 Each tool's JSON `inputSchema` is generated from its zod schema with `defineTool`, so what the model sees always matches what is enforced. Tool arguments are validated against each tool's zod schema before execution, on both the standard server and WebMCP. Invalid or undeclared arguments return an `isError` result naming the problem (for example, `projectId` cannot be passed to `update_task`).
 
-**Identity:** with an `engine`, changes are attributed to the server's `actor` option (default `DEFAULT_MCP_ACTOR`, `mcp-agent`); tools never take author or actor arguments. With a `client`, the API's authentication decides who the caller is. When you pass `tools: [...]` to `createCriticalPathMcpServer`, tools outside that list are neither listed nor callable. `delete_task` is advertised with the MCP `destructiveHint` annotation.
+**Identity:** with an `engine`, changes are attributed to the server's `actor` option (default `DEFAULT_MCP_ACTOR`, `mcp-agent`); tools never take author or actor arguments. If the engine has an `authorize` policy, the actor is checked like any user: give it project memberships (or `roles: ['admin']`), and a `tenantId` in multi-tenant setups. With a `client`, the API's authentication decides who the caller is. When you pass `tools: [...]` to `createCriticalPathMcpServer`, tools outside that list are neither listed nor callable. `delete_task` is advertised with the MCP `destructiveHint` annotation.
 
 ---
 

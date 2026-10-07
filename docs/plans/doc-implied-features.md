@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 shipped; strict API defaults on `feat/strict-api-defaults`.
+Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`.
 
 Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
@@ -93,6 +93,8 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - Tenancy: projects are scoped by `tenantId` from the request context in the same change.
 
 **Tests**: per-role matrix across REST and MCP; list filtering; a plugin cannot bypass by calling `engine.store` (document that `store` is unchecked by design).
+
+**Implemented**: `authorize` engine option and `createRolePolicy()` (viewer/contributor/project_manager/admin from `project.members`, superuser `roles`, author-owned comments and attachments). Checks run on `withActor` views. Unreadable or cross-tenant projects behave as not found, denied writes raise `ForbiddenError` (403), and lists are filtered. `tenantId` on projects, workflows and teams is stamped from the actor and scopes reads, including the workflow fallback. The router passes `tenantId` and `roles` from `getContext`. Presigned uploads on views require `projectId` and are confined to `projects/<projectId>/`. Enforcement is opt-in (no `authorize` means allow within tenant), matching `requireAuth`. Follow-ups: team-based membership (`project.teamIds`), and a store-level `getProjects(filter)` so lists do not load every project.
 
 ---
 

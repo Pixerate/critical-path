@@ -62,7 +62,7 @@ Router options are the second argument to `createNextHandler`, `createSvelteKitH
 
 | Option | Default | Description |
 | :--- | :--- | :--- |
-| `getContext(request)` | none | Resolve the caller (`{ userId, userName?, actorType?, ...extra }`). Every mutation is attributed to that user, or to `anonymous` (`ANONYMOUS_ACTOR`) when no user is resolved. Request bodies never carry identity. For SvelteKit it receives the `RequestEvent`, so `event.locals` is available. |
+| `getContext(request)` | none | Resolve the caller (`{ userId, userName?, actorType?, tenantId?, roles? }`). `tenantId` and `roles` feed the engine's tenant isolation and `authorize` policy. Every mutation is attributed to that user, or to `anonymous` (`ANONYMOUS_ACTOR`) when no user is resolved. Request bodies never carry identity. For SvelteKit it receives the `RequestEvent`, so `event.locals` is available. |
 | `requireAuth` | `false` | Return `401` unless `getContext` yields a `userId`. `OPTIONS` preflight is always allowed. |
 | `basePath` | strip up to first `/critical-path` | Exact mount path, e.g. `/api/pm`. Requests outside it return `404`. |
 | `cors` | `false` (no CORS headers) | `{ origins: string[] \| '*', credentials?, allowHeaders?, maxAge? }`, or `false` for no CORS headers. `credentials` cannot be combined with `'*'`. |
@@ -110,6 +110,7 @@ const doc = buildOpenApiDocument({ serverUrl: 'https://app.example.com/api/criti
 | :--- | :--- |
 | `400` | Malformed JSON, invalid body (with `issues`), `ValidationError`, workflow transition or custom field validation failures |
 | `401` | `requireAuth` is set and no user was resolved |
+| `403` | The engine's `authorize` policy denies the action (`ForbiddenError`) |
 | `404` | Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ "success": true }`) |
 | `409` | `CircularDependencyError` (body includes `cyclePath`) |
 | `500` | Unexpected errors. The body is always `{ "error": "Internal Server Error" }`; the real error is logged with `console.error`. |

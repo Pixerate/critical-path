@@ -3,7 +3,7 @@ import { CriticalPathRouter } from './router.js';
 import { createNextHandler } from './adapters/next.js';
 import { createSvelteKitHandler } from './adapters/sveltekit.js';
 import { createUniversalHandler } from './adapters/universal.js';
-import { InMemoryStore } from '@critical-path/core';
+import { InMemoryStore, createRolePolicy } from '@critical-path/core';
 
 describe('@critical-path/server Router Tests', () => {
   it('handles project creation and retrieval over HTTP Fetch Requests', async () => {
@@ -842,6 +842,53 @@ describe('@critical-path/server Router Tests', () => {
       expect(res.status).toBe(200);
       const activities = await router.engine.store.getActivities({ taskId: task.id });
       expect(activities.some((a) => a.actorId === 'anonymous')).toBe(true);
+    });
+  });
+
+  describe('authorization and tenancy over HTTP', () => {
+    const users: Record<string, { userId: string; tenantId: string; roles?: string[] }> = {
+      alice: { userId: 'alice', tenantId: 'acme' },
+      vic: { userId: 'vic', tenantId: 'acme' },
+      gus: { userId: 'gus', tenantId: 'globex' }
+    };
+    const router = new CriticalPathRouter(
+      { authorize: createRolePolicy() },
+      {
+        requireAuth: true,
+        getContext: (request) => users[request.headers.get('Authorization')?.replace('Bearer ', '') ?? ''] ?? null
+      }
+    );
+    const call = (token: string, method: string, path: string, body?: unknown) =>
+      router.handleRequest(
+        new Request(`http://localhost/api/critical-path${path}`, {
+          method,
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          ...(body ? { body: JSON.stringify(body) } : {})
+        })
+      );
+
+    it('enforces roles with 403 and hides other tenants with 404', async () => {
+      const created = await call('alice', 'POST', '/projects', {
+        name: 'Acme roadmap',
+        members: [{ userId: 'vic', role: 'viewer' }]
+      });
+      expect(created.status).toBe(201);
+      const { project } = await created.json();
+      expect(project.members).toEqual(expect.arrayContaining([{ userId: 'alice', role: 'admin' }]));
+
+      const viewerWrite = await call('vic', 'POST', '/tasks', { projectId: project.id, title: 'Nope' });
+      expect(viewerWrite.status).toBe(403);
+
+      const viewerRead = await call('vic', 'GET', `/projects/${project.id}`);
+      expect(viewerRead.status).toBe(200);
+
+      const otherTenant = await call('gus', 'GET', `/projects/${project.id}`);
+      expect(otherTenant.status).toBe(404);
+      const otherTenantList = await (await call('gus', 'GET', '/projects')).json();
+      expect(otherTenantList.projects).toHaveLength(0);
+
+      const tenantInBody = await call('alice', 'PATCH', `/projects/${project.id}`, { tenantId: 'globex' });
+      expect(tenantInBody.status).toBe(400);
     });
   });
 });

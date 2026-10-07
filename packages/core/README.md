@@ -133,6 +133,18 @@ await engine.createTask(input);
 
 Create and update schemas exist for workflows, projects, tasks, dependencies, deliverables, teams, containers, iterations, comments, reactions, attachments and time entries. They are strict: server-assigned fields, identity fields and unknown keys are rejected. The schemas live on a subpath so importing `@critical-path/core` in a browser bundle does not pull in zod. A compile-time test fails the build if a domain type gains a field its schema lacks.
 
+#### Authorization & Multi-Tenancy
+
+```ts
+import { CriticalPathEngine, createRolePolicy } from '@critical-path/core';
+
+const engine = new CriticalPathEngine({ store, authorize: createRolePolicy() });
+const asVic = engine.withActor({ userId: 'vic', tenantId: 'acme' });
+await asVic.createTask({ projectId, title: 'x' }); // ForbiddenError if vic is only a viewer
+```
+
+Checks run on `withActor` views (the base engine is trusted). Roles come from `project.members` (`{ userId, role }`, roles `viewer` < `contributor` < `project_manager` < `admin`), and project creators become `admin`. Actors with `roles: ['admin']` are superusers. Projects the actor cannot read, or that belong to another tenant, behave as if they do not exist (`NotFoundError`). Lists are filtered. Records created through a view are stamped with the actor's `tenantId`. See the docs site's Authorization page for the full permission matrix and custom policies.
+
 #### Attributing Mutations to a User (`withActor`)
 
 ```ts

@@ -78,6 +78,8 @@ export interface Team {
   memberIds: string[];
   weeklyCapacityHours?: number;
   schedule?: WorkSchedule;
+  /** Tenant that owns the team. Set by the engine from the creating actor. */
+  tenantId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -117,6 +119,8 @@ export interface Workflow {
   taskTypes?: TaskTypeDefinition[];
   defaultStatusKey?: string;
   isDefault?: boolean;
+  /** Tenant that owns the workflow. Set by the engine from the creating actor. */
+  tenantId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -127,7 +131,10 @@ export interface Project {
   name: string;
   description?: string;
   ownerId?: string;
-  members?: string[]; // user IDs
+  /** Project membership and roles, used by role-based authorization policies. */
+  members?: ProjectMember[];
+  /** Tenant that owns the project. Set by the engine from the creating actor; never from payloads. */
+  tenantId?: string;
   teamIds?: string[]; // team IDs
   workflowId?: string;
   workflow?: Workflow;
@@ -305,6 +312,21 @@ export interface Actor {
   userId: string;
   username?: string;
   actorType?: AuthorType;
+  /**
+   * Tenant the actor belongs to. When set, the actor only sees projects, workflows and teams
+   * with the same `tenantId`, and everything it creates is stamped with it.
+   */
+  tenantId?: string;
+  /** Workspace-wide roles, e.g. `['admin']`. Interpreted by the authorization policy. */
+  roles?: string[];
+}
+
+/** A user's role on a project. */
+export type ProjectRole = Role;
+
+export interface ProjectMember {
+  userId: string;
+  role: ProjectRole;
 }
 
 export interface CommentReaction {
@@ -462,6 +484,13 @@ export interface CriticalPathPlugin {
 }
 
 export interface CriticalPathConfig {
+  /**
+   * Authorization policy applied to every call made through a `withActor` view (which is how
+   * `@critical-path/server` and the MCP server call the engine). Calls on the base engine are
+   * trusted. Use `createRolePolicy()` for project-membership roles, or supply your own.
+   * When omitted, actors may do anything within their tenant.
+   */
+  authorize?: AuthorizationPolicy;
   store?: 'memory' | 'sqlite' | unknown;
   fileStorage?: FileStorageAdapter;
   plugins?: CriticalPathPlugin[];
@@ -741,4 +770,40 @@ export interface WorkloadDistributionOptions {
   userSchedules?: Record<string, WorkSchedule>;
   teamSchedules?: Record<string, WorkSchedule>;
 }
+
+// ==========================================
+// Authorization
+// ==========================================
+
+/**
+ * Operations the engine authorizes. Project-scoped actions are checked against a project;
+ * `project.create` and `workspace.manage` (workflows, teams, webhooks) are workspace-level.
+ */
+export type AuthorizationAction =
+  | 'project.read'
+  | 'project.create'
+  | 'project.update'
+  | 'project.delete'
+  | 'project.manage_members'
+  | 'task.create'
+  | 'task.update'
+  | 'task.delete'
+  | 'comment.create'
+  | 'comment.moderate'
+  | 'attachment.create'
+  | 'attachment.delete'
+  | 'time.log'
+  | 'plan.manage'
+  | 'workspace.manage';
+
+export interface AuthorizationRequest {
+  actor: Actor;
+  action: AuthorizationAction;
+  /** The project the action targets, for project-scoped actions. */
+  project?: Project;
+  /** The specific record, when relevant (e.g. the comment being edited). */
+  resource?: { type: 'task' | 'comment' | 'attachment'; ownerId?: string };
+}
+
+export type AuthorizationPolicy = (request: AuthorizationRequest) => boolean | Promise<boolean>;
 

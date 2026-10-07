@@ -162,6 +162,7 @@ export function buildOpenApiDocument(options: OpenApiOptions = {}): Record<strin
         [status]: { description: 'Success', content: { 'application/json': { schema: successSchema } } },
         '400': errorResponse,
         '401': errorResponse,
+        '403': errorResponse,
         '404': errorResponse,
         ...(route.path.endsWith('/dependencies') && route.method === 'post' ? { '409': errorResponse } : {}),
         '500': errorResponse
