@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 import { ValidationError, type ValidationIssue } from '../domain/errors.js';
+import { DOMAIN_EVENT_NAMES } from '../domain/events.js';
 
 /**
  * Parses `data` with `schema`, returning the cleaned value (unknown keys stripped, defaults
@@ -322,6 +323,20 @@ export const LogTimeSchema = strictObject({
   loggedAt: isoString.optional()
 });
 
+// --- Webhooks ---
+
+export const CreateWebhookSchema = strictObject({
+  name: nonEmpty,
+  /** http(s) URL; private and local addresses are rejected unless the engine allows them. */
+  url: nonEmpty,
+  /** Domain event names (e.g. `task.created`) or `'*'` for all events. */
+  events: z.array(z.enum(['*', ...DOMAIN_EVENT_NAMES])).min(1),
+  /** Signing secret (at least 16 characters). Generated when omitted and returned once. */
+  secret: z.string().min(16).optional(),
+  active: z.boolean().optional()
+});
+export const UpdateWebhookSchema = CreateWebhookSchema.partial();
+
 export type CreateTaskPayload = z.infer<typeof CreateTaskSchema>;
 export type UpdateTaskPayload = z.infer<typeof UpdateTaskSchema>;
 export type CreateProjectPayload = z.infer<typeof CreateProjectSchema>;
@@ -350,4 +365,6 @@ export type CreateAttachmentBody = z.input<typeof CreateAttachmentSchema>;
 export type UploadAttachmentBody = z.input<typeof UploadAttachmentSchema>;
 export type PresignAttachmentBody = z.input<typeof PresignAttachmentSchema>;
 export type LogTimeBody = z.input<typeof LogTimeSchema>;
+export type CreateWebhookBody = z.input<typeof CreateWebhookSchema>;
+export type UpdateWebhookBody = z.input<typeof UpdateWebhookSchema>;
 

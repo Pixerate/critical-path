@@ -20,9 +20,12 @@ import type {
   CreateAttachmentBody,
   UploadAttachmentBody,
   PresignAttachmentBody,
-  LogTimeBody
+  LogTimeBody,
+  CreateWebhookBody,
+  UpdateWebhookBody
 } from '@critical-path/core/schemas';
 import type {
+  PublicWebhook,
   TaskDependency,
   Project,
   Task,
@@ -411,6 +414,31 @@ export class CriticalPathClient {
     item.completed = completed !== undefined ? completed : !item.completed;
     item.completedAt = item.completed ? new Date().toISOString() : undefined;
     return this.updateTask(taskId, { todos: task.todos });
+  }
+
+  // Webhooks
+  async getWebhooks(): Promise<PublicWebhook[]> {
+    return (await this.request<{ webhooks: PublicWebhook[] }>('/webhooks')).webhooks;
+  }
+
+  /** Registers a webhook. The returned `secret` is shown only once; store it to verify deliveries. */
+  async createWebhook(data: CreateWebhookBody): Promise<{ webhook: PublicWebhook; secret: string }> {
+    return this.request<{ webhook: PublicWebhook; secret: string }>('/webhooks', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async updateWebhook(id: string, updates: UpdateWebhookBody): Promise<PublicWebhook> {
+    const res = await this.request<{ webhook: PublicWebhook }>(`/webhooks/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+    return res.webhook;
+  }
+
+  async deleteWebhook(id: string): Promise<boolean> {
+    return this.deleteRequest(`/webhooks/${encodeURIComponent(id)}`);
   }
 
   /** Declares that `taskId` depends on another task. Rejects with a 409 error on cycles. */

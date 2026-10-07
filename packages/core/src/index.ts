@@ -5,4 +5,5 @@ export * from './storage/index.js';
 export * from './plugins/index.js';
 export * from './engine/index.js';
 export * from './domain/index.js';
+export * from './webhooks/index.js';
 

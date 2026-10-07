@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`.
+Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) on `feat/webhooks`.
 
 Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
@@ -112,6 +112,18 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - Cache active webhooks in memory, invalidated on webhook CRUD.
 
 **Tests**: signature verification helper (`verifyWebhookSignature` exported for receivers), retry on 500, timeout, secret redaction.
+
+**Implemented**: `WebhookDispatcher` subscribed to the domain event bus, so every event is deliverable. This fixed the gaps where `task.updated`, `time.logged` and `dependency.added` never fired, and teams, containers and iterations only fired on create. Other details:
+- HMAC-SHA256 signatures over `"<timestamp>.<body>"`, using Web Crypto. `verifyWebhookSignature` and `generateWebhookSecret` are exported.
+- 10s timeout, and up to 5 attempts with exponential backoff.
+- The pluggable `WebhookDeliveryQueue` defaults to in-process timers. Durable queues call `engine.webhooks.deliver(job)`.
+- Static `config.webhooks` are supported, plus API/engine CRUD that requires `workspace.manage` and is tenant-scoped.
+- Secrets are generated when omitted, returned once, and redacted afterwards.
+- Literal private and local URLs are blocked unless `allowPrivateUrls` is set.
+- Event names are validated against `DOMAIN_EVENT_NAMES`.
+- SQLite now persists the webhook `name` and `tenantId`.
+
+**Follow-ups**: update and delete events for teams, containers and iterations; DNS-aware SSRF checks; a durable outbox adapter.
 
 ---
 

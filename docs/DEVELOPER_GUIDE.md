@@ -256,6 +256,12 @@ All endpoints return JSON responses.
 - `POST /api/critical-path/attachments/presign` - Request presigned upload URL for direct-to-cloud client uploads.
 - `DELETE /api/critical-path/attachments/:id` - Delete an attachment.
 
+### Webhooks
+- `GET /api/critical-path/webhooks` - List webhooks (secrets redacted to `hasSecret`).
+- `POST /api/critical-path/webhooks` - Register `{ name, url, events, secret?, active? }`. The response includes the signing `secret` once. `events` are domain event names or `'*'`.
+- `GET|PATCH|DELETE /api/critical-path/webhooks/:id` - Read, update/rotate, or delete a webhook.
+- Deliveries are signed (`X-CriticalPath-Signature`, verify with `verifyWebhookSignature`), time out, and retry with backoff. Configure with the engine's `webhookDelivery` option (custom `queue` for durable delivery).
+
 ### Time Tracking
 - `GET /api/critical-path/time-entries?taskId=:id` - Get time logs for task.
 - `POST /api/critical-path/time-entries` - Log time against task (hours must be a positive number; rolls up into the task's `loggedHours`).

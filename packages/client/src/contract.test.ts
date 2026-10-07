@@ -51,6 +51,16 @@ describe('client ↔ server contract', () => {
     const entry = await client.logTime({ taskId: task.id, hours: 1.5 });
     expect(entry.userId).toBe('alice');
 
+    const { webhook, secret } = await client.createWebhook({
+      name: 'Hook',
+      url: 'https://hooks.example.com/contract',
+      events: ['task.created']
+    });
+    expect(secret).toMatch(/^whsec_/);
+    expect((await client.updateWebhook(webhook.id, { active: false })).active).toBe(false);
+    expect((await client.getWebhooks()).map((w) => w.id)).toContain(webhook.id);
+    expect(await client.deleteWebhook(webhook.id)).toBe(true);
+
     expect(await client.deleteProject(project.id)).toBe(true);
     expect(await client.deleteProject(project.id)).toBe(false);
   });

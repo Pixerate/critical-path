@@ -101,7 +101,10 @@ export interface DependencyRepository {
 
 export interface WebhookRepository {
   getWebhooks(): Promise<Webhook[]>;
+  getWebhook(id: string): Promise<Webhook | null>;
   addWebhook(webhook: Omit<Webhook, 'id' | 'createdAt'>): Promise<Webhook>;
+  updateWebhook(id: string, updates: Partial<Omit<Webhook, 'id' | 'createdAt'>>): Promise<Webhook | null>;
+  deleteWebhook(id: string): Promise<boolean>;
 }
 
 export interface DeliverableRepository {
@@ -538,10 +541,26 @@ export class InMemoryStore implements StorageAdapter {
     return Array.from(this.webhooks.values());
   }
 
+  async getWebhook(id: string): Promise<Webhook | null> {
+    return this.webhooks.get(id) ?? null;
+  }
+
   async addWebhook(webhook: Omit<Webhook, 'id' | 'createdAt'>): Promise<Webhook> {
     const id = `wh_${Math.random().toString(36).substring(2, 9)}`;
     const newWh: Webhook = { ...webhook, id, createdAt: new Date().toISOString() };
     this.webhooks.set(id, newWh);
     return newWh;
+  }
+
+  async updateWebhook(id: string, updates: Partial<Omit<Webhook, 'id' | 'createdAt'>>): Promise<Webhook | null> {
+    const existing = this.webhooks.get(id);
+    if (!existing) return null;
+    const updated: Webhook = { ...existing, ...updates, id, createdAt: existing.createdAt };
+    this.webhooks.set(id, updated);
+    return updated;
+  }
+
+  async deleteWebhook(id: string): Promise<boolean> {
+    return this.webhooks.delete(id);
   }
 }
