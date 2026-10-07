@@ -195,6 +195,55 @@ export class CriticalPathEngine {
     return !!this.actor && !this.authorizationBypassed && (!!this.config.authorize || !!this.actor.tenantId);
   }
 
+  /** Effects deferred until the enclosing store transaction commits; set on transaction views. */
+  private readonly pendingEffects?: Array<() => unknown>;
+
+  /**
+   * Runs `fn` in a store transaction when the adapter supports one, on a view whose store is the
+   * transaction. Domain events, after-hooks and file deletions are deferred until commit, so a
+   * rolled-back cascade publishes nothing and leaves files in place. Nested calls join the
+   * enclosing transaction. Without adapter support, `fn` runs directly.
+   */
+  private async inTransaction<T>(fn: (engine: CriticalPathEngine) => Promise<T>): Promise<T> {
+    if (this.pendingEffects || !this.store.transaction) return fn(this);
+    const effects: Array<() => unknown> = [];
+    const defer = <O extends object>(target: O, methods: string[]): O =>
+      new Proxy(target, {
+        get(t, property) {
+          const value = Reflect.get(t, property);
+          if (typeof value !== 'function') return value;
+          if (methods.includes(property as string)) {
+            return async (...args: unknown[]) => {
+              effects.push(() => value.apply(t, args));
+            };
+          }
+          return value.bind(t);
+        }
+      });
+
+    const result = await this.store.transaction(async (tx) => {
+      effects.length = 0; // an adapter may retry fn
+      const view = Object.create(this) as CriticalPathEngine;
+      Object.defineProperties(view, {
+        store: { value: tx },
+        pendingEffects: { value: effects },
+        events: { value: defer(this.events, ['publish']) },
+        plugins: { value: defer(this.plugins, ['runAfterTaskCreate', 'runAfterTaskUpdate', 'runAfterTaskDelete']) },
+        fileStorage: { value: this.fileStorage && defer(this.fileStorage, ['delete']) }
+      });
+      return fn(view);
+    });
+
+    for (const effect of effects) {
+      try {
+        await effect();
+      } catch (error) {
+        console.warn('[CriticalPath] Effect after commit failed:', error);
+      }
+    }
+    return result;
+  }
+
   /** A view that keeps the actor for attribution but skips checks, for cascades already authorized. */
   private elevated(): CriticalPathEngine {
     if (!this.enforcing) return this;
@@ -566,6 +615,10 @@ export class CriticalPathEngine {
    * hooks run and `task.deleted` events fire before `project.deleted` is published.
    */
   async deleteProject(id: string): Promise<boolean> {
+    return this.inTransaction((engine) => engine.deleteProjectNow(id));
+  }
+
+  private async deleteProjectNow(id: string): Promise<boolean> {
     const existing = await this.getProject(id);
     if (!existing) return false;
     await this.requireProjectAccess('project.delete', id);
@@ -1157,6 +1210,10 @@ export class CriticalPathEngine {
    * entries. The activity log is kept as an audit trail.
    */
   async deleteTask(id: string, options: { subtasks?: 'delete' | 'detach' } = {}): Promise<boolean> {
+    return this.inTransaction((engine) => engine.deleteTaskNow(id, options));
+  }
+
+  private async deleteTaskNow(id: string, options: { subtasks?: 'delete' | 'detach' } = {}): Promise<boolean> {
     const existing = await this.getTask(id);
     if (!existing) return false;
     await this.requireProjectAccess('task.delete', existing.projectId);
@@ -1932,6 +1989,10 @@ export class CriticalPathEngine {
 
   /** Deletes a container. Its tasks and nested containers are kept but no longer reference it. */
   async deleteContainer(id: string): Promise<boolean> {
+    return this.inTransaction((engine) => engine.deleteContainerNow(id));
+  }
+
+  private async deleteContainerNow(id: string): Promise<boolean> {
     const existing = await this.getContainer(id);
     if (!existing) return false;
     await this.requireProjectAccess('plan.manage', existing.projectId);
@@ -2058,6 +2119,10 @@ export class CriticalPathEngine {
   }
 
   async deleteDeliverable(id: string): Promise<boolean> {
+    return this.inTransaction((engine) => engine.deleteDeliverableNow(id));
+  }
+
+  private async deleteDeliverableNow(id: string): Promise<boolean> {
     const existing = await this.getDeliverable(id);
     if (!existing) return false;
     await this.requireProjectAccess('plan.manage', existing.projectId);
@@ -2210,6 +2275,10 @@ export class CriticalPathEngine {
 
   /** Deletes an iteration. Its tasks are kept and moved back to the backlog (no iteration). */
   async deleteIteration(id: string): Promise<boolean> {
+    return this.inTransaction((engine) => engine.deleteIterationNow(id));
+  }
+
+  private async deleteIterationNow(id: string): Promise<boolean> {
     const existing = await this.getIteration(id);
     if (!existing) return false;
     await this.requireProjectAccess('plan.manage', existing.projectId);

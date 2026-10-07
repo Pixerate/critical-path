@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import type { AsyncLocalStorage } from 'node:async_hooks';
 import type { ProjectFilter, StorageAdapter } from './index.js';
 import { decodeCursor, encodeCursor, pageSize, type ActivityQuery, type Page, type TaskQuery } from './query.js';
 import type {
@@ -67,7 +68,73 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       }
     }
     this.initTables();
+
+    const asyncHooks = (globalThis as any).process?.getBuiltinModule?.('node:async_hooks') as
+      | typeof import('node:async_hooks')
+      | undefined;
+    this.txContext = asyncHooks ? new asyncHooks.AsyncLocalStorage<{ open: boolean }>() : undefined;
+
+    // Every call from outside an open transaction passes through `gated`, so it waits while a
+    // transaction runs and the transaction waits for it to finish. Internal calls use the target.
+    return new Proxy(this, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (typeof value !== 'function' || property === 'constructor' || property === 'transaction') return value;
+        return (...args: unknown[]) => target.gated(() => value.apply(target, args));
+      }
+    });
   }
+
+  // --- Transactions ---
+  // One DatabaseSync connection is shared by every request, so while a transaction is open,
+  // calls from its async context (the cascade, plugin hooks it triggers) join it and other calls
+  // wait. Otherwise an unrelated request's write could land in the transaction and be rolled back.
+  private txContext?: AsyncLocalStorage<{ open: boolean }>;
+  private txGate?: Promise<void>;
+  private inFlight = 0;
+  private onIdle?: () => void;
+
+  private async gated<T>(op: () => Promise<T>): Promise<T> {
+    if (this.txContext?.getStore()?.open) return op();
+    while (this.txGate) await this.txGate;
+    this.inFlight++;
+    try {
+      return await op();
+    } finally {
+      if (--this.inFlight === 0) this.onIdle?.();
+    }
+  }
+
+  async transaction<T>(fn: (tx: StorageAdapter) => Promise<T>): Promise<T> {
+    // `this` is the Proxy, so calls made through `tx` are gated (and pass, being in context).
+    const tx = this as StorageAdapter;
+    if (this.txContext?.getStore()?.open) return fn(tx); // nested: join the open transaction
+    if (!this.txContext) throw new Error('SQLiteStore transactions require node:async_hooks.');
+
+    while (this.txGate) await this.txGate;
+    let release!: () => void;
+    this.txGate = new Promise<void>((resolve) => (release = resolve));
+    try {
+      if (this.inFlight > 0) await new Promise<void>((resolve) => (this.onIdle = resolve));
+      this.onIdle = undefined;
+      const context = { open: true };
+      this.db.exec('BEGIN IMMEDIATE');
+      try {
+        const result = await this.txContext.run(context, () => fn(tx));
+        this.db.exec('COMMIT');
+        return result;
+      } catch (error) {
+        this.db.exec('ROLLBACK');
+        throw error;
+      } finally {
+        context.open = false;
+      }
+    } finally {
+      this.txGate = undefined;
+      release();
+    }
+  }
+
 
   private initTables(): void {
     this.db.exec(`

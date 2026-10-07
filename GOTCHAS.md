@@ -207,11 +207,17 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Project `customFieldDefinitions` may only use built-in types or types registered by a plugin, so fields that could never validate are caught at configuration time.
 - **Solution / Workaround**: Register the plugin providing the type in `plugins` on every engine instance (including MCP servers and workers) that reads or writes those projects.
 
-### Deletes Cascade, but Without a Transaction
-- **Area / Package**: `@critical-path/core` (`deleteTask`, `deleteProject`, `deleteContainer`, `deleteIteration`, `deleteDeliverable`)
-- **Symptom / Behavior**: Deleting a task removes its subtasks, comments, attachments (and files), dependencies and time entries; deleting a project removes all its planning records. If the process crashes mid-cascade, some child records may remain.
-- **Root Cause**: The storage interface has no transaction API, so cascades run as a series of individual deletes (child records first, the parent last).
-- **Solution / Workaround**: Re-run the delete to finish an interrupted cascade (it is idempotent: missing records are skipped). Use `deleteTask(id, { subtasks: 'detach' })` to keep subtasks. Activity log entries are intentionally kept.
+### Deletes Cascade, Atomically Only on Stores with `transaction`
+- **Area / Package**: `@critical-path/core` (`deleteTask`, `deleteProject`, `deleteContainer`, `deleteIteration`, `deleteDeliverable`, `StorageAdapter.transaction`)
+- **Symptom / Behavior**: Deleting a task removes its subtasks, comments, attachments (and files), dependencies and time entries; deleting a project removes all its planning records. On `InMemoryStore`, `FirebaseStore` and adapters without `transaction`, a crash or a throwing `beforeTaskDelete` hook mid-cascade leaves some records deleted and others not. On `SQLiteStore`, the whole cascade rolls back.
+- **Root Cause**: Cascades run as a series of individual deletes (child records first, the parent last). The engine wraps them in `store.transaction` only when the adapter provides it, deferring events, after-hooks and file deletions until commit.
+- **Solution / Workaround**: Implement `transaction` in custom adapters (use a dedicated connection, so concurrent requests stay out of it). Without it, re-run the delete to finish an interrupted cascade; it is idempotent, skipping missing records. Use `deleteTask(id, { subtasks: 'detach' })` to keep subtasks. Activity log entries are intentionally kept.
+
+### SQLiteStore Is a Proxy That Serializes Around Transactions
+- **Area / Package**: `@critical-path/core` (`SQLiteStore`)
+- **Symptom / Behavior**: `new SQLiteStore()` returns a Proxy. While a cascade transaction is open, unrelated store calls wait for it to finish.
+- **Root Cause**: Every request shares one synchronous `DatabaseSync` connection, so a write from another request could otherwise land inside an open transaction and be rolled back with it. Calls made inside the transaction's async context (found via `AsyncLocalStorage`) join it, so plugin hooks that read through the engine do not deadlock.
+- **Solution / Workaround**: Nothing to do in normal use. Code that starts work inside a `beforeTaskDelete` hook and waits for it from a different async context (for example, a queue that calls back into the engine) will wait for the transaction; avoid blocking on such work inside hooks.
 
 ### Storage Adapters Must Return Unset Optional Fields as Absent, and Must Be Able to Clear Them
 - **Area / Package**: `@critical-path/core` (`SQLiteStore`, `FirebaseStore`, custom adapters)
@@ -279,3 +285,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: A `FirebaseStore` change passes `pnpm run test` but fails against real Firestore, for example because the mock ignores query operators it does not implement or accepts `undefined` values.
 - **Root Cause**: The mock implements only the subset of the Firestore API that `FirebaseStore` uses, with simplified semantics.
 - **Solution / Workaround**: Run `pnpm --filter @critical-path/core test:firestore` (Java plus `npm i -g firebase-tools`). It starts the emulator and runs the conformance suite against it. CI runs it in the `firestore-emulator` job. The test is skipped unless `FIRESTORE_EMULATOR_HOST` is set. `firebase.json` also holds the docs site's App Hosting config, so edit it rather than replacing it.
+
+### Release Run Fails with `E409 Cannot publish over previously staged` but the Package Is Published
+- **Area / Package**: Release workflow (`changeset publish` with Trusted Publishing)
+- **Symptom / Behavior**: "Release & Publish Packages" fails with `409 Conflict ... Cannot publish over previously staged` for one package, yet `npm view <pkg> version` shows the new version as `latest`, with provenance and its git tag.
+- **Root Cause**: npm stages and then finalizes publishes. The registry can answer 409 while a publish is still finalizing (seen on 2026-10-07 for `@critical-path/mcp@0.11.10`, which appeared about 30 seconds later).
+- **Solution / Workaround**: Before re-running, check `npm view @critical-path/<pkg>@<version> dist-tags dist.attestations` and `git ls-remote --tags origin`. If the version and tag exist, nothing is missing. Otherwise re-run the workflow; `changeset publish` skips versions that are already published.

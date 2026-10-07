@@ -41,6 +41,26 @@ const engine = new CriticalPathEngine({ store: new PostgresStore(pool) });
   - `queryTasks`: `(createdAt, id)` ascending.
   - `queryActivities`: `(createdAt, id)` descending.
 - **Filters.** Every filter passed to `getAttachments`, `getActivities`, `queryTasks` and `queryActivities` must be applied together. The exported helpers `matchesTaskQuery`, `matchesActivityQuery` and `paginate` implement the in-memory semantics if your database cannot push a filter down.
+- **Transactions (optional).** Implement `transaction(fn)` to make cascading deletes atomic. Run `fn` with an adapter (`tx`) whose calls all belong to one database transaction, commit when it resolves, and roll back when it throws. A nested `transaction` call should join the outer one. Keep unrelated concurrent calls out of the transaction, for example by giving `tx` its own connection from a pool:
+
+  ```ts
+  async transaction<T>(fn: (tx: StorageAdapter) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await fn(new PostgresStorageAdapter(client));
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  ```
+
+  The engine defers domain events, `afterTask*` hooks and file deletions until `fn` resolves. If your database retries transactions, `fn` may run more than once.
 
 ---
 

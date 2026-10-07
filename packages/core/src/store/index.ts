@@ -153,7 +153,14 @@ export interface StorageAdapter
     ActivityRepository,
     TimeEntryRepository,
     DependencyRepository,
-    WebhookRepository {}
+    WebhookRepository {
+  /**
+   * Optional. Runs `fn` atomically: every write made through `tx` commits together, or none do if
+   * `fn` throws. The engine uses it for cascading deletes when present. Implementations must make
+   * calls on `tx` part of the transaction, and should keep unrelated concurrent calls out of it.
+   */
+  transaction?<T>(fn: (tx: StorageAdapter) => Promise<T>): Promise<T>;
+}
 
 /**
  * Map-backed store for development and tests. Reads and writes are deep-copied, so it behaves
