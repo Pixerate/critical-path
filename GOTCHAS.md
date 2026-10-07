@@ -273,3 +273,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Each package sets `"files": ["dist", "!dist/**/*.test.*"]`, so only build output (minus compiled tests) is published. Anything outside `dist/` must be listed explicitly.
 - **Solution / Workaround**: Emit runtime assets into `dist/` (as `create-critical-path` does with its templates) or add them to `files`. Check with `npm pack --dry-run` in the package directory.
 
+
+### The Firestore Mock Is Not Firestore
+- **Area / Package**: `@critical-path/core` (`InMemoryFirestoreMock`, `FirebaseStore`)
+- **Symptom / Behavior**: A `FirebaseStore` change passes `pnpm run test` but fails against real Firestore, for example because the mock ignores query operators it does not implement or accepts `undefined` values.
+- **Root Cause**: The mock implements only the subset of the Firestore API that `FirebaseStore` uses, with simplified semantics.
+- **Solution / Workaround**: Run `pnpm --filter @critical-path/core test:firestore` (Java plus `npm i -g firebase-tools`). It starts the emulator and runs the conformance suite against it. CI runs it in the `firestore-emulator` job. The test is skipped unless `FIRESTORE_EMULATOR_HOST` is set. `firebase.json` also holds the docs site's App Hosting config, so edit it rather than replacing it.

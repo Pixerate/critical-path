@@ -28,9 +28,11 @@
   "scripts": {
     "build": "tsc --build",
     "test": "vitest run",
-    "clean": "rm -rf dist *.tsbuildinfo"
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test:firestore": "firebase emulators:exec --only firestore --project demo-critical-path --config ../../firebase.json 'vitest run src/store/firestore-emulator.test.ts'"
   },
   "devDependencies": {
+    "@google-cloud/firestore": "^9.3.1",
     "@types/node": "^24.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

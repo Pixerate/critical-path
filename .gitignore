@@ -14,3 +14,6 @@ coverage
 .firebase
 
 .apphosting
+
+# Firestore emulator
+firestore-debug.log

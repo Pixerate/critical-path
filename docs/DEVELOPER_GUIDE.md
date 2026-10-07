@@ -520,7 +520,7 @@ import { runStorageAdapterConformance } from '@critical-path/core/testing';
 runStorageAdapterConformance({ name: 'Postgres', createStore: () => new PostgresStorageAdapter(db), describe, it, expect });
 ```
 
-It checks field round-trips, partial updates and clearing, not-found contracts, combined filters and sort orders. See `apps/docs/src/content/docs/storage/custom.md` for the full contract.
+It checks field round-trips, partial updates and clearing, not-found contracts, combined filters and sort orders. CI runs it against InMemory, SQLite, the Firestore mock and the real Firestore emulator (`pnpm --filter @critical-path/core test:firestore`, requires Java and the Firebase CLI). See `apps/docs/src/content/docs/storage/custom.md` for the full contract.
 
 ---
 
