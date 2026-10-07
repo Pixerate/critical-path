@@ -285,3 +285,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: A `FirebaseStore` change passes `pnpm run test` but fails against real Firestore, for example because the mock ignores query operators it does not implement or accepts `undefined` values.
 - **Root Cause**: The mock implements only the subset of the Firestore API that `FirebaseStore` uses, with simplified semantics.
 - **Solution / Workaround**: Run `pnpm --filter @critical-path/core test:firestore` (Java plus `npm i -g firebase-tools`). It starts the emulator and runs the conformance suite against it. CI runs it in the `firestore-emulator` job. The test is skipped unless `FIRESTORE_EMULATOR_HOST` is set. `firebase.json` also holds the docs site's App Hosting config, so edit it rather than replacing it.
+
+### Release Run Fails with `E409 Cannot publish over previously staged` but the Package Is Published
+- **Area / Package**: Release workflow (`changeset publish` with Trusted Publishing)
+- **Symptom / Behavior**: "Release & Publish Packages" fails with `409 Conflict ... Cannot publish over previously staged` for one package, yet `npm view <pkg> version` shows the new version as `latest`, with provenance and its git tag.
+- **Root Cause**: npm stages and then finalizes publishes. The registry can answer 409 while a publish is still finalizing (seen on 2026-10-07 for `@critical-path/mcp@0.11.10`, which appeared about 30 seconds later).
+- **Solution / Workaround**: Before re-running, check `npm view @critical-path/<pkg>@<version> dist-tags dist.attestations` and `git ls-remote --tags origin`. If the version and tag exist, nothing is missing. Otherwise re-run the workflow; `changeset publish` skips versions that are already published.
