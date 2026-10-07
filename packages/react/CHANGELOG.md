@@ -1,5 +1,14 @@
 # @critical-path/react
 
+## 0.14.5
+
+### Patch Changes
+
+- Updated dependencies [cfd3215]
+  - @critical-path/core@0.40.0
+  - @critical-path/client@0.21.0
+  - @critical-path/mcp@0.12.0
+
 ## 0.14.4
 
 ### Patch Changes

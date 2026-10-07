@@ -1,5 +1,21 @@
 # @critical-path/server
 
+## 0.25.0
+
+### Minor Changes
+
+- cfd3215: Critical path analysis can schedule each task on its assignee's calendar.
+  
+  - `calculateCriticalPath(projectId, { calendars: 'assignee' })`, or `criticalPathCalendars: 'assignee'` on the engine, schedules each task on the assignee's `schedule` (from `users`), then the task team's schedule, then the project calendar. Passes run on dates, so a Friday-off assignee pushes their successors to Monday. Slack is measured in each task's own working hours, and each task reports the `scheduleId` it used. Without a project start date, assignee mode starts today (UTC midnight). Calendars are evaluated in UTC.
+  - The default `'project'` mode is unchanged.
+  - REST: `GET /projects/:id/critical-path?calendars=assignee` (unknown values return 400). Client: `calculateCriticalPath(id, { calendars })`. MCP: a `calendars` argument on `calculate_critical_path`.
+  - New calendar helpers `nextWorkingTime` and `previousWorkingTime`, and `resolveTaskSchedule`.
+
+### Patch Changes
+
+- Updated dependencies [cfd3215]
+  - @critical-path/core@0.40.0
+
 ## 0.24.4
 
 ### Patch Changes
