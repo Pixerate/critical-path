@@ -1,5 +1,6 @@
 import { CriticalPathEngine, type AuthorType, type CriticalPathConfig } from '@critical-path/core';
 import * as schemas from '@critical-path/core/schemas';
+import { buildOpenApiDocument } from './openapi.js';
 
 const CORS_ALLOW_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
 const DEFAULT_CORS_ALLOW_HEADERS = ['Content-Type', 'Authorization'];
@@ -174,6 +175,11 @@ export class CriticalPathRouter {
       : this.engine;
 
     try {
+      // OpenAPI contract (behind the same auth as every other route)
+      if (segments[0] === 'openapi.json' && segments.length === 1 && method === 'GET') {
+        return this.jsonResponse(buildOpenApiDocument({ serverUrl: this.openApiServerUrl(url, subpath) }));
+      }
+
       // Workflows API
       if (segments[0] === 'workflows') {
         const workflowId = segments[1];
@@ -726,6 +732,12 @@ export class CriticalPathRouter {
     const identity = context?.userId ?? claimed;
     if (!identity) throw new BadRequestError(`${field} is required`);
     return identity;
+  }
+
+  /** The API root as seen by this request, e.g. `https://host/api/critical-path`. */
+  private openApiServerUrl(url: URL, subpath: string): string {
+    const root = url.pathname.slice(0, url.pathname.length - subpath.length).replace(/\/+$/, '');
+    return `${url.origin}${root}`;
   }
 
   private async readJson(request: Request): Promise<any> {

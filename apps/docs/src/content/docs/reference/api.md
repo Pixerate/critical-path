@@ -5,6 +5,8 @@ description: Complete REST endpoint documentation exposed by @critical-path/serv
 
 The `@critical-path/server` router exposes the following REST endpoints under the configured base path (e.g. `/api/critical-path`).
 
+A machine-readable OpenAPI 3.1 document is served at `GET /openapi.json`. Its request bodies are generated from the same zod schemas the router validates with (`@critical-path/core/schemas`).
+
 ---
 
 ## Projects Endpoints
@@ -115,10 +117,15 @@ Errors are returned as JSON with an `error` message and, where useful, extra det
 
 | Status | When |
 | :--- | :--- |
-| `400` | Malformed JSON body, `ValidationError`, invalid workflow transition (`fromStatus`, `toStatus`), custom field validation failure (`fieldKey`), invalid attachment |
+| `400` | Malformed JSON body, invalid body (`issues: [{ path, message }]`), `ValidationError`, invalid workflow transition (`fromStatus`, `toStatus`), custom field validation failure (`fieldKey`), invalid attachment |
 | `401` | `requireAuth` is enabled and no user was resolved by `getContext` |
 | `404` | Unknown route, missing resource (`NotFoundError`), or `DELETE` of a resource that does not exist |
 | `409` | Dependency would create a cycle (`cyclePath`) |
 | `500` | Unexpected server error. The message is `Internal Server Error` unless the router's `exposeErrors` option is on (default: only when `NODE_ENV === 'development'`). The error is passed to the `onError` option, or logged with `console.error`. |
 
 `OPTIONS` requests are answered with `204` and CORS headers.
+
+### Validation
+
+Server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, and the owning `projectId` on updates) and unknown keys are stripped from request bodies. Comments, reactions and attachments require an author (`authorId`, `userId`, `uploaderId`) unless the router's `getContext` resolves the caller.
+

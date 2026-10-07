@@ -177,7 +177,7 @@ handle.unregister();
 | `get_timeline_ladder` | Multi-scale Ladder of Abstraction (macro/standard/concrete) | `{ projectId?, level?, containerId?, iterationId? }` |
 | `get_task_ladder` | Single-task ladder view connecting phase, CPM Gantt, and concrete evidence | `{ taskId }` |
 
-Tool arguments are validated against each tool's zod schema before execution, on both the standard server and WebMCP. Invalid arguments return an `isError` result, and fields a tool does not declare are stripped (for example, `projectId` cannot be changed through `update_task`). When you pass `tools: [...]` to `createCriticalPathMcpServer`, tools outside that list are neither listed nor callable. `delete_task` is advertised with the MCP `destructiveHint` annotation.
+Each tool's JSON `inputSchema` is generated from its zod schema with `defineTool`, so what the model sees always matches what is enforced. Tool arguments are validated against each tool's zod schema before execution, on both the standard server and WebMCP. Invalid arguments return an `isError` result, and fields a tool does not declare are stripped (for example, `projectId` cannot be changed through `update_task`). When you pass `tools: [...]` to `createCriticalPathMcpServer`, tools outside that list are neither listed nor callable. `delete_task` is advertised with the MCP `destructiveHint` annotation.
 
 ---
 

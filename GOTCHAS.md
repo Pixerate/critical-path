@@ -141,3 +141,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: SvelteKit puts the session on `event.locals` (populated in `hooks.server.ts`), which a bare `Request` does not carry. The SvelteKit adapter therefore calls `getContext(event)`, while `createNextHandler`, `createUniversalHandler` and `CriticalPathRouter` call `getContext(request)`.
 - **Solution / Workaround**: Use `event.locals` in SvelteKit and headers/cookies elsewhere. Custom adapters can pass a per-request resolver with `router.handleRequest(request, { getContext: () => ... })`.
 
+### New Entity Fields Must Be Added to `@critical-path/core/schemas`
+- **Area / Package**: `@critical-path/core` (`schemas/index.ts`), `@critical-path/server`
+- **Symptom / Behavior**: A field added to a domain type (e.g. `Task`) is silently dropped from REST requests, or `tsc --build` fails in `schemas.test.ts` with `missingFromSchema: "<field>"`.
+- **Root Cause**: The router parses bodies with zod schemas that strip unknown keys, so only fields declared in the schema reach the engine. `schemas.test.ts` compares schema keys to the domain types at compile time to catch this.
+- **Solution / Workaround**: Add the field to the matching create/update schema in `packages/core/src/schemas/index.ts`. If the field is server-assigned, add it to the `Omit<>` in the test instead. Keep schemas on the `@critical-path/core/schemas` subpath and never export them from the core root, or zod will be bundled into browser apps.
+
+### Documenting New Routes in the OpenAPI Route Table
+- **Area / Package**: `@critical-path/server` (`openapi.ts`)
+- **Symptom / Behavior**: `openapi.test.ts` fails with `Route not found` or a missing response property.
+- **Root Cause**: `CriticalPathRouter` is an if-chain, so the OpenAPI document is built from a hand-maintained `ROUTES` table. The test calls every documented route against seeded data to keep the table honest.
+- **Solution / Workaround**: When adding or changing a route, update its `ROUTES` entry (path, method, body schema, `responseKey`). Undocumented new routes are not detected automatically, so add them in the same change.
+

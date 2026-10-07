@@ -260,8 +260,13 @@ All endpoints return JSON responses.
 - `GET /api/critical-path/time-entries?taskId=:id` - Get time logs for task.
 - `POST /api/critical-path/time-entries` - Log time against task (hours must be a positive number; rolls up into the task's `loggedHours`).
 
+### Request Validation & OpenAPI
+- Request bodies are parsed with the schemas in `@critical-path/core/schemas`. Invalid bodies return `400` with `issues: [{ path, message }]`; server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, owning `projectId` on updates) and unknown keys are stripped.
+- `GET /api/critical-path/openapi.json` returns an OpenAPI 3.1 document generated from the same schemas. `buildOpenApiDocument()` from `@critical-path/server` builds it without a router.
+- When adding a route, add it to `ROUTES` in `packages/server/src/openapi.ts`; `openapi.test.ts` calls every documented route and fails on unknown routes or mismatched response keys.
+
 ### Error Responses
-- `400` - Malformed JSON body, `ValidationError`, illegal workflow transition, custom field or attachment validation failure.
+- `400` - Malformed JSON body, invalid body (response includes `issues`), `ValidationError`, illegal workflow transition, custom field or attachment validation failure.
 - `401` - `requireAuth` is enabled and `getContext` resolved no user.
 - `404` - Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ success: true }`; client SDK delete methods resolve to `false` on 404).
 - `409` - `CircularDependencyError` (response includes `cyclePath`).

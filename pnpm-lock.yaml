@@ -181,6 +181,9 @@ importers:
       zod:
         specifier: ^3.24.0
         version: 3.25.76
+      zod-to-json-schema:
+        specifier: ^3.25.2
+        version: 3.25.2(zod@3.25.76)
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -225,6 +228,9 @@ importers:
       '@critical-path/core':
         specifier: workspace:*
         version: link:../core
+      zod-to-json-schema:
+        specifier: ^3.25.2
+        version: 3.25.2(zod@4.5.4)
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -7747,6 +7753,10 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:
       zod: 3.25.76
+
+  zod-to-json-schema@3.25.2(zod@4.5.4):
+    dependencies:
+      zod: 4.5.4
 
   zod-to-ts@1.2.0(typescript@5.9.3)(zod@3.25.76):
     dependencies:

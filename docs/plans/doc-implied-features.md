@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — item 1 implemented on `feat/request-context-auth`; remaining items are drafts that need review (AI-generated from a code audit on 2026-10-07; verify before acting).
+Status: **In progress** — items 1 and 2 implemented (`feat/request-context-auth`, `feat/request-validation`); remaining items are drafts that need review (AI-generated from a code audit on 2026-10-07; verify before acting).
 
 This plan covers features the README, docs site, or package READMEs present as working that are missing or only stubbed in code. Each item lists the claim, what exists today, the proposed design, and how to verify it. Bugs already fixed on `fix/audit-quick-fixes` are not repeated here.
 
@@ -70,6 +70,8 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - Generate MCP `inputSchema` and an OpenAPI document (`GET /openapi.json`) from the same schemas, removing the hand-written JSON copies in `mcp/src/tools/definitions.ts`.
 
 **Tests**: mass-assignment attempts on tasks, comments, teams, containers, iterations; OpenAPI snapshot; MCP schemas still pass the parity test (then delete it, since parity becomes structural).
+
+**Implemented**: `@critical-path/core/schemas` with create/update schemas and `parsePayload`; all router bodies validated (400 with `issues`); server-assigned fields and unknown keys stripped. Lifecycle fields (`completedAt`, `actualStartDate`, ...) stay writable because the engine deliberately honours them for imports. MCP `inputSchema` is generated from zod via `defineTool`. `GET /openapi.json` and `buildOpenApiDocument()` generate an OpenAPI 3.1 document; response bodies are described only by their envelope key, since entities have no zod schemas yet.
 
 ---
 
