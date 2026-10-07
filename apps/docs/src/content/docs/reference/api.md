@@ -156,6 +156,7 @@ Errors are returned as JSON with an `error` message and, where useful, extra det
 | `403` | The `authorize` policy denied the action. Projects the caller cannot read, or in another tenant, return `404` instead |
 | `404` | Unknown route, missing resource (`NotFoundError`), or `DELETE` of a resource that does not exist |
 | `409` | Dependency would create a cycle (`cyclePath`) |
+| `413` | Request body larger than the router's `maxBodyBytes` (default 10 MiB) |
 | `500` | Unexpected server error. The message is `Internal Server Error` unless the router's `exposeErrors` option is on (default: only when `NODE_ENV === 'development'`). The error is passed to the `onError` option, or logged with `console.error`. |
 
 `OPTIONS` requests are answered with `204` and CORS headers.

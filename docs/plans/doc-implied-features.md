@@ -235,7 +235,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - **Firebase storage:** `FirebaseStorageAdapter` no longer falls back to an in-memory mock or hands out a public URL as an upload URL.
 - **Shared `buildStorageKey`:** validates path prefixes, adds a crypto-random component, and is used by all adapters. Active content (HTML/SVG/JS) is stored with `Content-Disposition: attachment`.
 - **Engine-generated keys:** presigned upload keys are generated as `projects/<projectId>/...`. `createAttachment` through a view rejects storage keys outside the attachment's project. Uploads through views always use the project prefix.
-- **Deferred:** MIME allow-lists and size limits, which belong at the router or proxy level, are left as a follow-up.
+- **Done (follow-up):** engine `uploads: { maxBytes, allowedMimeTypes }` (with `type/*` wildcards) for uploads, presigns and registrations, and a router `maxBodyBytes` limit (default 10 MiB, 413) enforced while streaming.
 
 ---
 

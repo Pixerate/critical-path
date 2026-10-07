@@ -278,6 +278,7 @@ All endpoints return JSON responses.
 - `403` - The engine's `authorize` policy denied the action (`ForbiddenError`). Projects the caller cannot read, or in another tenant, return `404` instead.
 - `404` - Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ success: true }`; client SDK delete methods resolve to `false` on 404).
 - `409` - `CircularDependencyError` (response includes `cyclePath`).
+- `413` - Request body larger than the router's `maxBodyBytes` option (default 10 MiB).
 - `500` - Unexpected error. The body is `Internal Server Error` unless `exposeErrors` is enabled (default: only when `NODE_ENV === 'development'`). Pass `onError(error, request)` as a router/adapter option to report errors or return a custom `Response`; otherwise they are logged with `console.error`.
 - `OPTIONS` preflight requests return `204` with CORS headers.
 

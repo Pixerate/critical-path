@@ -157,6 +157,17 @@ import { runStorageAdapterConformance } from '@critical-path/core/testing';
 runStorageAdapterConformance({ name: 'PostgresStore', createStore: () => new PostgresStore(db), describe, it, expect });
 ```
 
+#### Upload Limits
+
+```ts
+new CriticalPathEngine({
+  fileStorage,
+  uploads: { maxBytes: 25 * 1024 * 1024, allowedMimeTypes: ['image/*', 'application/pdf'] }
+});
+```
+
+Limits apply to direct uploads (checked against the decoded size), presigned uploads (content type) and registered attachments (declared `sizeBytes` and `mimeType`). Presigned uploads go straight to storage, so also cap their size in your bucket policy.
+
 #### Querying & Pagination
 
 ```ts

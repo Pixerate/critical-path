@@ -97,7 +97,7 @@ import { validateCustomFieldValues, validateCustomFieldDefinitions } from '../do
 import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../domain/errors.js';
 import { WebhookDispatcher, assertWebhookUrl } from '../webhooks/dispatcher.js';
-import { buildStorageKey } from '../storage/file-storage.js';
+import { buildStorageKey, normalizeUploadData } from '../storage/file-storage.js';
 import { generateWebhookSecret } from '../webhooks/signature.js';
 import type { DomainEvent } from '../domain/events.js';
 import { calculateCPM, type CPMOptions } from '../domain/cpm.js';
@@ -1595,6 +1595,7 @@ export class CriticalPathEngine {
     input: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt' | 'uploaderId'> & { uploaderId?: string }
   ): Promise<Attachment> {
     await this.requireAttachmentCreate(input);
+    this.assertUploadAllowed(input.mimeType, input.sizeBytes);
     if (this.actor) await this.assertStorageKeyBelongs(input);
     const attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'> = this.actor
       ? { ...input, uploaderId: this.actor.userId, uploaderType: this.actor.actorType ?? 'user' }
@@ -1676,9 +1677,13 @@ export class CriticalPathEngine {
       throw new ValidationError('Attachments must reference a project, task or comment.');
     }
 
+    // Decode once so limits apply to the real byte size, then hand the bytes to the adapter.
+    const data = normalizeUploadData(input.data, input.encoding, input.mimeType);
+    this.assertUploadAllowed(input.mimeType || 'application/octet-stream', data.byteLength);
+
     const uploadResult = await this.fileStorage.upload({
       filename: input.filename,
-      data: input.data,
+      data,
       mimeType: input.mimeType,
       pathPrefix: projectId && (this.actor || !input.pathPrefix) ? `projects/${projectId}` : input.pathPrefix
     });
@@ -1747,6 +1752,7 @@ export class CriticalPathEngine {
       throw new Error('Presigned uploads are not supported by the configured FileStorageAdapter.');
     }
     if (!options.projectId) throw new ValidationError('projectId is required for presigned uploads.');
+    this.assertUploadAllowed(options.contentType ?? 'application/octet-stream');
     if (this.enforcing) {
       await this.requireProjectAccess('attachment.create', options.projectId);
     } else if (!(await this.store.getProject(options.projectId))) {
@@ -1757,6 +1763,23 @@ export class CriticalPathEngine {
       contentType: options.contentType,
       expiresInSeconds: options.expiresInSeconds
     });
+  }
+
+  /** Enforces `config.uploads` (MIME allow-list with `type/*` wildcards, and maximum size). */
+  private assertUploadAllowed(mimeType: string, sizeBytes?: number): void {
+    const limits = this.config.uploads;
+    if (!limits) return;
+    if (limits.maxBytes !== undefined && sizeBytes !== undefined && sizeBytes > limits.maxBytes) {
+      throw new ValidationError(`File is ${sizeBytes} bytes; the maximum is ${limits.maxBytes} bytes.`);
+    }
+    if (limits.allowedMimeTypes) {
+      const type = mimeType.split(';')[0].trim().toLowerCase();
+      const allowed = limits.allowedMimeTypes.some((pattern) => {
+        const p = pattern.toLowerCase();
+        return p.endsWith('/*') ? type.startsWith(p.slice(0, -1)) : type === p;
+      });
+      if (!allowed) throw new ValidationError(`File type "${type}" is not allowed.`);
+    }
   }
 
   /**

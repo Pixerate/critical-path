@@ -1024,5 +1024,32 @@ describe('@critical-path/server Router Tests', () => {
     expect(feed.body.activities).toHaveLength(3);
     expect(feed.body.nextCursor).toBeTruthy();
   });
+
+  it('rejects request bodies over maxBodyBytes with 413', async () => {
+    const router = new CriticalPathRouter(undefined, { maxBodyBytes: 64 });
+    const big = JSON.stringify({ name: 'x'.repeat(200) });
+
+    const declared = await router.handleRequest(
+      new Request('http://localhost/api/critical-path/projects', { method: 'POST', body: big, headers: { 'Content-Type': 'application/json' } })
+    );
+    expect(declared.status).toBe(413);
+
+    // A streamed body without Content-Length is cut off once it passes the limit
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(big));
+        controller.close();
+      }
+    });
+    const streamed = await router.handleRequest(
+      new Request('http://localhost/api/critical-path/projects', { method: 'POST', body: stream, duplex: 'half' } as RequestInit)
+    );
+    expect(streamed.status).toBe(413);
+
+    const small = await router.handleRequest(
+      new Request('http://localhost/api/critical-path/projects', { method: 'POST', body: JSON.stringify({ name: 'ok' }) })
+    );
+    expect(small.status).toBe(201);
+  });
 });
 
