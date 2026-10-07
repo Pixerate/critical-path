@@ -43,7 +43,7 @@ Critical Path decouples project management logic from the presentation layer. It
 
 ## Plugins & Extensibility
 
-- [Plugin Architecture & Creation](https://criticalpath.uchiage.app/plugins/creating-plugins/): Build modular plugins to extend the CriticalPathEngine with custom validation, webhooks, and integrations.
+- [Plugin Architecture & Creation](https://criticalpath.uchiage.app/plugins/creating-plugins/): Build plugins that hook into the task lifecycle, add custom field types, serve HTTP routes, and wrap requests in middleware.
 - [Audit Logging Plugin](https://criticalpath.uchiage.app/plugins/audit-log/): Implement comprehensive audit logging for task status changes and assignee reallocations.
 
 ## Model Context Protocol (MCP)
