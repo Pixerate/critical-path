@@ -145,6 +145,19 @@ await asVic.createTask({ projectId, title: 'x' }); // ForbiddenError if vic is o
 
 Checks run on `withActor` views (the base engine is trusted). Roles come from `project.members` (`{ userId, role }`, roles `viewer` < `contributor` < `project_manager` < `admin`), and project creators become `admin`. Actors with `roles: ['admin']` are superusers. Projects the actor cannot read, or that belong to another tenant, behave as if they do not exist (`NotFoundError`). Lists are filtered. Records created through a view are stamped with the actor's `tenantId`. See the docs site's Authorization page for the full permission matrix and custom policies.
 
+#### Webhooks
+
+```ts
+const { webhook, secret } = await engine.createWebhook({
+  name: 'CI',
+  url: 'https://ci.example.com/hooks',
+  events: ['task.created', 'task.status_changed'] // or ['*']
+});
+// Receivers: verifyWebhookSignature({ secret, body, timestamp, signature })
+```
+
+Every domain event can be delivered. Deliveries carry `X-CriticalPath-Signature` (HMAC-SHA256 over `"<timestamp>.<body>"`), time out after 10s, and retry with exponential backoff (`webhookDelivery` options). The default queue is in-process; pass `webhookDelivery.queue` for durable delivery and call `engine.webhooks.deliver(job)` from your worker. Secrets are only returned on creation.
+
 #### Attributing Mutations to a User (`withActor`)
 
 ```ts

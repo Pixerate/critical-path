@@ -429,40 +429,24 @@ export interface Webhook {
   id: string;
   name: string;
   url: string;
+  /** HMAC-SHA256 signing secret. Never returned by engine reads (see `PublicWebhook`). */
   secret?: string;
+  /** Event names to deliver, or `'*'` for every event. */
   events: WebhookEvent[];
   active: boolean;
+  /** Tenant whose events this webhook receives. Set from the creating actor. */
+  tenantId?: string;
   createdAt: string;
 }
 
-export type WebhookEvent =
-  | 'project.created'
-  | 'project.updated'
-  | 'project.deleted'
-  | 'task.created'
-  | 'task.updated'
-  | 'task.deleted'
-  | 'task.status_changed'
-  | 'task.blocked'
-  | 'task.unblocked'
-  | 'comment.created'
-  | 'comment.updated'
-  | 'comment.deleted'
-  | 'comment.reaction.added'
-  | 'comment.reaction.removed'
-  | 'attachment.created'
-  | 'attachment.deleted'
-  | 'iteration.started'
-  | 'iteration.completed'
-  | 'team.created'
-  | 'container.created'
-  | 'workflow.created'
-  | 'workflow.updated'
-  | 'workflow.deleted'
-  | 'deliverable.created'
-  | 'deliverable.updated'
-  | 'deliverable.deleted'
-  | 'deliverable.status_changed';
+/** A webhook as returned by engine and API reads: the secret is replaced by `hasSecret`. */
+export type PublicWebhook = Omit<Webhook, 'secret'> & { hasSecret: boolean };
+
+/**
+ * Webhook subscriptions use domain event names (e.g. `task.created`, `time.logged`); see
+ * `CriticalPathDomainEvent` in `domain/events.ts`. `'*'` subscribes to everything.
+ */
+export type WebhookEvent = import('../domain/events.js').CriticalPathDomainEvent['name'] | '*';
 
 export interface PluginHooks {
   beforeTaskCreate?: (task: Partial<Task>) => Promise<Partial<Task>> | Partial<Task>;
@@ -494,7 +478,10 @@ export interface CriticalPathConfig {
   store?: 'memory' | 'sqlite' | unknown;
   fileStorage?: FileStorageAdapter;
   plugins?: CriticalPathPlugin[];
+  /** Static webhooks (not stored or editable through the API). */
   webhooks?: Omit<Webhook, 'id' | 'createdAt'>[];
+  /** Delivery behaviour: queue, timeouts, retries, private URL policy, failure callbacks. */
+  webhookDelivery?: import('../webhooks/dispatcher.js').WebhookDeliveryOptions;
   defaultSchedule?: WorkSchedule;
   initialData?: {
     projects?: Project[];

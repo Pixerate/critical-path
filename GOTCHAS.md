@@ -177,3 +177,21 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Role-based authorization needs a role per member, so `members` changed from `string[]` to `ProjectMember[]`.
 - **Solution / Workaround**: Migrate stored projects to `members: ids.map((userId) => ({ userId, role: 'contributor' }))` (or the role you intend) and send the new shape from clients.
 
+### Webhook Deliveries Are In-Process and Not Durable by Default
+- **Area / Package**: `@critical-path/core` (`WebhookDispatcher`, `InProcessWebhookQueue`)
+- **Symptom / Behavior**: Webhooks that were waiting for a retry never arrive after a deploy or crash. Tests that assert on deliveries are flaky.
+- **Root Cause**: The default queue schedules attempts with in-memory timers (unref'd so they never keep the process alive). Deliveries are also asynchronous, so they complete after the mutation returns.
+- **Solution / Workaround**: In tests, `await engine.webhooks.idle()` before asserting. For guaranteed delivery, pass `webhookDelivery.queue` backed by a persistent job system and call `engine.webhooks.deliver(job)` from its worker. Note that `engine.events.clear()` also removes the webhook subscription.
+
+### Webhooks Mirror Domain Events, So One Change Can Send Several Deliveries
+- **Area / Package**: `@critical-path/core` webhooks
+- **Symptom / Behavior**: A status change triggers both `task.status_changed` and `task.updated` deliveries for webhooks subscribed to both (or `'*'`), and project deletion sends `task.deleted` for each task before `project.deleted`.
+- **Root Cause**: Webhooks are driven by the domain event bus, so every published event is delivered.
+- **Solution / Workaround**: Subscribe only to the events you need, and deduplicate on `X-CriticalPath-Delivery`, which is stable across retries.
+
+### Webhook URL Checks Do Not Resolve DNS
+- **Area / Package**: `@critical-path/core` (`assertWebhookUrl`)
+- **Symptom / Behavior**: `http://localhost:3000/hook` is rejected in development, while a public hostname that resolves to a private IP is accepted.
+- **Root Cause**: The SSRF guard only inspects literal hostnames and IPs.
+- **Solution / Workaround**: Set `webhookDelivery.allowPrivateUrls: true` for local development. In production, also restrict outbound traffic at the network or egress-proxy level.
+

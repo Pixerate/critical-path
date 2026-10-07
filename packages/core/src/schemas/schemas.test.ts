@@ -13,7 +13,8 @@ import type {
   Iteration,
   Comment,
   CreateAttachmentInput,
-  TimeEntry
+  TimeEntry,
+  Webhook
 } from '../types/index.js';
 import {
   CreateTaskSchema,
@@ -30,7 +31,8 @@ import {
   CreateCommentSchema,
   UpdateCommentSchema,
   CreateAttachmentSchema,
-  LogTimeSchema
+  LogTimeSchema,
+  CreateWebhookSchema
 } from './index.js';
 
 /**
@@ -69,7 +71,8 @@ const keyChecks: true[] = [
   true as SameKeys<Infer<typeof CreateCommentSchema>, Omit<Comment, ServerAssigned | 'reactions' | CommentIdentity>>,
   true as SameKeys<Infer<typeof UpdateCommentSchema>, Pick<Comment, 'content' | 'mentions' | 'metadata'>>,
   true as SameKeys<Infer<typeof CreateAttachmentSchema>, Omit<CreateAttachmentInput, UploaderIdentity>>,
-  true as SameKeys<Infer<typeof LogTimeSchema>, Omit<TimeEntry, 'id' | 'userId'>>
+  true as SameKeys<Infer<typeof LogTimeSchema>, Omit<TimeEntry, 'id' | 'userId'>>,
+  true as SameKeys<Infer<typeof CreateWebhookSchema>, Pick<Webhook, 'name' | 'url' | 'events' | 'secret' | 'active'>>
 ];
 
 describe('request schemas', () => {

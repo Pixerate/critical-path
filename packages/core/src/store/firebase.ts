@@ -573,11 +573,33 @@ export class FirebaseStore implements StorageAdapter {
     return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
   }
 
+  async getWebhook(id: string): Promise<Webhook | null> {
+    const doc = await this.db.collection('webhooks').doc(id).get();
+    return doc.exists ? ({ ...doc.data(), id: doc.id } as Webhook) : null;
+  }
+
   async addWebhook(webhook: Omit<Webhook, 'id' | 'createdAt'>): Promise<Webhook> {
     const docRef = this.db.collection('webhooks').doc();
     const now = new Date().toISOString();
     const newWh: Webhook = { ...webhook, id: docRef.id, createdAt: now };
     await docRef.set(sanitizeFirestoreData(newWh));
     return newWh;
+  }
+
+  async updateWebhook(id: string, updates: Partial<Omit<Webhook, 'id' | 'createdAt'>>): Promise<Webhook | null> {
+    const existing = await this.getWebhook(id);
+    if (!existing) return null;
+    const updated: Webhook = { ...existing, ...updates, id, createdAt: existing.createdAt };
+    // Write the whole document (no merge) so fields cleared with `undefined` are removed.
+    await this.db.collection('webhooks').doc(id).set(sanitizeFirestoreData(updated));
+    return updated;
+  }
+
+  async deleteWebhook(id: string): Promise<boolean> {
+    const ref = this.db.collection('webhooks').doc(id);
+    const doc = await ref.get();
+    if (!doc.exists) return false;
+    await ref.delete();
+    return true;
   }
 }

@@ -18,6 +18,12 @@ interface RouteDoc {
 
 /** Every route served by `CriticalPathRouter`. Kept in sync by the route drift test. */
 export const ROUTES: RouteDoc[] = [
+  { method: 'get', path: '/webhooks', summary: 'List webhooks (secrets redacted)', tag: 'Webhooks', responseKey: 'webhooks' },
+  { method: 'post', path: '/webhooks', summary: 'Register a webhook; the signing secret is returned once', tag: 'Webhooks', body: schemas.CreateWebhookSchema, responseKey: 'webhook', status: 201 },
+  { method: 'get', path: '/webhooks/{webhookId}', summary: 'Get a webhook', tag: 'Webhooks', responseKey: 'webhook' },
+  { method: 'patch', path: '/webhooks/{webhookId}', summary: 'Update or rotate a webhook', tag: 'Webhooks', body: schemas.UpdateWebhookSchema, responseKey: 'webhook' },
+  { method: 'delete', path: '/webhooks/{webhookId}', summary: 'Delete a webhook', tag: 'Webhooks' },
+
   { method: 'get', path: '/workflows', summary: 'List workflows', tag: 'Workflows', responseKey: 'workflows' },
   { method: 'post', path: '/workflows', summary: 'Create a workflow', tag: 'Workflows', body: schemas.CreateWorkflowSchema, responseKey: 'workflow', status: 201 },
   { method: 'get', path: '/workflows/{workflowId}', summary: 'Get a workflow', tag: 'Workflows', responseKey: 'workflow' },

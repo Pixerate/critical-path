@@ -280,6 +280,14 @@ export class SQLiteStore implements StorageAdapter {
       // Column may already exist
     }
 
+    for (const column of ['name TEXT', 'tenantId TEXT']) {
+      try {
+        this.db.exec(`ALTER TABLE webhooks ADD COLUMN ${column}`);
+      } catch {
+        // Column may already exist
+      }
+    }
+
     for (const table of ['projects', 'workflows', 'teams']) {
       try {
         this.db.exec(`ALTER TABLE ${table} ADD COLUMN tenantId TEXT`);
@@ -1175,11 +1183,48 @@ export class SQLiteStore implements StorageAdapter {
   async getWebhooks(): Promise<Webhook[]> {
     const stmt = this.db.prepare('SELECT * FROM webhooks');
     const rows = stmt.all() as any[];
-    return rows.map((r) => ({
-      ...r,
-      events: JSON.parse(r.events),
-      active: Boolean(r.active)
-    }));
+    return rows.map((r) => this.mapWebhook(r));
+  }
+
+  async getWebhook(id: string): Promise<Webhook | null> {
+    const row = this.db.prepare('SELECT * FROM webhooks WHERE id = ?').get(id) as any;
+    return row ? this.mapWebhook(row) : null;
+  }
+
+  async updateWebhook(id: string, updates: Partial<Omit<Webhook, 'id' | 'createdAt'>>): Promise<Webhook | null> {
+    const existing = await this.getWebhook(id);
+    if (!existing) return null;
+    const updated: Webhook = { ...existing, ...updates, id, createdAt: existing.createdAt };
+    this.db
+      .prepare('UPDATE webhooks SET name = ?, url = ?, events = ?, secret = ?, active = ?, tenantId = ? WHERE id = ?')
+      .run(
+        updated.name ?? null,
+        updated.url,
+        JSON.stringify(updated.events),
+        updated.secret ?? null,
+        updated.active ? 1 : 0,
+        updated.tenantId ?? null,
+        id
+      );
+    return updated;
+  }
+
+  async deleteWebhook(id: string): Promise<boolean> {
+    const result = this.db.prepare('DELETE FROM webhooks WHERE id = ?').run(id);
+    return Number(result.changes) > 0;
+  }
+
+  private mapWebhook(row: any): Webhook {
+    return {
+      id: row.id,
+      name: row.name ?? '',
+      url: row.url,
+      events: JSON.parse(row.events),
+      secret: row.secret ?? undefined,
+      active: Boolean(row.active),
+      tenantId: row.tenantId ?? undefined,
+      createdAt: row.createdAt
+    };
   }
 
   async addWebhook(webhook: Omit<Webhook, 'id' | 'createdAt'>): Promise<Webhook> {
@@ -1188,15 +1233,17 @@ export class SQLiteStore implements StorageAdapter {
     const newWh: Webhook = { ...webhook, id, createdAt: now };
 
     const stmt = this.db.prepare(`
-      INSERT INTO webhooks (id, url, events, secret, active, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO webhooks (id, name, url, events, secret, active, tenantId, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newWh.id,
+      newWh.name ?? null,
       newWh.url,
       JSON.stringify(newWh.events),
       newWh.secret || null,
       newWh.active ? 1 : 0,
+      newWh.tenantId ?? null,
       newWh.createdAt
     );
     return newWh;

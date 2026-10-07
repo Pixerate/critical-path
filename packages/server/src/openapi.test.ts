@@ -25,7 +25,10 @@ describe('OpenAPI document', () => {
       url: 'https://example.com/a.md'
     });
 
+    const { webhook } = await engine.createWebhook({ name: 'Hook', url: 'https://hooks.example.com/oas', events: ['*'] });
+
     const ids: Record<string, string> = {
+      webhookId: webhook.id,
       projectId: project.id,
       taskId: task.id,
       workflowId: workflow.id,

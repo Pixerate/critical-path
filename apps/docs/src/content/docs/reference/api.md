@@ -111,6 +111,22 @@ Declare that `:taskId` depends on another task. Returns `409` if the dependency 
 
 ---
 
+## Webhooks
+
+### `GET /webhooks`
+List webhooks in the caller's tenant. Secrets are never returned (`hasSecret: true`).
+
+### `POST /webhooks`
+Register a webhook. Returns `201 { webhook, secret }`; the secret is only shown here.
+```json
+{ "name": "CI", "url": "https://ci.example.com/hooks", "events": ["task.created", "task.status_changed"] }
+```
+
+### `GET | PATCH | DELETE /webhooks/:webhookId`
+Read, update (including `secret` rotation and `active`), or delete a webhook. See the Webhooks guide for the delivery format and signature verification.
+
+---
+
 ## Errors
 
 Errors are returned as JSON with an `error` message and, where useful, extra detail fields.

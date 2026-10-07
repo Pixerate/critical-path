@@ -17,7 +17,8 @@ import type {
   PresignedUrlOptions,
   PresignedUploadResult,
   TimeEntry,
-  WebhookEvent,
+  Webhook,
+  PublicWebhook,
   Workflow,
   CreateTaskInput,
   CreateProjectInput,
@@ -85,6 +86,9 @@ import { validateAttachmentUrl, AttachmentValidationError } from '../domain/enti
 import { validateCustomFieldValues } from '../domain/custom-fields.js';
 import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../domain/errors.js';
+import { WebhookDispatcher, assertWebhookUrl } from '../webhooks/dispatcher.js';
+import { generateWebhookSecret } from '../webhooks/signature.js';
+import type { DomainEvent } from '../domain/events.js';
 import { calculateCPM, type CPMOptions } from '../domain/cpm.js';
 import { buildTimelineLadder, aggregateConcreteEvidenceForTask } from '../domain/ladder.js';
 import {
@@ -100,6 +104,8 @@ export class CriticalPathEngine {
   public readonly fileStorage?: FileStorageAdapter;
   public readonly plugins: PluginRegistry;
   public readonly events: DomainEventBus;
+  /** Delivers domain events to registered webhooks. Exposed for custom queues (`deliver`) and tests (`idle`). */
+  public readonly webhooks: WebhookDispatcher;
   public readonly ready: Promise<void> = Promise.resolve();
   /** The identity mutations are attributed to. Set only on views returned by `withActor`. */
   public readonly actor?: Actor;
@@ -115,6 +121,14 @@ export class CriticalPathEngine {
     this.fileStorage = config.fileStorage;
     this.plugins = new PluginRegistry();
     this.events = new DomainEventBus();
+    this.webhooks = new WebhookDispatcher(
+      {
+        listWebhooks: () => this.listAllWebhooks(),
+        resolveTenant: (event) => this.resolveEventTenant(event)
+      },
+      config.webhookDelivery
+    );
+    this.events.subscribe('*', (event) => this.webhooks.handle(event));
 
     if (config.plugins) {
       for (const plugin of config.plugins) {
@@ -319,7 +333,6 @@ export class CriticalPathEngine {
       action: 'workflow.created',
       details: { name: created.name }
     });
-    this.dispatchWebhook('workflow.created', { workflow: created });
     return created;
   }
 
@@ -347,7 +360,6 @@ export class CriticalPathEngine {
         action: 'workflow.updated',
         details: { name: updated.name }
       });
-      this.dispatchWebhook('workflow.updated', { workflow: updated, previous: existing });
     }
     return updated;
   }
@@ -366,7 +378,7 @@ export class CriticalPathEngine {
         aggregateId: id,
         aggregateType: 'Workflow',
         occurredAt: now,
-        payload: { workflowId: id, name: existing.name }
+        payload: { workflowId: id, name: existing.name, tenantId: existing.tenantId }
       };
       await this.events.publish(event);
 
@@ -375,7 +387,6 @@ export class CriticalPathEngine {
         action: 'workflow.deleted',
         details: { name: existing.name }
       });
-      this.dispatchWebhook('workflow.deleted', { workflowId: id, name: existing.name });
     }
     return deleted;
   }
@@ -456,7 +467,6 @@ export class CriticalPathEngine {
       action: 'project.created',
       details: { name: created.name, key: created.key }
     });
-    this.dispatchWebhook('project.created', { project: created });
     return created;
   }
 
@@ -486,7 +496,6 @@ export class CriticalPathEngine {
         action: 'project.updated',
         details: { name: updated.name }
       });
-      this.dispatchWebhook('project.updated', { project: updated });
     }
     return updated;
   }
@@ -519,7 +528,7 @@ export class CriticalPathEngine {
         aggregateId: id,
         aggregateType: 'Project',
         occurredAt: now,
-        payload: { projectId: id, name: existing.name, deletedTaskIds }
+        payload: { projectId: id, name: existing.name, deletedTaskIds, tenantId: existing.tenantId }
       };
       await this.events.publish(event);
 
@@ -529,7 +538,6 @@ export class CriticalPathEngine {
         action: 'project.deleted',
         details: { name: existing.name, deletedTaskCount: deletedTaskIds.length }
       });
-      this.dispatchWebhook('project.deleted', { projectId: id, name: existing.name, deletedTaskIds });
     }
     return deleted;
   }
@@ -642,7 +650,6 @@ export class CriticalPathEngine {
       details: { title: created.title, status: created.status }
     });
 
-    this.dispatchWebhook('task.created', { task: created });
     return created;
   }
 
@@ -925,10 +932,6 @@ export class CriticalPathEngine {
         action: 'task.blocked',
         details: { reason: blockedReason, ...(actorName ? { actorName } : {}) }
       });
-      this.dispatchWebhook('task.blocked', {
-        task: updated,
-        reason: blockedReason
-      });
     } else if (wasBlocked && !isNowBlocked) {
       const unblockedEvent: TaskUnblockedEvent = {
         id: `evt_${Math.random().toString(36).substring(2, 9)}`,
@@ -951,9 +954,6 @@ export class CriticalPathEngine {
         action: 'task.unblocked',
         details: { ...(actorName ? { actorName } : {}) }
       });
-      this.dispatchWebhook('task.unblocked', {
-        task: updated
-      });
     }
 
     await this.store.logActivity({
@@ -968,10 +968,6 @@ export class CriticalPathEngine {
       }
     });
 
-    this.dispatchWebhook(isStatusChange ? 'task.status_changed' : 'task.updated', {
-      task: updated,
-      previous: existing
-    });
 
     return updated;
   }
@@ -1042,10 +1038,6 @@ export class CriticalPathEngine {
             details: { unblockedByTaskId: completedTask.id }
           });
 
-          this.dispatchWebhook('task.unblocked', {
-            task: updatedDownstream,
-            upstreamTaskId: completedTask.id
-          });
         }
       }
     } catch (err) {
@@ -1086,7 +1078,6 @@ export class CriticalPathEngine {
         action: 'task.deleted',
         details: { title: existing.title }
       });
-      this.dispatchWebhook('task.deleted', { taskId: id, title: existing.title });
     }
     return deleted;
   }
@@ -1297,7 +1288,6 @@ export class CriticalPathEngine {
     };
     await this.events.publish(event);
 
-    this.dispatchWebhook('comment.created', { comment: created });
     return created;
   }
 
@@ -1326,7 +1316,6 @@ export class CriticalPathEngine {
     };
     await this.events.publish(event);
 
-    this.dispatchWebhook('comment.updated', { comment: updated });
     return updated;
   }
 
@@ -1351,7 +1340,6 @@ export class CriticalPathEngine {
       };
       await this.events.publish(event);
 
-      this.dispatchWebhook('comment.deleted', { commentId: id, taskId: existing.taskId });
     }
     return deleted;
   }
@@ -1399,7 +1387,6 @@ export class CriticalPathEngine {
     };
     await this.events.publish(event);
 
-    this.dispatchWebhook('comment.reaction.added', { comment: updated, reaction });
     return updated;
   }
 
@@ -1432,7 +1419,6 @@ export class CriticalPathEngine {
     };
     await this.events.publish(event);
 
-    this.dispatchWebhook('comment.reaction.removed', { comment: updated, reaction });
     return updated;
   }
 
@@ -1481,7 +1467,6 @@ export class CriticalPathEngine {
     };
     await this.events.publish(event);
 
-    this.dispatchWebhook('attachment.created', { attachment: created });
     return created;
   }
 
@@ -1510,11 +1495,15 @@ export class CriticalPathEngine {
         aggregateId: id,
         aggregateType: 'Attachment',
         occurredAt: now,
-        payload: { attachmentId: id, storageKey: existing.storageKey, url: existing.url }
+        payload: {
+          attachmentId: id,
+          storageKey: existing.storageKey,
+          url: existing.url,
+          projectId: await this.projectIdOfAttachment(existing)
+        }
       };
       await this.events.publish(event);
 
-      this.dispatchWebhook('attachment.deleted', { attachmentId: id, taskId: existing.taskId, projectId: existing.projectId });
     }
     return deleted;
   }
@@ -1639,7 +1628,6 @@ export class CriticalPathEngine {
     };
     await this.events.publish(event);
 
-    this.dispatchWebhook('team.created', { team: created });
     return created;
   }
 
@@ -1682,7 +1670,6 @@ export class CriticalPathEngine {
     };
     await this.events.publish(event);
 
-    this.dispatchWebhook('container.created', { container: created });
     return created;
   }
 
@@ -1743,7 +1730,6 @@ export class CriticalPathEngine {
       action: 'deliverable.created',
       details: { title: created.title, format: created.format }
     });
-    this.dispatchWebhook('deliverable.created', { deliverable: created });
     return created;
   }
 
@@ -1774,11 +1760,6 @@ export class CriticalPathEngine {
           }
         };
         await this.events.publish(statusEvent);
-        this.dispatchWebhook('deliverable.status_changed', {
-          deliverable: updated,
-          previousStatus: existing.status,
-          newStatus: updated.status
-        });
       }
 
       const updateEvent: DeliverableUpdatedEvent = {
@@ -1797,7 +1778,6 @@ export class CriticalPathEngine {
         action: 'deliverable.updated',
         details: { title: updated.title, status: updated.status }
       });
-      this.dispatchWebhook('deliverable.updated', { deliverable: updated });
     }
     return updated;
   }
@@ -1826,7 +1806,6 @@ export class CriticalPathEngine {
         action: 'deliverable.deleted',
         details: { title: existing.title }
       });
-      this.dispatchWebhook('deliverable.deleted', { deliverableId: id, projectId: existing.projectId });
     }
     return deleted;
   }
@@ -1904,7 +1883,6 @@ export class CriticalPathEngine {
         payload: { iteration: created }
       };
       await this.events.publish(event);
-      this.dispatchWebhook('iteration.started', { iteration: created });
     }
     return created;
   }
@@ -1927,7 +1905,6 @@ export class CriticalPathEngine {
           payload: { iteration: updated }
         };
         await this.events.publish(event);
-        this.dispatchWebhook('iteration.started', { iteration: updated });
       } else if (existing.status !== 'completed' && updated.status === 'completed') {
         const event: IterationCompletedEvent = {
           id: `evt_${Math.random().toString(36).substring(2, 9)}`,
@@ -1938,7 +1915,6 @@ export class CriticalPathEngine {
           payload: { iteration: updated }
         };
         await this.events.publish(event);
-        this.dispatchWebhook('iteration.completed', { iteration: updated });
       }
     }
     return updated;
@@ -2123,19 +2099,108 @@ export class CriticalPathEngine {
     );
   }
 
-  private async dispatchWebhook(event: WebhookEvent, payload: Record<string, unknown>): Promise<void> {
-    const webhooks = await this.store.getWebhooks();
-    const active = webhooks.filter((w) => w.active && w.events.includes(event));
+  // --- Webhooks ---
 
-    for (const wh of active) {
-      fetch(wh.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event, timestamp: new Date().toISOString(), data: payload })
-      }).catch(() => {
-        // Silent catch for webhook errors in dev
-      });
+  /** Webhooks from `config.webhooks` (static, not editable) plus those in the store. */
+  private async listAllWebhooks(): Promise<Webhook[]> {
+    const fromConfig: Webhook[] = (this.config.webhooks ?? []).map((w, i) => ({
+      ...w,
+      id: `config_${i}`,
+      createdAt: new Date(0).toISOString()
+    }));
+    return [...fromConfig, ...(await this.store.getWebhooks())];
+  }
+
+  private toPublicWebhook({ secret, ...webhook }: Webhook): PublicWebhook {
+    return { ...webhook, hasSecret: !!secret };
+  }
+
+  /** Webhooks in the actor's tenant, with secrets redacted. Requires `workspace.manage` on views. */
+  async getWebhooks(): Promise<PublicWebhook[]> {
+    await this.requireWorkspaceAccess('workspace.manage');
+    const webhooks = await this.store.getWebhooks();
+    return webhooks.filter((w) => this.inActorTenant(w)).map((w) => this.toPublicWebhook(w));
+  }
+
+  async getWebhook(id: string): Promise<PublicWebhook | null> {
+    await this.requireWorkspaceAccess('workspace.manage');
+    const webhook = await this.store.getWebhook(id);
+    return webhook && this.inActorTenant(webhook) ? this.toPublicWebhook(webhook) : null;
+  }
+
+  /**
+   * Registers a webhook. The signing secret is returned only here; generate one by omitting
+   * `secret`. Deliveries carry `X-CriticalPath-Signature` (see `verifyWebhookSignature`).
+   */
+  async createWebhook(input: {
+    name: string;
+    url: string;
+    events: Webhook['events'];
+    secret?: string;
+    active?: boolean;
+  }): Promise<{ webhook: PublicWebhook; secret: string }> {
+    await this.requireWorkspaceAccess('workspace.manage');
+    this.validateWebhookUrl(input.url);
+    const secret = input.secret ?? generateWebhookSecret();
+    const created = await this.store.addWebhook({
+      name: input.name,
+      url: input.url,
+      events: input.events,
+      secret,
+      active: input.active ?? true,
+      tenantId: this.actor?.tenantId
+    });
+    this.webhooks.invalidate();
+    return { webhook: this.toPublicWebhook(created), secret };
+  }
+
+  async updateWebhook(
+    id: string,
+    updates: Partial<Pick<Webhook, 'name' | 'url' | 'events' | 'active' | 'secret'>>
+  ): Promise<PublicWebhook | null> {
+    if (!(await this.getWebhook(id))) return null;
+    if (updates.url) this.validateWebhookUrl(updates.url);
+    const { name, url, events, active, secret } = updates;
+    const updated = await this.store.updateWebhook(
+      id,
+      Object.fromEntries(Object.entries({ name, url, events, active, secret }).filter(([, v]) => v !== undefined))
+    );
+    this.webhooks.invalidate();
+    return updated ? this.toPublicWebhook(updated) : null;
+  }
+
+  async deleteWebhook(id: string): Promise<boolean> {
+    if (!(await this.getWebhook(id))) return false;
+    const deleted = await this.store.deleteWebhook(id);
+    this.webhooks.invalidate();
+    return deleted;
+  }
+
+  private validateWebhookUrl(url: string): void {
+    try {
+      assertWebhookUrl(url, this.config.webhookDelivery?.allowPrivateUrls);
+    } catch (err) {
+      throw new ValidationError((err as Error).message);
     }
   }
-}
 
+  /** Finds the tenant an event belongs to, from the entity in its payload or its project. */
+  private async resolveEventTenant(event: DomainEvent): Promise<string | undefined> {
+    const p = event.payload as Record<string, any>;
+    const owner = p.project ?? p.workflow ?? p.team;
+    if (owner) return owner.tenantId ?? undefined;
+    // Deleted projects and workflows carry their tenant in the payload.
+    if ('tenantId' in p) return p.tenantId ?? undefined;
+
+    const projectId: string | undefined =
+      p.projectId ??
+      p.task?.projectId ??
+      p.deliverable?.projectId ??
+      p.iteration?.projectId ??
+      p.container?.projectId ??
+      p.attachment?.projectId ??
+      (await this.projectIdOfTask(p.taskId ?? p.comment?.taskId ?? p.attachment?.taskId ?? p.dependency?.taskId ?? p.timeEntry?.taskId));
+    if (!projectId) return undefined;
+    return (await this.store.getProject(projectId))?.tenantId ?? undefined;
+  }
+}

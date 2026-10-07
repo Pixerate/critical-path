@@ -199,6 +199,38 @@ export class CriticalPathRouter {
         return this.jsonResponse(buildOpenApiDocument({ serverUrl: this.openApiServerUrl(url, subpath) }));
       }
 
+      // Webhooks API
+      if (segments[0] === 'webhooks') {
+        const webhookId = segments[1];
+        if (!webhookId) {
+          if (method === 'GET') {
+            return this.jsonResponse({ webhooks: await engine.getWebhooks() });
+          }
+          if (method === 'POST') {
+            const body = await this.readBody(request, schemas.CreateWebhookSchema);
+            const { webhook, secret } = await engine.createWebhook(body);
+            return this.jsonResponse({ webhook, secret }, 201);
+          }
+        } else {
+          if (method === 'GET') {
+            const webhook = await engine.getWebhook(webhookId);
+            if (!webhook) return this.jsonResponse({ error: 'Webhook not found' }, 404);
+            return this.jsonResponse({ webhook });
+          }
+          if (method === 'PATCH' || method === 'PUT') {
+            const body = await this.readBody(request, schemas.UpdateWebhookSchema);
+            const webhook = await engine.updateWebhook(webhookId, body);
+            if (!webhook) return this.jsonResponse({ error: 'Webhook not found' }, 404);
+            return this.jsonResponse({ webhook });
+          }
+          if (method === 'DELETE') {
+            const deleted = await engine.deleteWebhook(webhookId);
+            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+            return this.jsonResponse({ success: true });
+          }
+        }
+      }
+
       // Workflows API
       if (segments[0] === 'workflows') {
         const workflowId = segments[1];

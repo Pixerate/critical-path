@@ -94,6 +94,8 @@ Every request body is parsed with the zod schemas from `@critical-path/core/sche
 - Bodies are strict: server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, the owning `projectId` on updates), identity fields (`actorId`, `authorId`, `userId`, `uploaderId`) and unknown keys are rejected with `400`, so a `PATCH` cannot move a task to another project or rewrite timestamps.
 - Authors of comments, reactions, attachments and time entries are the resolved caller, or `anonymous`. Remove a reaction with `DELETE /comments/:id/reactions?emoji=👍`.
 
+Webhooks are managed at `GET/POST /webhooks` and `GET/PATCH/DELETE /webhooks/:id` (`workspace.manage` under a role policy). `POST` returns the signing `secret` once.
+
 `GET /openapi.json` serves an OpenAPI 3.1 document whose request bodies are generated from the same schemas (behind the same auth as other routes). To publish it statically:
 
 ```ts

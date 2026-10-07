@@ -891,5 +891,43 @@ describe('@critical-path/server Router Tests', () => {
       expect(tenantInBody.status).toBe(400);
     });
   });
+
+  it('manages webhooks over HTTP and delivers events they subscribe to', async () => {
+    const delivered: string[] = [];
+    const router = new CriticalPathRouter({
+      webhookDelivery: {
+        fetch: (async (_url: string, init: RequestInit) => {
+          delivered.push(JSON.parse(init.body as string).event);
+          return new Response(null, { status: 204 });
+        }) as unknown as typeof fetch
+      }
+    });
+    const call = (method: string, path: string, body?: unknown) =>
+      router.handleRequest(
+        new Request(`http://localhost/api/critical-path${path}`, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          ...(body ? { body: JSON.stringify(body) } : {})
+        })
+      );
+
+    expect((await call('POST', '/webhooks', { name: 'Typo', url: 'https://hooks.example.com', events: ['task.craeted'] })).status).toBe(400);
+
+    const created = await call('POST', '/webhooks', { name: 'CI', url: 'https://hooks.example.com/ci', events: ['project.created'] });
+    expect(created.status).toBe(201);
+    const { webhook, secret } = await created.json();
+    expect(secret).toMatch(/^whsec_/);
+
+    const listed = await (await call('GET', '/webhooks')).json();
+    expect(listed.webhooks[0]).not.toHaveProperty('secret');
+    expect(listed.webhooks[0].hasSecret).toBe(true);
+
+    await call('POST', '/projects', { name: 'Triggers a delivery' });
+    await router.engine.webhooks.idle();
+    expect(delivered).toEqual(['project.created']);
+
+    expect((await call('DELETE', `/webhooks/${webhook.id}`)).status).toBe(200);
+    expect((await call('GET', `/webhooks/${webhook.id}`)).status).toBe(404);
+  });
 });
 

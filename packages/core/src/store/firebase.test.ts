@@ -107,5 +107,25 @@ describe('FirebaseStore', () => {
     expect(byUpstream).toHaveLength(1);
     expect(byUpstream[0].id).toBe(dep.id);
   });
+
+  it('should create, update, clear fields on, and delete webhooks', async () => {
+    const created = await store.addWebhook({
+      name: 'Hook',
+      url: 'https://hooks.example.com/x',
+      events: ['task.created'],
+      secret: 'whsec_test',
+      active: true,
+      tenantId: 'acme'
+    });
+    expect(await store.getWebhook(created.id)).toMatchObject({ name: 'Hook', tenantId: 'acme' });
+
+    const updated = await store.updateWebhook(created.id, { events: ['*'], secret: undefined });
+    expect(updated?.events).toEqual(['*']);
+    expect((await store.getWebhook(created.id))?.secret).toBeUndefined();
+
+    expect(await store.deleteWebhook(created.id)).toBe(true);
+    expect(await store.getWebhook(created.id)).toBeNull();
+    expect(await store.deleteWebhook(created.id)).toBe(false);
+  });
 });
 

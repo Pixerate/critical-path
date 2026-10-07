@@ -114,7 +114,7 @@ export interface AttachmentCreatedEvent extends DomainEvent<{ attachment: Attach
   readonly aggregateType: 'Attachment';
 }
 
-export interface AttachmentDeletedEvent extends DomainEvent<{ attachmentId: string; storageKey?: string; url: string }> {
+export interface AttachmentDeletedEvent extends DomainEvent<{ attachmentId: string; storageKey?: string; url: string; projectId?: string }> {
   readonly name: 'attachment.deleted';
   readonly aggregateType: 'Attachment';
 }
@@ -134,7 +134,7 @@ export interface ProjectUpdatedEvent extends DomainEvent<{ project: Project; pre
   readonly aggregateType: 'Project';
 }
 
-export interface ProjectDeletedEvent extends DomainEvent<{ projectId: string; name: string; deletedTaskIds: string[] }> {
+export interface ProjectDeletedEvent extends DomainEvent<{ projectId: string; name: string; deletedTaskIds: string[]; tenantId?: string }> {
   readonly name: 'project.deleted';
   readonly aggregateType: 'Project';
 }
@@ -149,7 +149,7 @@ export interface WorkflowUpdatedEvent extends DomainEvent<{ workflow: Workflow; 
   readonly aggregateType: 'Workflow';
 }
 
-export interface WorkflowDeletedEvent extends DomainEvent<{ workflowId: string; name: string }> {
+export interface WorkflowDeletedEvent extends DomainEvent<{ workflowId: string; name: string; tenantId?: string }> {
   readonly name: 'workflow.deleted';
   readonly aggregateType: 'Workflow';
 }
@@ -272,3 +272,42 @@ export class DomainEventBus {
     this.handlers.clear();
   }
 }
+
+/** Every domain event name, e.g. for validating webhook subscriptions at runtime. */
+export const DOMAIN_EVENT_NAMES = [
+  'attachment.created',
+  'attachment.deleted',
+  'comment.created',
+  'comment.deleted',
+  'comment.reaction.added',
+  'comment.reaction.removed',
+  'comment.updated',
+  'container.created',
+  'deliverable.created',
+  'deliverable.deleted',
+  'deliverable.status_changed',
+  'deliverable.updated',
+  'dependency.added',
+  'iteration.completed',
+  'iteration.started',
+  'project.created',
+  'project.deleted',
+  'project.updated',
+  'task.blocked',
+  'task.created',
+  'task.deleted',
+  'task.status_changed',
+  'task.unblocked',
+  'task.updated',
+  'team.created',
+  'time.logged',
+  'workflow.created',
+  'workflow.deleted',
+  'workflow.updated'
+] as const satisfies readonly CriticalPathDomainEvent['name'][];
+
+// Compile-time guard: adding an event to CriticalPathDomainEvent without listing it here fails the build.
+type UnlistedDomainEvent = Exclude<CriticalPathDomainEvent['name'], (typeof DOMAIN_EVENT_NAMES)[number]>;
+const _allDomainEventsListed: [UnlistedDomainEvent] extends [never] ? true : UnlistedDomainEvent = true;
+void _allDomainEventsListed;
+
