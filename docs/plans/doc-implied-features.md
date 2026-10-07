@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) shipped; phase 4 item 8 (client SDK) on `feat/client-sdk`, item 9 (S3) on `feat/s3-presign`, item 10 (config) shipped; phase 5 store conformance on `test/store-conformance`.
+Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) shipped; phase 4 item 8 (client SDK) on `feat/client-sdk`, item 9 (S3) on `feat/s3-presign`, item 10 (config) shipped; phase 5 store conformance on `test/store-conformance`, runnable examples and scaffolder on `feat/runnable-examples`.
 
 Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
@@ -258,6 +258,12 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 **Today**: `create-critical-path` pins `^0.1.0` (core is 0.21), and the generated project is missing framework config, layout, and pages. Demo `build` scripts are `echo`.
 
 **Design**: template directories copied verbatim, with versions injected from the monorepo at build time; make the demo apps real (`next build`, `vite build`) and run them in CI; end-to-end test that scaffolds into a temp dir, installs from the workspace, and typechecks.
+
+**Implemented**:
+- **Demo apps:** both are real apps now (Next.js 16 with an app layout; SvelteKit 3 with adapter-node), built by `pnpm run build` in CI. They seed data through a plugin `init` instead of hand-written `initialData`, which was missing required fields.
+- **Scaffolder templates:** the scaffolder copies the demo apps as its templates and rewrites `workspace:*` ranges to the latest published versions (falling back to bundled versions when offline).
+- **Scaffolder CLI fixes:** argument order no longer matters, it refuses non-empty directories, `.gitignore` survives publishing, and compiled tests are no longer published.
+- **Verified manually:** a scaffolded Next.js app and SvelteKit app each `npm install` the published packages and build.
 
 ---
 

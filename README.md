@@ -172,7 +172,7 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 
 ### Developer Experience & Headless Essentials
 - [x] **Comprehensive Documentation**: Developer guide and package-level READMEs
-- [x] **Sandbox Environments**: Built-in Next.js and SvelteKit interactive demo apps
+- [x] **Sandbox Environments**: Runnable Next.js 16 and SvelteKit 3 demo apps in `examples/` (built in CI), also used as the `create-critical-path` templates
 - [x] **Multi-Channel & Frontend Agnostic**: Pure Web Fetch API compatible engine for any presentation layer
 
 ---
@@ -307,6 +307,10 @@ pnpm run build
 
 # Run unit & integration test suite
 pnpm run test
+
+# Run the demo apps (http://localhost:3000 and http://localhost:5173)
+pnpm --filter nextjs-demo dev
+pnpm --filter sveltekit-demo dev
 
 # Run documentation site locally
 pnpm run docs:dev

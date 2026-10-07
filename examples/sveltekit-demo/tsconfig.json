@@ -1,8 +1,9 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "$app/tsconfig",
   "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./src"
+    "strict": true,
+    "skipLibCheck": true
   },
-  "include": ["src/**/*"]
+  "include": ["src", "test", "*"],
+  "exclude": ["src/service-worker"]
 }

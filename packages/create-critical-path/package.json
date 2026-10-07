@@ -10,7 +10,7 @@
     "create-critical-path": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc --build",
+    "build": "tsc --build && node scripts/copy-templates.mjs",
     "test": "vitest run",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
@@ -21,5 +21,17 @@
   },
   "engines": {
     "node": ">=24.0.0"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pixerate/critical-path.git",
+    "directory": "packages/create-critical-path"
   }
 }

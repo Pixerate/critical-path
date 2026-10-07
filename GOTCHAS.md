@@ -255,3 +255,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: `InMemoryStore` returns the objects it holds rather than copies.
 - **Solution / Workaround**: Treat returned records as read-only and call `update*` to change them. Copying on read and write is a known follow-up.
 
+### Demo Apps Are the Scaffolder Templates
+- **Area / Package**: `examples/*`, `create-critical-path`
+- **Symptom / Behavior**: A change to an example app appears in newly scaffolded projects; files like `*.test.ts`, `vitest.config.ts` and build output do not.
+- **Root Cause**: `create-critical-path`'s build copies `examples/nextjs-demo` and `examples/sveltekit-demo` into `dist/templates` (excluding tests, test config, `node_modules` and build output) and records current package versions. At scaffold time, `workspace:*` ranges become `^<latest published version>` (bundled versions when offline). `.gitignore` is stored as `_gitignore` because npm strips `.gitignore` from published packages.
+- **Solution / Workaround**: Keep the examples free of monorepo-only configuration (relative imports and plain `next.config.mjs`), so they build both in the workspace and as standalone projects. CI builds both examples on every PR.
+
+### SvelteKit 3: Config Lives in the Vite Plugin, `$lib` Is Gone, and the CLI Crashes on Node 25
+- **Area / Package**: `examples/sveltekit-demo`
+- **Symptom / Behavior**: `svelte.config.js is no longer used`, `$lib has been removed`, `tsconfig.json should extend $app/tsconfig`, or `ERR_INVALID_ARG_VALUE ... Received 'grey'` after a successful build.
+- **Root Cause**: SvelteKit 3 takes options via `sveltekit({ adapter, ... })` in `vite.config.ts`, replaced `$lib` with `#lib`, and ships its tsconfig as `$app/tsconfig`. Its CLI prints with `util.styleText('grey')`, which Node 25 rejects; Node 24 (used by CI) is fine. Vitest 3 cannot load the SvelteKit 3 plugin (it needs Vite 8), so the demo has a plugin-free `vitest.config.ts` for its API tests.
+- **Solution / Workaround**: Use Node 24 locally (`nvm use 24`), or preload a shim that maps `'grey'` to `'gray'` in `util.styleText` (`NODE_OPTIONS="--import ./grey-shim.mjs"`).
+
