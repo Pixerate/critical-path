@@ -146,7 +146,7 @@ export class TaskEntity extends BaseEntity {
     input: CreateTaskInput,
     options?: { id?: string; workflow?: Workflow; customFieldDefs?: CustomFieldDefinition[] }
   ): TaskEntity {
-    const id = options?.id || `task_${Math.random().toString(36).substring(2, 9)}`;
+    const id = options?.id || `task_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
     if (options?.customFieldDefs) {
@@ -186,7 +186,7 @@ export class TaskEntity extends BaseEntity {
     });
 
     const createdEvent: TaskCreatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'task.created',
       aggregateId: task.id,
       aggregateType: 'Task',
@@ -277,7 +277,7 @@ export class TaskEntity extends BaseEntity {
     this.markUpdated();
 
     const event: TaskStatusChangedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'task.status_changed',
       aggregateId: this.id,
       aggregateType: 'Task',
@@ -310,7 +310,7 @@ export class TaskEntity extends BaseEntity {
     this.markUpdated();
 
     const timeEntry: TimeEntry = {
-      id: `time_${Math.random().toString(36).substring(2, 9)}`,
+      id: `time_${crypto.randomUUID()}`,
       taskId: this.id,
       userId: entry.userId || this.assigneeId || 'system',
       hours: entry.hours,
@@ -320,7 +320,7 @@ export class TaskEntity extends BaseEntity {
     };
 
     const event: TimeLoggedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'time.logged',
       aggregateId: this.id,
       aggregateType: 'Task',
@@ -338,7 +338,7 @@ export class TaskEntity extends BaseEntity {
   public addTodo(title: string, id?: string): TaskTodoItem {
     const previous = this.toPlain();
     const item: TaskTodoItem = {
-      id: id || `todo_${Math.random().toString(36).substring(2, 9)}`,
+      id: id || `todo_${crypto.randomUUID()}`,
       title,
       completed: false,
       createdAt: new Date().toISOString()
@@ -350,7 +350,7 @@ export class TaskEntity extends BaseEntity {
     this.markUpdated();
 
     const event: TaskUpdatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'task.updated',
       aggregateId: this.id,
       aggregateType: 'Task',
@@ -375,7 +375,7 @@ export class TaskEntity extends BaseEntity {
       this.markUpdated();
 
       const event: TaskUpdatedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'task.updated',
         aggregateId: this.id,
         aggregateType: 'Task',
@@ -397,7 +397,7 @@ export class TaskEntity extends BaseEntity {
     this.markUpdated();
 
     const event: TaskUpdatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'task.updated',
       aggregateId: this.id,
       aggregateType: 'Task',
@@ -459,7 +459,7 @@ export class TaskEntity extends BaseEntity {
     this.markUpdated();
 
     const event: TaskUpdatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'task.updated',
       aggregateId: this.id,
       aggregateType: 'Task',
@@ -554,7 +554,7 @@ export class ProjectEntity extends BaseEntity {
     input: CreateProjectInput,
     options?: { id?: string }
   ): ProjectEntity {
-    const id = options?.id || `proj_${Math.random().toString(36).substring(2, 9)}`;
+    const id = options?.id || `proj_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const key = input.key || generateProjectKey(input.name);
 
@@ -567,7 +567,7 @@ export class ProjectEntity extends BaseEntity {
     });
 
     const event: ProjectCreatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'project.created',
       aggregateId: project.id,
       aggregateType: 'Project',
@@ -638,7 +638,7 @@ export class DeliverableEntity extends BaseEntity {
     input: CreateDeliverableInput,
     options?: { id?: string; customFieldDefs?: CustomFieldDefinition[] }
   ): DeliverableEntity {
-    const id = options?.id || `deliv_${Math.random().toString(36).substring(2, 9)}`;
+    const id = options?.id || `deliv_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
     if (options?.customFieldDefs) {
@@ -656,7 +656,7 @@ export class DeliverableEntity extends BaseEntity {
     });
 
     const createdEvent: DeliverableCreatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'deliverable.created',
       aggregateId: deliverable.id,
       aggregateType: 'Deliverable',
@@ -682,7 +682,7 @@ export class DeliverableEntity extends BaseEntity {
     this.markUpdated();
 
     const event: DeliverableStatusChangedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'deliverable.status_changed',
       aggregateId: this.id,
       aggregateType: 'Deliverable',
@@ -708,7 +708,7 @@ export class DeliverableEntity extends BaseEntity {
       this.markUpdated();
 
       const event: DeliverableUpdatedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'deliverable.updated',
         aggregateId: this.id,
         aggregateType: 'Deliverable',
@@ -742,7 +742,7 @@ export class DeliverableEntity extends BaseEntity {
     this.markUpdated();
 
     const event: DeliverableUpdatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'deliverable.updated',
       aggregateId: this.id,
       aggregateType: 'Deliverable',

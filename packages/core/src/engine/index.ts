@@ -63,6 +63,14 @@ import {
   ProjectUpdatedEvent,
   ProjectDeletedEvent,
   TaskDependencyRemovedEvent,
+  TeamUpdatedEvent,
+  TeamDeletedEvent,
+  ContainerUpdatedEvent,
+  ContainerDeletedEvent,
+  IterationCreatedEvent,
+  IterationUpdatedEvent,
+  IterationDeletedEvent,
+  CriticalPathDomainEvent,
   WorkflowCreatedEvent,
   WorkflowUpdatedEvent,
   WorkflowDeletedEvent,
@@ -159,6 +167,15 @@ export class CriticalPathEngine {
     const scoped = Object.create(this) as CriticalPathEngine;
     Object.defineProperty(scoped, 'actor', { value: Object.freeze({ ...actor }), enumerable: true });
     return scoped;
+  }
+
+  /** Publishes a domain event, filling in its id and timestamp. */
+  private async publishEvent<E extends CriticalPathDomainEvent>(event: Omit<E, 'id' | 'occurredAt'>): Promise<void> {
+    await this.events.publish({
+      ...event,
+      id: `evt_${crypto.randomUUID()}`,
+      occurredAt: new Date().toISOString()
+    } as E);
   }
 
   private actorIdOr(fallback: string): string {
@@ -335,7 +352,7 @@ export class CriticalPathEngine {
     const now = new Date().toISOString();
 
     const event: WorkflowCreatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'workflow.created',
       aggregateId: created.id,
       aggregateType: 'Workflow',
@@ -362,7 +379,7 @@ export class CriticalPathEngine {
     if (updated) {
       const now = new Date().toISOString();
       const event: WorkflowUpdatedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'workflow.updated',
         aggregateId: updated.id,
         aggregateType: 'Workflow',
@@ -389,7 +406,7 @@ export class CriticalPathEngine {
     if (deleted) {
       const now = new Date().toISOString();
       const event: WorkflowDeletedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'workflow.deleted',
         aggregateId: id,
         aggregateType: 'Workflow',
@@ -469,7 +486,7 @@ export class CriticalPathEngine {
     const now = new Date().toISOString();
 
     const event: ProjectCreatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'project.created',
       aggregateId: created.id,
       aggregateType: 'Project',
@@ -499,7 +516,7 @@ export class CriticalPathEngine {
     if (updated) {
       const now = new Date().toISOString();
       const event: ProjectUpdatedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'project.updated',
         aggregateId: updated.id,
         aggregateType: 'Project',
@@ -547,7 +564,7 @@ export class CriticalPathEngine {
     if (deleted) {
       const now = new Date().toISOString();
       const event: ProjectDeletedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'project.deleted',
         aggregateId: id,
         aggregateType: 'Project',
@@ -688,7 +705,7 @@ export class CriticalPathEngine {
 
     // Publish typed Domain Event
     const event: TaskCreatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'task.created',
       aggregateId: created.id,
       aggregateType: 'Task',
@@ -927,7 +944,7 @@ export class CriticalPathEngine {
     // Publish typed Domain Events
     if (isStatusChange) {
       const statusEvent: TaskStatusChangedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'task.status_changed',
         aggregateId: updated.id,
         aggregateType: 'Task',
@@ -952,7 +969,7 @@ export class CriticalPathEngine {
       }
     } else {
       const updateEvent: TaskUpdatedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'task.updated',
         aggregateId: updated.id,
         aggregateType: 'Task',
@@ -974,7 +991,7 @@ export class CriticalPathEngine {
     if (!wasBlocked && isNowBlocked) {
       const blockedReason = updated.blockedReason ?? null;
       const blockedEvent: TaskBlockedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'task.blocked',
         aggregateId: updated.id,
         aggregateType: 'Task',
@@ -997,7 +1014,7 @@ export class CriticalPathEngine {
       });
     } else if (wasBlocked && !isNowBlocked) {
       const unblockedEvent: TaskUnblockedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'task.unblocked',
         aggregateId: updated.id,
         aggregateType: 'Task',
@@ -1081,7 +1098,7 @@ export class CriticalPathEngine {
 
           const now = new Date().toISOString();
           const unblockedEvent: TaskUnblockedEvent = {
-            id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+            id: `evt_${crypto.randomUUID()}`,
             name: 'task.unblocked',
             aggregateId: downstream.id,
             aggregateType: 'Task',
@@ -1127,7 +1144,7 @@ export class CriticalPathEngine {
       const now = new Date().toISOString();
 
       const event: TaskDeletedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'task.deleted',
         aggregateId: id,
         aggregateType: 'Task',
@@ -1198,7 +1215,7 @@ export class CriticalPathEngine {
     const removed = await this.store.removeDependency(id);
     if (removed) {
       const event: TaskDependencyRemovedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'dependency.removed',
         aggregateId: id,
         aggregateType: 'Dependency',
@@ -1229,7 +1246,7 @@ export class CriticalPathEngine {
     const now = new Date().toISOString();
 
     const event: TaskDependencyAddedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'dependency.added',
       aggregateId: created.id,
       aggregateType: 'Dependency',
@@ -1357,7 +1374,7 @@ export class CriticalPathEngine {
     const now = new Date().toISOString();
 
     const event: TimeLoggedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'time.logged',
       aggregateId: entry.taskId,
       aggregateType: 'Task',
@@ -1407,7 +1424,7 @@ export class CriticalPathEngine {
     const now = new Date().toISOString();
 
     const event: CommentAddedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'comment.created',
       aggregateId: created.id,
       aggregateType: 'Comment',
@@ -1435,7 +1452,7 @@ export class CriticalPathEngine {
 
     const now = new Date().toISOString();
     const event: CommentUpdatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'comment.updated',
       aggregateId: updated.id,
       aggregateType: 'Comment',
@@ -1459,7 +1476,7 @@ export class CriticalPathEngine {
     if (deleted) {
       const now = new Date().toISOString();
       const event: CommentDeletedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'comment.deleted',
         aggregateId: id,
         aggregateType: 'Comment',
@@ -1498,7 +1515,7 @@ export class CriticalPathEngine {
 
     const now = new Date().toISOString();
     const event: CommentReactionAddedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'comment.reaction.added',
       aggregateId: commentId,
       aggregateType: 'Comment',
@@ -1538,7 +1555,7 @@ export class CriticalPathEngine {
 
     const now = new Date().toISOString();
     const event: CommentReactionRemovedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'comment.reaction.removed',
       aggregateId: commentId,
       aggregateType: 'Comment',
@@ -1587,7 +1604,7 @@ export class CriticalPathEngine {
     const now = new Date().toISOString();
 
     const event: AttachmentCreatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'attachment.created',
       aggregateId: created.id,
       aggregateType: 'Attachment',
@@ -1619,7 +1636,7 @@ export class CriticalPathEngine {
     if (deleted) {
       const now = new Date().toISOString();
       const event: AttachmentDeletedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'attachment.deleted',
         aggregateId: id,
         aggregateType: 'Attachment',
@@ -1774,7 +1791,7 @@ export class CriticalPathEngine {
     const now = new Date().toISOString();
 
     const event: TeamCreatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'team.created',
       aggregateId: created.id,
       aggregateType: 'Team',
@@ -1787,15 +1804,35 @@ export class CriticalPathEngine {
   }
 
   async updateTeam(id: string, updates: Partial<Team>): Promise<Team | null> {
-    if (!(await this.getTeam(id))) return null;
+    const existing = await this.getTeam(id);
+    if (!existing) return null;
     await this.requireWorkspaceAccess('workspace.manage');
-    return this.store.updateTeam(id, this.withoutTenant(updates));
+    const updated = await this.store.updateTeam(id, this.withoutTenant(updates));
+    if (updated) {
+      await this.publishEvent<TeamUpdatedEvent>({
+        name: 'team.updated',
+        aggregateId: id,
+        aggregateType: 'Team',
+        payload: { team: updated, previous: existing }
+      });
+    }
+    return updated;
   }
 
   async deleteTeam(id: string): Promise<boolean> {
-    if (!(await this.getTeam(id))) return false;
+    const existing = await this.getTeam(id);
+    if (!existing) return false;
     await this.requireWorkspaceAccess('workspace.manage');
-    return this.store.deleteTeam(id);
+    const deleted = await this.store.deleteTeam(id);
+    if (deleted) {
+      await this.publishEvent<TeamDeletedEvent>({
+        name: 'team.deleted',
+        aggregateId: id,
+        aggregateType: 'Team',
+        payload: { teamId: id, name: existing.name, tenantId: existing.tenantId }
+      });
+    }
+    return deleted;
   }
 
   // --- Containers ---
@@ -1816,7 +1853,7 @@ export class CriticalPathEngine {
     const now = new Date().toISOString();
 
     const event: ContainerCreatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'container.created',
       aggregateId: created.id,
       aggregateType: 'Container',
@@ -1832,7 +1869,16 @@ export class CriticalPathEngine {
     const existing = await this.getContainer(id);
     if (!existing) return null;
     await this.requireProjectAccess('plan.manage', existing.projectId);
-    return this.store.updateContainer(id, updates);
+    const updated = await this.store.updateContainer(id, updates);
+    if (updated) {
+      await this.publishEvent<ContainerUpdatedEvent>({
+        name: 'container.updated',
+        aggregateId: id,
+        aggregateType: 'Container',
+        payload: { container: updated, previous: existing }
+      });
+    }
+    return updated;
   }
 
   /** Deletes a container. Its tasks and nested containers are kept but no longer reference it. */
@@ -1844,7 +1890,16 @@ export class CriticalPathEngine {
     for (const child of (await this.store.getContainers(existing.projectId)).filter((c) => c.parentId === id)) {
       await this.store.updateContainer(child.id, { parentId: undefined });
     }
-    return this.store.deleteContainer(id);
+    const deleted = await this.store.deleteContainer(id);
+    if (deleted) {
+      await this.publishEvent<ContainerDeletedEvent>({
+        name: 'container.deleted',
+        aggregateId: id,
+        aggregateType: 'Container',
+        payload: { containerId: id, projectId: existing.projectId, name: existing.name }
+      });
+    }
+    return deleted;
   }
 
   /** Unsets a reference (e.g. `iterationId`) on every task in the project that points at `id`. */
@@ -1886,7 +1941,7 @@ export class CriticalPathEngine {
     const now = new Date().toISOString();
 
     const event: DeliverableCreatedEvent = {
-      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: 'deliverable.created',
       aggregateId: created.id,
       aggregateType: 'Deliverable',
@@ -1919,7 +1974,7 @@ export class CriticalPathEngine {
 
       if (updates.status && updates.status !== existing.status) {
         const statusEvent: DeliverableStatusChangedEvent = {
-          id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+          id: `evt_${crypto.randomUUID()}`,
           name: 'deliverable.status_changed',
           aggregateId: updated.id,
           aggregateType: 'Deliverable',
@@ -1934,7 +1989,7 @@ export class CriticalPathEngine {
       }
 
       const updateEvent: DeliverableUpdatedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'deliverable.updated',
         aggregateId: updated.id,
         aggregateType: 'Deliverable',
@@ -1963,7 +2018,7 @@ export class CriticalPathEngine {
     if (deleted) {
       const now = new Date().toISOString();
       const event: DeliverableDeletedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'deliverable.deleted',
         aggregateId: id,
         aggregateType: 'Deliverable',
@@ -2044,10 +2099,16 @@ export class CriticalPathEngine {
   async createIteration(iteration: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
     await this.requireProjectAccess('plan.manage', iteration.projectId);
     const created = await this.store.createIteration(iteration);
+    await this.publishEvent<IterationCreatedEvent>({
+      name: 'iteration.created',
+      aggregateId: created.id,
+      aggregateType: 'Iteration',
+      payload: { iteration: created }
+    });
     if (created.status === 'active') {
       const now = new Date().toISOString();
       const event: IterationStartedEvent = {
-        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        id: `evt_${crypto.randomUUID()}`,
         name: 'iteration.started',
         aggregateId: created.id,
         aggregateType: 'Iteration',
@@ -2066,10 +2127,16 @@ export class CriticalPathEngine {
 
     const updated = await this.store.updateIteration(id, updates);
     if (updated) {
+      await this.publishEvent<IterationUpdatedEvent>({
+        name: 'iteration.updated',
+        aggregateId: id,
+        aggregateType: 'Iteration',
+        payload: { iteration: updated, previous: existing }
+      });
       const now = new Date().toISOString();
       if (existing.status !== 'active' && updated.status === 'active') {
         const event: IterationStartedEvent = {
-          id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+          id: `evt_${crypto.randomUUID()}`,
           name: 'iteration.started',
           aggregateId: updated.id,
           aggregateType: 'Iteration',
@@ -2079,7 +2146,7 @@ export class CriticalPathEngine {
         await this.events.publish(event);
       } else if (existing.status !== 'completed' && updated.status === 'completed') {
         const event: IterationCompletedEvent = {
-          id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+          id: `evt_${crypto.randomUUID()}`,
           name: 'iteration.completed',
           aggregateId: updated.id,
           aggregateType: 'Iteration',
@@ -2098,7 +2165,16 @@ export class CriticalPathEngine {
     if (!existing) return false;
     await this.requireProjectAccess('plan.manage', existing.projectId);
     await this.clearTaskReferences(existing.projectId, 'iterationId', id);
-    return this.store.deleteIteration(id);
+    const deleted = await this.store.deleteIteration(id);
+    if (deleted) {
+      await this.publishEvent<IterationDeletedEvent>({
+        name: 'iteration.deleted',
+        aggregateId: id,
+        aggregateType: 'Iteration',
+        payload: { iterationId: id, projectId: existing.projectId, name: existing.name }
+      });
+    }
+    return deleted;
   }
 
   // --- Ladder of Abstraction & Critical Path Method ---

@@ -123,7 +123,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - Event names are validated against `DOMAIN_EVENT_NAMES`.
 - SQLite now persists the webhook `name` and `tenantId`.
 
-**Follow-ups**: update and delete events for teams, containers and iterations; DNS-aware SSRF checks; a durable outbox adapter.
+**Follow-ups**: DNS-aware SSRF checks; a durable outbox adapter. (Done: team, container and iteration update/delete events, plus `iteration.created`.)
 
 ---
 
