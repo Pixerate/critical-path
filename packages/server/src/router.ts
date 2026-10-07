@@ -1,4 +1,4 @@
-import { CriticalPathEngine, type AuthorType, type CriticalPathConfig } from '@critical-path/core';
+import { CriticalPathEngine, type AuthorType, type CriticalPathConfig, type PluginRoute } from '@critical-path/core';
 import * as schemas from '@critical-path/core/schemas';
 import { buildOpenApiDocument } from './openapi.js';
 
@@ -194,511 +194,159 @@ export class CriticalPathRouter {
     );
 
     try {
-      // OpenAPI contract (behind the same auth as every other route)
-      if (segments[0] === 'openapi.json' && segments.length === 1 && method === 'GET') {
-        return this.jsonResponse(buildOpenApiDocument({ serverUrl: this.openApiServerUrl(url, subpath) }));
-      }
+      // Plugin init (and seeding) must finish before any request is served.
+      await this.engine.ready;
+      const pluginContext = { engine, context: context ?? undefined, url };
+      const handle = async (): Promise<Response> => {
+        const matched = this.matchPluginRoute(method, segments);
+        if (matched) return matched.route.handler(request, { ...pluginContext, params: matched.params });
+        return this.builtInRoutes(request, { url, pathname, method, subpath, segments, engine, context });
+      };
+      // Plugin middleware wraps routing, in registration order (first registered runs outermost).
+      const chain = this.engine.plugins
+        .getMiddleware()
+        .reduceRight<() => Promise<Response>>(
+          (next, middleware) => async () => middleware(request, pluginContext, next),
+          handle
+        );
+      return await chain();
+    } catch (err: unknown) {
+      return this.errorResponse(err, request);
+    }
+  }
 
-      // Webhooks API
-      if (segments[0] === 'webhooks') {
-        const webhookId = segments[1];
-        if (!webhookId) {
-          if (method === 'GET') {
-            return this.jsonResponse({ webhooks: await engine.getWebhooks() });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateWebhookSchema);
-            const { webhook, secret } = await engine.createWebhook(body);
-            return this.jsonResponse({ webhook, secret }, 201);
-          }
-        } else {
-          if (method === 'GET') {
-            const webhook = await engine.getWebhook(webhookId);
-            if (!webhook) return this.jsonResponse({ error: 'Webhook not found' }, 404);
-            return this.jsonResponse({ webhook });
-          }
-          if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readBody(request, schemas.UpdateWebhookSchema);
-            const webhook = await engine.updateWebhook(webhookId, body);
-            if (!webhook) return this.jsonResponse({ error: 'Webhook not found' }, 404);
-            return this.jsonResponse({ webhook });
-          }
-          if (method === 'DELETE') {
-            const deleted = await engine.deleteWebhook(webhookId);
-            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
-            return this.jsonResponse({ success: true });
-          }
+  private matchPluginRoute(
+    method: string,
+    segments: string[]
+  ): { route: PluginRoute; params: Record<string, string> } | null {
+    for (const route of this.engine.plugins.getRoutes()) {
+      if (route.method !== method && !(route.method === 'PATCH' && method === 'PUT')) continue;
+      const pattern = route.path.split('/').filter(Boolean);
+      if (pattern.length !== segments.length) continue;
+      const params: Record<string, string> = {};
+      const matches = pattern.every((part, i) => {
+        if (part.startsWith(':')) {
+          params[part.slice(1)] = decodeURIComponent(segments[i]);
+          return true;
         }
-      }
+        return part === segments[i];
+      });
+      if (matches) return { route, params };
+    }
+    return null;
+  }
 
-      // Workflows API
-      if (segments[0] === 'workflows') {
-        const workflowId = segments[1];
-        if (!workflowId) {
-          if (method === 'GET') {
-            const workflows = await engine.getWorkflows();
-            return this.jsonResponse({ workflows });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateWorkflowSchema);
-            const workflow = await engine.createWorkflow(body);
-            return this.jsonResponse({ workflow }, 201);
-          }
-        } else {
-          if (method === 'GET') {
-            const workflow = await engine.getWorkflow(workflowId);
-            if (!workflow) return this.jsonResponse({ error: 'Workflow not found' }, 404);
-            return this.jsonResponse({ workflow });
-          }
-          if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readBody(request, schemas.UpdateWorkflowSchema);
-            const updated = await engine.updateWorkflow(workflowId, body);
-            if (!updated) return this.jsonResponse({ error: 'Workflow not found' }, 404);
-            return this.jsonResponse({ workflow: updated });
-          }
-          if (method === 'DELETE') {
-            const deleted = await engine.deleteWorkflow(workflowId);
-            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
-            return this.jsonResponse({ success: true });
-          }
-        }
-      }
+  private async builtInRoutes(
+    request: Request,
+    { url, pathname, method, subpath, segments, engine, context }: {
+      url: URL;
+      pathname: string;
+      method: string;
+      subpath: string;
+      segments: string[];
+      engine: CriticalPathEngine;
+      context: RequestContext | null | undefined;
+    }
+  ): Promise<Response> {
+    // OpenAPI contract (behind the same auth as every other route)
+    if (segments[0] === 'openapi.json' && segments.length === 1 && method === 'GET') {
+      return this.jsonResponse(buildOpenApiDocument({ serverUrl: this.openApiServerUrl(url, subpath) }));
+    }
 
-      // Projects API
-      if (segments[0] === 'projects') {
-        const projectId = segments[1];
-        const subResource = segments[2];
-        if (!projectId) {
-          if (method === 'GET') {
-            const projects = await engine.getProjects();
-            return this.jsonResponse({ projects });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateProjectSchema);
-            const project = await engine.createProject(body);
-            return this.jsonResponse({ project }, 201);
-          }
-        } else if (subResource === 'critical-path') {
-          if (method === 'GET') {
-            const analysis = await engine.calculateCriticalPath(projectId);
-            return this.jsonResponse({ analysis });
-          }
-        } else if (subResource === 'ladder' || subResource === 'timeline-ladder') {
-          if (method === 'GET') {
-            const level = (url.searchParams.get('level') || 'all') as any;
-            const containerId = url.searchParams.get('containerId') || undefined;
-            const iterationId = url.searchParams.get('iterationId') || undefined;
-            const ladder = await engine.getTimelineLadder(projectId, { level, containerId, iterationId });
-            return this.jsonResponse({ ladder });
-          }
-        } else if (subResource === 'workload' || subResource === 'workload-distribution') {
-          if (method === 'GET') {
-            const startDate = url.searchParams.get('startDate') || undefined;
-            const endDate = url.searchParams.get('endDate') || undefined;
-            const interval = (url.searchParams.get('interval') || undefined) as any;
-            const groupBy = (url.searchParams.get('groupBy') || undefined) as any;
-            const metric = (url.searchParams.get('metric') || undefined) as any;
-            const defaultWeeklyCapacityHours = url.searchParams.get('defaultWeeklyCapacityHours')
-              ? parseFloat(url.searchParams.get('defaultWeeklyCapacityHours')!)
-              : undefined;
-
-            const workload = await engine.getWorkloadDistribution(projectId, {
-              startDate,
-              endDate,
-              interval,
-              groupBy,
-              metric,
-              defaultWeeklyCapacityHours
-            });
-            return this.jsonResponse({ workload });
-          }
-        } else {
-          if (method === 'GET') {
-            const project = await engine.getProject(projectId);
-            if (!project) return this.jsonResponse({ error: 'Project not found' }, 404);
-            return this.jsonResponse({ project });
-          }
-          if (method === 'PATCH' || method === 'PUT') {
-            const updates = await this.readBody(request, schemas.UpdateProjectSchema);
-            const project = await engine.updateProject(projectId, updates);
-            if (!project) return this.jsonResponse({ error: 'Project not found' }, 404);
-            return this.jsonResponse({ project });
-          }
-          if (method === 'DELETE') {
-            const deleted = await engine.deleteProject(projectId);
-            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
-            return this.jsonResponse({ success: true });
-          }
-        }
-      }
-
-      // Tasks API & Task Sub-resources (Dependencies, Lifecycle State, Transitions)
-      if (segments[0] === 'tasks') {
-        const taskId = segments[1];
-        const subResource = segments[2];
-
-        if (!taskId) {
-          if (method === 'GET') {
-            const projectId = url.searchParams.get('projectId') || undefined;
-            const tasks = await engine.getTasks(projectId);
-            return this.jsonResponse({ tasks });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateTaskSchema);
-            const task = await engine.createTask(body);
-            return this.jsonResponse({ task }, 201);
-          }
-        } else if (subResource === 'comments') {
-          if (method === 'GET') {
-            const comments = await engine.getComments(taskId);
-            return this.jsonResponse({ comments });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateCommentSchema, { taskId });
-            const comment = await engine.addComment(body);
-            return this.jsonResponse({ comment }, 201);
-          }
-        } else if (subResource === 'attachments') {
-          if (method === 'GET') {
-            const attachments = await engine.getAttachments({ taskId });
-            return this.jsonResponse({ attachments });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateAttachmentSchema, { taskId });
-            const attachment = await engine.createAttachment(body);
-            return this.jsonResponse({ attachment }, 201);
-          }
-        } else if (subResource === 'dependencies') {
-          if (method === 'GET') {
-            const graph = await engine.getTaskDependencyGraph(taskId);
-            return this.jsonResponse({ graph });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateDependencySchema);
-            const dep = await engine.addDependency({
-              taskId,
-              dependsOnTaskId: body.dependsOnTaskId,
-              type: body.type || 'blocking'
-            });
-            return this.jsonResponse({ dependency: dep }, 201);
-          }
-        } else if (subResource === 'state' || subResource === 'lifecycle') {
-          if (method === 'GET') {
-            const state = await engine.getTaskLifecycleState(taskId);
-            if (!state) return this.jsonResponse({ error: 'Task not found' }, 404);
-            return this.jsonResponse({ state });
-          }
-        } else if (subResource === 'transitions' || subResource === 'allowed-transitions') {
-          if (method === 'GET') {
-            const allowedNextStatuses = await engine.getAllowedTaskTransitions(taskId);
-            const allowedPreviousStatuses = await engine.getAllowedPreviousTaskTransitions(taskId);
-            return this.jsonResponse({ allowedNextStatuses, allowedPreviousStatuses });
-          }
-        } else if (subResource === 'ladder') {
-          if (method === 'GET') {
-            const taskLadder = await engine.getTaskLadder(taskId);
-            if (!taskLadder) return this.jsonResponse({ error: 'Task not found' }, 404);
-            return this.jsonResponse({ taskLadder });
-          }
-        } else if (subResource === 'metrics') {
-          if (method === 'GET') {
-            const metrics = await engine.getTaskMetrics(taskId);
-            if (!metrics) return this.jsonResponse({ error: 'Task not found' }, 404);
-            return this.jsonResponse({ metrics });
-          }
-        } else if (subResource === 'progress-history') {
-          if (method === 'GET') {
-            const progressHistory = await engine.getTaskProgressHistory(taskId);
-            if (!progressHistory) return this.jsonResponse({ error: 'Task not found' }, 404);
-            return this.jsonResponse({ progressHistory });
-          }
-        } else {
-          if (method === 'GET') {
-            const task = await engine.getTask(taskId);
-            if (!task) return this.jsonResponse({ error: 'Task not found' }, 404);
-            return this.jsonResponse({ task });
-          }
-          if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readBody(request, schemas.UpdateTaskSchema);
-            const updated = await engine.updateTask(taskId, body);
-            if (!updated) return this.jsonResponse({ error: 'Task not found' }, 404);
-            return this.jsonResponse({ task: updated });
-          }
-          if (method === 'DELETE') {
-            const deleted = await engine.deleteTask(taskId);
-            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
-            return this.jsonResponse({ success: true });
-          }
-        }
-      }
-
-      // Teams API
-      if (segments[0] === 'teams') {
-        const teamId = segments[1];
-        if (!teamId) {
-          if (method === 'GET') {
-            const teams = await engine.getTeams();
-            return this.jsonResponse({ teams });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateTeamSchema);
-            const team = await engine.createTeam(body);
-            return this.jsonResponse({ team }, 201);
-          }
-        } else {
-          if (method === 'GET') {
-            const team = await engine.getTeam(teamId);
-            if (!team) return this.jsonResponse({ error: 'Team not found' }, 404);
-            return this.jsonResponse({ team });
-          }
-          if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readBody(request, schemas.UpdateTeamSchema);
-            const updated = await engine.updateTeam(teamId, body);
-            if (!updated) return this.jsonResponse({ error: 'Team not found' }, 404);
-            return this.jsonResponse({ team: updated });
-          }
-          if (method === 'DELETE') {
-            const deleted = await engine.deleteTeam(teamId);
-            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
-            return this.jsonResponse({ success: true });
-          }
-        }
-      }
-
-      // Task Containers API
-      if (segments[0] === 'containers') {
-        const containerId = segments[1];
-        if (!containerId) {
-          if (method === 'GET') {
-            const projectId = url.searchParams.get('projectId');
-            if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
-            const containers = await engine.getContainers(projectId);
-            return this.jsonResponse({ containers });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateContainerSchema);
-            const container = await engine.createContainer(body);
-            return this.jsonResponse({ container }, 201);
-          }
-        } else {
-          if (method === 'GET') {
-            const container = await engine.getContainer(containerId);
-            if (!container) return this.jsonResponse({ error: 'Container not found' }, 404);
-            return this.jsonResponse({ container });
-          }
-          if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readBody(request, schemas.UpdateContainerSchema);
-            const updated = await engine.updateContainer(containerId, body);
-            if (!updated) return this.jsonResponse({ error: 'Container not found' }, 404);
-            return this.jsonResponse({ container: updated });
-          }
-          if (method === 'DELETE') {
-            const deleted = await engine.deleteContainer(containerId);
-            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
-            return this.jsonResponse({ success: true });
-          }
-        }
-      }
-
-      // Deliverables API
-      if (segments[0] === 'deliverables') {
-        const deliverableId = segments[1];
-        if (!deliverableId) {
-          if (method === 'GET') {
-            const projectId = url.searchParams.get('projectId');
-            if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
-            const deliverables = await engine.getDeliverables(projectId);
-            return this.jsonResponse({ deliverables });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateDeliverableSchema);
-            const deliverable = await engine.createDeliverable(body);
-            return this.jsonResponse({ deliverable }, 201);
-          }
-        } else if (segments[2] === 'summary') {
-          if (method === 'GET') {
-            const summary = await engine.getDeliverableSummary(deliverableId);
-            if (!summary) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
-            return this.jsonResponse({ summary });
-          }
-        } else {
-          if (method === 'GET') {
-            const deliverable = await engine.getDeliverable(deliverableId);
-            if (!deliverable) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
-            return this.jsonResponse({ deliverable });
-          }
-          if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readBody(request, schemas.UpdateDeliverableSchema);
-            const updated = await engine.updateDeliverable(deliverableId, body);
-            if (!updated) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
-            return this.jsonResponse({ deliverable: updated });
-          }
-          if (method === 'DELETE') {
-            const deleted = await engine.deleteDeliverable(deliverableId);
-            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
-            return this.jsonResponse({ success: true });
-          }
-        }
-      }
-
-      // Iterations API
-      if (segments[0] === 'iterations') {
-        const iterationId = segments[1];
-        if (!iterationId) {
-          if (method === 'GET') {
-            const projectId = url.searchParams.get('projectId');
-            if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
-            const iterations = await engine.getIterations(projectId);
-            return this.jsonResponse({ iterations });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateIterationSchema);
-            const iteration = await engine.createIteration(body);
-            return this.jsonResponse({ iteration }, 201);
-          }
-        } else {
-          if (method === 'GET') {
-            const iteration = await engine.getIteration(iterationId);
-            if (!iteration) return this.jsonResponse({ error: 'Iteration not found' }, 404);
-            return this.jsonResponse({ iteration });
-          }
-          if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readBody(request, schemas.UpdateIterationSchema);
-            const updated = await engine.updateIteration(iterationId, body);
-            if (!updated) return this.jsonResponse({ error: 'Iteration not found' }, 404);
-            return this.jsonResponse({ iteration: updated });
-          }
-          if (method === 'DELETE') {
-            const deleted = await engine.deleteIteration(iterationId);
-            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
-            return this.jsonResponse({ success: true });
-          }
-        }
-      }
-
-      // Activities API
-      if (segments[0] === 'activities') {
+    // Webhooks API
+    if (segments[0] === 'webhooks') {
+      const webhookId = segments[1];
+      if (!webhookId) {
         if (method === 'GET') {
-          const projectId = url.searchParams.get('projectId') || undefined;
-          const taskId = url.searchParams.get('taskId') || undefined;
-          const activities = await engine.getActivities({ projectId, taskId });
-          return this.jsonResponse({ activities });
-        }
-      }
-
-      // Comments API
-      if (segments[0] === 'comments') {
-        const commentId = segments[1];
-        const subResource = segments[2];
-        if (commentId && subResource === 'reactions') {
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CommentReactionSchema);
-            const comment = await engine.addCommentReaction(commentId, body);
-            if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
-            return this.jsonResponse({ comment }, 200);
-          }
-          if (method === 'DELETE') {
-            const emoji = url.searchParams.get('emoji');
-            if (!emoji) {
-              return this.jsonResponse({ error: 'emoji query parameter is required' }, 400);
-            }
-            const comment = await engine.removeCommentReaction(commentId, { emoji });
-            if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
-            return this.jsonResponse({ comment }, 200);
-          }
-        } else if (!commentId) {
-          if (method === 'GET') {
-            const taskId = url.searchParams.get('taskId');
-            if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
-            const comments = await engine.getComments(taskId);
-            return this.jsonResponse({ comments });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateCommentSchema);
-            const comment = await engine.addComment(body);
-            return this.jsonResponse({ comment }, 201);
-          }
-        } else {
-          if (method === 'GET') {
-            const comment = await engine.getComment(commentId);
-            if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
-            return this.jsonResponse({ comment });
-          }
-          if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readBody(request, schemas.UpdateCommentSchema);
-            const updated = await engine.updateComment(commentId, body);
-            if (!updated) return this.jsonResponse({ error: 'Comment not found' }, 404);
-            return this.jsonResponse({ comment: updated });
-          }
-          if (method === 'DELETE') {
-            const deleted = await engine.deleteComment(commentId);
-            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
-            return this.jsonResponse({ success: true });
-          }
-        }
-      }
-
-      // Attachments API
-      if (segments[0] === 'attachments') {
-        const attachmentId = segments[1];
-        if (attachmentId === 'presign') {
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.PresignAttachmentSchema);
-            const presigned = await engine.getPresignedAttachmentUploadUrl(body);
-            return this.jsonResponse({ presigned });
-          }
-        } else if (attachmentId === 'upload') {
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.UploadAttachmentSchema);
-            const attachment = await engine.uploadAttachmentFile(body);
-            return this.jsonResponse({ attachment }, 201);
-          }
-        } else if (!attachmentId) {
-          if (method === 'GET') {
-            const taskId = url.searchParams.get('taskId') || undefined;
-            const projectId = url.searchParams.get('projectId') || undefined;
-            const commentId = url.searchParams.get('commentId') || undefined;
-            const attachments = await engine.getAttachments({ taskId, projectId, commentId });
-            return this.jsonResponse({ attachments });
-          }
-          if (method === 'POST') {
-            const body = await this.readBody(request, schemas.CreateAttachmentSchema);
-            const attachment = await engine.createAttachment(body);
-            return this.jsonResponse({ attachment }, 201);
-          }
-        } else {
-          if (method === 'GET') {
-            const attachment = await engine.getAttachment(attachmentId);
-            if (!attachment) return this.jsonResponse({ error: 'Attachment not found' }, 404);
-            return this.jsonResponse({ attachment });
-          }
-          if (method === 'DELETE') {
-            const deleted = await engine.deleteAttachment(attachmentId);
-            if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
-            return this.jsonResponse({ success: true });
-          }
-        }
-      }
-
-      // Time Tracking API
-      if (segments[0] === 'time-entries') {
-        if (method === 'GET') {
-          const taskId = url.searchParams.get('taskId');
-          if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
-          const entries = await engine.getTimeEntries(taskId);
-          return this.jsonResponse({ timeEntries: entries });
+          return this.jsonResponse({ webhooks: await engine.getWebhooks() });
         }
         if (method === 'POST') {
-          const body = await this.readBody(request, schemas.LogTimeSchema);
-          const entry = await engine.logTime(body);
-          return this.jsonResponse({ timeEntry: entry }, 201);
+          const body = await this.readBody(request, schemas.CreateWebhookSchema);
+          const { webhook, secret } = await engine.createWebhook(body);
+          return this.jsonResponse({ webhook, secret }, 201);
+        }
+      } else {
+        if (method === 'GET') {
+          const webhook = await engine.getWebhook(webhookId);
+          if (!webhook) return this.jsonResponse({ error: 'Webhook not found' }, 404);
+          return this.jsonResponse({ webhook });
+        }
+        if (method === 'PATCH' || method === 'PUT') {
+          const body = await this.readBody(request, schemas.UpdateWebhookSchema);
+          const webhook = await engine.updateWebhook(webhookId, body);
+          if (!webhook) return this.jsonResponse({ error: 'Webhook not found' }, 404);
+          return this.jsonResponse({ webhook });
+        }
+        if (method === 'DELETE') {
+          const deleted = await engine.deleteWebhook(webhookId);
+          if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+          return this.jsonResponse({ success: true });
         }
       }
+    }
 
-      // Workload & Capacity API
-      if (segments[0] === 'workload') {
+    // Workflows API
+    if (segments[0] === 'workflows') {
+      const workflowId = segments[1];
+      if (!workflowId) {
         if (method === 'GET') {
-          const projectId = url.searchParams.get('projectId') || undefined;
+          const workflows = await engine.getWorkflows();
+          return this.jsonResponse({ workflows });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateWorkflowSchema);
+          const workflow = await engine.createWorkflow(body);
+          return this.jsonResponse({ workflow }, 201);
+        }
+      } else {
+        if (method === 'GET') {
+          const workflow = await engine.getWorkflow(workflowId);
+          if (!workflow) return this.jsonResponse({ error: 'Workflow not found' }, 404);
+          return this.jsonResponse({ workflow });
+        }
+        if (method === 'PATCH' || method === 'PUT') {
+          const body = await this.readBody(request, schemas.UpdateWorkflowSchema);
+          const updated = await engine.updateWorkflow(workflowId, body);
+          if (!updated) return this.jsonResponse({ error: 'Workflow not found' }, 404);
+          return this.jsonResponse({ workflow: updated });
+        }
+        if (method === 'DELETE') {
+          const deleted = await engine.deleteWorkflow(workflowId);
+          if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+          return this.jsonResponse({ success: true });
+        }
+      }
+    }
+
+    // Projects API
+    if (segments[0] === 'projects') {
+      const projectId = segments[1];
+      const subResource = segments[2];
+      if (!projectId) {
+        if (method === 'GET') {
+          const projects = await engine.getProjects();
+          return this.jsonResponse({ projects });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateProjectSchema);
+          const project = await engine.createProject(body);
+          return this.jsonResponse({ project }, 201);
+        }
+      } else if (subResource === 'critical-path') {
+        if (method === 'GET') {
+          const analysis = await engine.calculateCriticalPath(projectId);
+          return this.jsonResponse({ analysis });
+        }
+      } else if (subResource === 'ladder' || subResource === 'timeline-ladder') {
+        if (method === 'GET') {
+          const level = (url.searchParams.get('level') || 'all') as any;
+          const containerId = url.searchParams.get('containerId') || undefined;
+          const iterationId = url.searchParams.get('iterationId') || undefined;
+          const ladder = await engine.getTimelineLadder(projectId, { level, containerId, iterationId });
+          return this.jsonResponse({ ladder });
+        }
+      } else if (subResource === 'workload' || subResource === 'workload-distribution') {
+        if (method === 'GET') {
           const startDate = url.searchParams.get('startDate') || undefined;
           const endDate = url.searchParams.get('endDate') || undefined;
           const interval = (url.searchParams.get('interval') || undefined) as any;
@@ -718,39 +366,442 @@ export class CriticalPathRouter {
           });
           return this.jsonResponse({ workload });
         }
-      }
-
-      // Agent Status / Telemetry API
-      if (segments[0] === 'status') {
-        if (method === 'POST') {
-          const body = await this.readJson(request);
-          const status = typeof body.status === 'string' ? body.status : 'active';
-          if (engine.events) {
-            engine.events.publish({
-              type: 'agent.status_updated' as any,
-              aggregateId: body.taskId || body.projectId || 'system',
-              payload: {
-                status,
-                taskId: body.taskId,
-                projectId: body.projectId,
-                details: body.details,
-                isEngaged: body.isEngaged ?? true,
-                timestamp: Date.now()
-              }
-            } as any);
-          }
-          return this.jsonResponse({
-            success: true,
-            status,
-            timestamp: Date.now()
-          });
+      } else {
+        if (method === 'GET') {
+          const project = await engine.getProject(projectId);
+          if (!project) return this.jsonResponse({ error: 'Project not found' }, 404);
+          return this.jsonResponse({ project });
+        }
+        if (method === 'PATCH' || method === 'PUT') {
+          const updates = await this.readBody(request, schemas.UpdateProjectSchema);
+          const project = await engine.updateProject(projectId, updates);
+          if (!project) return this.jsonResponse({ error: 'Project not found' }, 404);
+          return this.jsonResponse({ project });
+        }
+        if (method === 'DELETE') {
+          const deleted = await engine.deleteProject(projectId);
+          if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+          return this.jsonResponse({ success: true });
         }
       }
-
-      return this.jsonResponse({ error: `Route not found: ${method} ${pathname}` }, 404);
-    } catch (err: unknown) {
-      return this.errorResponse(err, request);
     }
+
+    // Tasks API & Task Sub-resources (Dependencies, Lifecycle State, Transitions)
+    if (segments[0] === 'tasks') {
+      const taskId = segments[1];
+      const subResource = segments[2];
+
+      if (!taskId) {
+        if (method === 'GET') {
+          const projectId = url.searchParams.get('projectId') || undefined;
+          const tasks = await engine.getTasks(projectId);
+          return this.jsonResponse({ tasks });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateTaskSchema);
+          const task = await engine.createTask(body);
+          return this.jsonResponse({ task }, 201);
+        }
+      } else if (subResource === 'comments') {
+        if (method === 'GET') {
+          const comments = await engine.getComments(taskId);
+          return this.jsonResponse({ comments });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateCommentSchema, { taskId });
+          const comment = await engine.addComment(body);
+          return this.jsonResponse({ comment }, 201);
+        }
+      } else if (subResource === 'attachments') {
+        if (method === 'GET') {
+          const attachments = await engine.getAttachments({ taskId });
+          return this.jsonResponse({ attachments });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateAttachmentSchema, { taskId });
+          const attachment = await engine.createAttachment(body);
+          return this.jsonResponse({ attachment }, 201);
+        }
+      } else if (subResource === 'dependencies') {
+        if (method === 'GET') {
+          const graph = await engine.getTaskDependencyGraph(taskId);
+          return this.jsonResponse({ graph });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateDependencySchema);
+          const dep = await engine.addDependency({
+            taskId,
+            dependsOnTaskId: body.dependsOnTaskId,
+            type: body.type || 'blocking'
+          });
+          return this.jsonResponse({ dependency: dep }, 201);
+        }
+      } else if (subResource === 'state' || subResource === 'lifecycle') {
+        if (method === 'GET') {
+          const state = await engine.getTaskLifecycleState(taskId);
+          if (!state) return this.jsonResponse({ error: 'Task not found' }, 404);
+          return this.jsonResponse({ state });
+        }
+      } else if (subResource === 'transitions' || subResource === 'allowed-transitions') {
+        if (method === 'GET') {
+          const allowedNextStatuses = await engine.getAllowedTaskTransitions(taskId);
+          const allowedPreviousStatuses = await engine.getAllowedPreviousTaskTransitions(taskId);
+          return this.jsonResponse({ allowedNextStatuses, allowedPreviousStatuses });
+        }
+      } else if (subResource === 'ladder') {
+        if (method === 'GET') {
+          const taskLadder = await engine.getTaskLadder(taskId);
+          if (!taskLadder) return this.jsonResponse({ error: 'Task not found' }, 404);
+          return this.jsonResponse({ taskLadder });
+        }
+      } else if (subResource === 'metrics') {
+        if (method === 'GET') {
+          const metrics = await engine.getTaskMetrics(taskId);
+          if (!metrics) return this.jsonResponse({ error: 'Task not found' }, 404);
+          return this.jsonResponse({ metrics });
+        }
+      } else if (subResource === 'progress-history') {
+        if (method === 'GET') {
+          const progressHistory = await engine.getTaskProgressHistory(taskId);
+          if (!progressHistory) return this.jsonResponse({ error: 'Task not found' }, 404);
+          return this.jsonResponse({ progressHistory });
+        }
+      } else {
+        if (method === 'GET') {
+          const task = await engine.getTask(taskId);
+          if (!task) return this.jsonResponse({ error: 'Task not found' }, 404);
+          return this.jsonResponse({ task });
+        }
+        if (method === 'PATCH' || method === 'PUT') {
+          const body = await this.readBody(request, schemas.UpdateTaskSchema);
+          const updated = await engine.updateTask(taskId, body);
+          if (!updated) return this.jsonResponse({ error: 'Task not found' }, 404);
+          return this.jsonResponse({ task: updated });
+        }
+        if (method === 'DELETE') {
+          const deleted = await engine.deleteTask(taskId);
+          if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+          return this.jsonResponse({ success: true });
+        }
+      }
+    }
+
+    // Teams API
+    if (segments[0] === 'teams') {
+      const teamId = segments[1];
+      if (!teamId) {
+        if (method === 'GET') {
+          const teams = await engine.getTeams();
+          return this.jsonResponse({ teams });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateTeamSchema);
+          const team = await engine.createTeam(body);
+          return this.jsonResponse({ team }, 201);
+        }
+      } else {
+        if (method === 'GET') {
+          const team = await engine.getTeam(teamId);
+          if (!team) return this.jsonResponse({ error: 'Team not found' }, 404);
+          return this.jsonResponse({ team });
+        }
+        if (method === 'PATCH' || method === 'PUT') {
+          const body = await this.readBody(request, schemas.UpdateTeamSchema);
+          const updated = await engine.updateTeam(teamId, body);
+          if (!updated) return this.jsonResponse({ error: 'Team not found' }, 404);
+          return this.jsonResponse({ team: updated });
+        }
+        if (method === 'DELETE') {
+          const deleted = await engine.deleteTeam(teamId);
+          if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+          return this.jsonResponse({ success: true });
+        }
+      }
+    }
+
+    // Task Containers API
+    if (segments[0] === 'containers') {
+      const containerId = segments[1];
+      if (!containerId) {
+        if (method === 'GET') {
+          const projectId = url.searchParams.get('projectId');
+          if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
+          const containers = await engine.getContainers(projectId);
+          return this.jsonResponse({ containers });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateContainerSchema);
+          const container = await engine.createContainer(body);
+          return this.jsonResponse({ container }, 201);
+        }
+      } else {
+        if (method === 'GET') {
+          const container = await engine.getContainer(containerId);
+          if (!container) return this.jsonResponse({ error: 'Container not found' }, 404);
+          return this.jsonResponse({ container });
+        }
+        if (method === 'PATCH' || method === 'PUT') {
+          const body = await this.readBody(request, schemas.UpdateContainerSchema);
+          const updated = await engine.updateContainer(containerId, body);
+          if (!updated) return this.jsonResponse({ error: 'Container not found' }, 404);
+          return this.jsonResponse({ container: updated });
+        }
+        if (method === 'DELETE') {
+          const deleted = await engine.deleteContainer(containerId);
+          if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+          return this.jsonResponse({ success: true });
+        }
+      }
+    }
+
+    // Deliverables API
+    if (segments[0] === 'deliverables') {
+      const deliverableId = segments[1];
+      if (!deliverableId) {
+        if (method === 'GET') {
+          const projectId = url.searchParams.get('projectId');
+          if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
+          const deliverables = await engine.getDeliverables(projectId);
+          return this.jsonResponse({ deliverables });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateDeliverableSchema);
+          const deliverable = await engine.createDeliverable(body);
+          return this.jsonResponse({ deliverable }, 201);
+        }
+      } else if (segments[2] === 'summary') {
+        if (method === 'GET') {
+          const summary = await engine.getDeliverableSummary(deliverableId);
+          if (!summary) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
+          return this.jsonResponse({ summary });
+        }
+      } else {
+        if (method === 'GET') {
+          const deliverable = await engine.getDeliverable(deliverableId);
+          if (!deliverable) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
+          return this.jsonResponse({ deliverable });
+        }
+        if (method === 'PATCH' || method === 'PUT') {
+          const body = await this.readBody(request, schemas.UpdateDeliverableSchema);
+          const updated = await engine.updateDeliverable(deliverableId, body);
+          if (!updated) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
+          return this.jsonResponse({ deliverable: updated });
+        }
+        if (method === 'DELETE') {
+          const deleted = await engine.deleteDeliverable(deliverableId);
+          if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+          return this.jsonResponse({ success: true });
+        }
+      }
+    }
+
+    // Iterations API
+    if (segments[0] === 'iterations') {
+      const iterationId = segments[1];
+      if (!iterationId) {
+        if (method === 'GET') {
+          const projectId = url.searchParams.get('projectId');
+          if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
+          const iterations = await engine.getIterations(projectId);
+          return this.jsonResponse({ iterations });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateIterationSchema);
+          const iteration = await engine.createIteration(body);
+          return this.jsonResponse({ iteration }, 201);
+        }
+      } else {
+        if (method === 'GET') {
+          const iteration = await engine.getIteration(iterationId);
+          if (!iteration) return this.jsonResponse({ error: 'Iteration not found' }, 404);
+          return this.jsonResponse({ iteration });
+        }
+        if (method === 'PATCH' || method === 'PUT') {
+          const body = await this.readBody(request, schemas.UpdateIterationSchema);
+          const updated = await engine.updateIteration(iterationId, body);
+          if (!updated) return this.jsonResponse({ error: 'Iteration not found' }, 404);
+          return this.jsonResponse({ iteration: updated });
+        }
+        if (method === 'DELETE') {
+          const deleted = await engine.deleteIteration(iterationId);
+          if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+          return this.jsonResponse({ success: true });
+        }
+      }
+    }
+
+    // Activities API
+    if (segments[0] === 'activities') {
+      if (method === 'GET') {
+        const projectId = url.searchParams.get('projectId') || undefined;
+        const taskId = url.searchParams.get('taskId') || undefined;
+        const activities = await engine.getActivities({ projectId, taskId });
+        return this.jsonResponse({ activities });
+      }
+    }
+
+    // Comments API
+    if (segments[0] === 'comments') {
+      const commentId = segments[1];
+      const subResource = segments[2];
+      if (commentId && subResource === 'reactions') {
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CommentReactionSchema);
+          const comment = await engine.addCommentReaction(commentId, body);
+          if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
+          return this.jsonResponse({ comment }, 200);
+        }
+        if (method === 'DELETE') {
+          const emoji = url.searchParams.get('emoji');
+          if (!emoji) {
+            return this.jsonResponse({ error: 'emoji query parameter is required' }, 400);
+          }
+          const comment = await engine.removeCommentReaction(commentId, { emoji });
+          if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
+          return this.jsonResponse({ comment }, 200);
+        }
+      } else if (!commentId) {
+        if (method === 'GET') {
+          const taskId = url.searchParams.get('taskId');
+          if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
+          const comments = await engine.getComments(taskId);
+          return this.jsonResponse({ comments });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateCommentSchema);
+          const comment = await engine.addComment(body);
+          return this.jsonResponse({ comment }, 201);
+        }
+      } else {
+        if (method === 'GET') {
+          const comment = await engine.getComment(commentId);
+          if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
+          return this.jsonResponse({ comment });
+        }
+        if (method === 'PATCH' || method === 'PUT') {
+          const body = await this.readBody(request, schemas.UpdateCommentSchema);
+          const updated = await engine.updateComment(commentId, body);
+          if (!updated) return this.jsonResponse({ error: 'Comment not found' }, 404);
+          return this.jsonResponse({ comment: updated });
+        }
+        if (method === 'DELETE') {
+          const deleted = await engine.deleteComment(commentId);
+          if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+          return this.jsonResponse({ success: true });
+        }
+      }
+    }
+
+    // Attachments API
+    if (segments[0] === 'attachments') {
+      const attachmentId = segments[1];
+      if (attachmentId === 'presign') {
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.PresignAttachmentSchema);
+          const presigned = await engine.getPresignedAttachmentUploadUrl(body);
+          return this.jsonResponse({ presigned });
+        }
+      } else if (attachmentId === 'upload') {
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.UploadAttachmentSchema);
+          const attachment = await engine.uploadAttachmentFile(body);
+          return this.jsonResponse({ attachment }, 201);
+        }
+      } else if (!attachmentId) {
+        if (method === 'GET') {
+          const taskId = url.searchParams.get('taskId') || undefined;
+          const projectId = url.searchParams.get('projectId') || undefined;
+          const commentId = url.searchParams.get('commentId') || undefined;
+          const attachments = await engine.getAttachments({ taskId, projectId, commentId });
+          return this.jsonResponse({ attachments });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateAttachmentSchema);
+          const attachment = await engine.createAttachment(body);
+          return this.jsonResponse({ attachment }, 201);
+        }
+      } else {
+        if (method === 'GET') {
+          const attachment = await engine.getAttachment(attachmentId);
+          if (!attachment) return this.jsonResponse({ error: 'Attachment not found' }, 404);
+          return this.jsonResponse({ attachment });
+        }
+        if (method === 'DELETE') {
+          const deleted = await engine.deleteAttachment(attachmentId);
+          if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
+          return this.jsonResponse({ success: true });
+        }
+      }
+    }
+
+    // Time Tracking API
+    if (segments[0] === 'time-entries') {
+      if (method === 'GET') {
+        const taskId = url.searchParams.get('taskId');
+        if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
+        const entries = await engine.getTimeEntries(taskId);
+        return this.jsonResponse({ timeEntries: entries });
+      }
+      if (method === 'POST') {
+        const body = await this.readBody(request, schemas.LogTimeSchema);
+        const entry = await engine.logTime(body);
+        return this.jsonResponse({ timeEntry: entry }, 201);
+      }
+    }
+
+    // Workload & Capacity API
+    if (segments[0] === 'workload') {
+      if (method === 'GET') {
+        const projectId = url.searchParams.get('projectId') || undefined;
+        const startDate = url.searchParams.get('startDate') || undefined;
+        const endDate = url.searchParams.get('endDate') || undefined;
+        const interval = (url.searchParams.get('interval') || undefined) as any;
+        const groupBy = (url.searchParams.get('groupBy') || undefined) as any;
+        const metric = (url.searchParams.get('metric') || undefined) as any;
+        const defaultWeeklyCapacityHours = url.searchParams.get('defaultWeeklyCapacityHours')
+          ? parseFloat(url.searchParams.get('defaultWeeklyCapacityHours')!)
+          : undefined;
+
+        const workload = await engine.getWorkloadDistribution(projectId, {
+          startDate,
+          endDate,
+          interval,
+          groupBy,
+          metric,
+          defaultWeeklyCapacityHours
+        });
+        return this.jsonResponse({ workload });
+      }
+    }
+
+    // Agent Status / Telemetry API
+    if (segments[0] === 'status') {
+      if (method === 'POST') {
+        const body = await this.readJson(request);
+        const status = typeof body.status === 'string' ? body.status : 'active';
+        if (engine.events) {
+          engine.events.publish({
+            type: 'agent.status_updated' as any,
+            aggregateId: body.taskId || body.projectId || 'system',
+            payload: {
+              status,
+              taskId: body.taskId,
+              projectId: body.projectId,
+              details: body.details,
+              isEngaged: body.isEngaged ?? true,
+              timestamp: Date.now()
+            }
+          } as any);
+        }
+        return this.jsonResponse({
+          success: true,
+          status,
+          timestamp: Date.now()
+        });
+      }
+    }
+
+    return this.jsonResponse({ error: `Route not found: ${method} ${pathname}` }, 404);
   }
 
   /**

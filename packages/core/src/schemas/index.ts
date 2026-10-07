@@ -65,7 +65,8 @@ export const CustomFieldDefinitionSchema = strictObject({
   id: z.string(),
   key: nonEmpty,
   label: z.string(),
-  type: z.enum(['text', 'number', 'date', 'boolean', 'single_select', 'multi_select', 'user']),
+  /** Built-in type or one registered by a plugin (checked by the engine). */
+  type: nonEmpty,
   options: z.array(z.string()).optional(),
   required: z.boolean().optional(),
   defaultValue: z.unknown().optional()

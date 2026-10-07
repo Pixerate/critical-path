@@ -354,3 +354,5 @@ export const auditPlugin: CriticalPathPlugin = {
   }
 };
 ```
+
+Plugins can also contribute `init(engine)` (awaited via `engine.ready`), `customFieldTypes` (validated custom field types for project `customFieldDefinitions`), and HTTP `routes` / `middleware` served by `@critical-path/server`. Before-hook output is validated like caller input, and after-hook errors are logged instead of failing the write.

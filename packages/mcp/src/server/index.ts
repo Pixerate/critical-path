@@ -88,6 +88,8 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
     }
 
     try {
+      // Plugin init and seeding must finish before tools touch the engine.
+      if (options.engine) await options.engine.ready;
       const result = await tool.execute(parseToolArgs(tool, args), target);
       return {
         content: [

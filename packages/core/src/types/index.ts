@@ -88,7 +88,8 @@ export interface CustomFieldDefinition {
   id: string;
   key: string;
   label: string;
-  type: 'text' | 'number' | 'date' | 'boolean' | 'single_select' | 'multi_select' | 'user';
+  /** A built-in type, or a type registered by a plugin's `customFieldTypes`. */
+  type: 'text' | 'number' | 'date' | 'boolean' | 'single_select' | 'multi_select' | 'user' | (string & {});
   options?: string[];
   required?: boolean;
   defaultValue?: unknown;
@@ -448,14 +449,59 @@ export type PublicWebhook = Omit<Webhook, 'secret'> & { hasSecret: boolean };
  */
 export type WebhookEvent = import('../domain/events.js').CriticalPathDomainEvent['name'] | '*';
 
+/**
+ * Lifecycle hooks, run in plugin registration order.
+ *
+ * - `before*` hooks may transform the input or throw to abort the operation. Their output is
+ *   validated (workflow transitions, custom fields) exactly like caller input, and they cannot
+ *   move a task to another project.
+ * - `after*` hooks run once the change is stored. Errors are logged and do not fail the call.
+ */
 export interface PluginHooks {
   beforeTaskCreate?: (task: Partial<Task>) => Promise<Partial<Task>> | Partial<Task>;
   afterTaskCreate?: (task: Task) => Promise<void> | void;
   beforeTaskUpdate?: (id: string, updates: Partial<Task>) => Promise<Partial<Task>> | Partial<Task>;
   afterTaskUpdate?: (task: Task, previousState: Task) => Promise<void> | void;
-  beforeTaskDelete?: (id: string) => Promise<void> | void;
-  afterTaskDelete?: (id: string) => Promise<void> | void;
+  beforeTaskDelete?: (id: string, task: Task) => Promise<void> | void;
+  afterTaskDelete?: (id: string, task: Task) => Promise<void> | void;
 }
+
+/** A custom field type contributed by a plugin, e.g. `url` or `currency`. */
+export interface CustomFieldType {
+  /** The `type` value used in `CustomFieldDefinition`s. Must not clash with a built-in type. */
+  type: string;
+  label?: string;
+  /** Returns an error message for an invalid value, or nothing when valid. Not called for empty values. */
+  validate: (value: unknown, definition: CustomFieldDefinition) => string | null | undefined | void;
+}
+
+/** Context passed to plugin routes and middleware. */
+export interface PluginRequestContext {
+  /** The engine as the calling actor (authorization and tenancy apply). */
+  engine: import('../engine/index.js').CriticalPathEngine;
+  /** The caller resolved by the router's `getContext`, if any. */
+  context?: Record<string, unknown> & { userId?: string };
+  url: URL;
+  /** Path parameters from the route pattern, e.g. `{ projectId: 'p1' }` for `/reports/:projectId`. */
+  params: Record<string, string>;
+}
+
+export interface PluginRoute {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** Path below the router's base, with `:name` parameters, e.g. `/reports/:projectId`. */
+  path: string;
+  handler: (request: Request, ctx: PluginRequestContext) => Response | Promise<Response>;
+}
+
+/**
+ * Wraps every routed request (after authentication). Call `next()` to continue, or return a
+ * `Response` to short-circuit (e.g. rate limiting).
+ */
+export type PluginMiddleware = (
+  request: Request,
+  ctx: Omit<PluginRequestContext, 'params'>,
+  next: () => Promise<Response>
+) => Response | Promise<Response>;
 
 export interface CriticalPathPlugin {
   id: string;
@@ -463,8 +509,14 @@ export interface CriticalPathPlugin {
   version: string;
   description?: string;
   hooks?: PluginHooks;
-  customFieldTypes?: CustomFieldDefinition[];
-  init?: (engine: unknown) => Promise<void> | void;
+  /** Additional custom field types projects can use in `customFieldDefinitions`. */
+  customFieldTypes?: CustomFieldType[];
+  /** Runs once when the engine starts; `engine.ready` resolves after every plugin's `init`. */
+  init?: (engine: import('../engine/index.js').CriticalPathEngine) => Promise<void> | void;
+  /** HTTP routes served by `@critical-path/server`, matched before built-in routes. */
+  routes?: PluginRoute[];
+  /** Middleware run by `@critical-path/server` around every routed request. */
+  middleware?: PluginMiddleware;
 }
 
 export interface CriticalPathConfig {
