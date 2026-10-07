@@ -325,10 +325,11 @@ export interface Actor {
 /** A user's role on a project. */
 export type ProjectRole = Role;
 
-export interface ProjectMember {
-  userId: string;
-  role: ProjectRole;
-}
+/**
+ * A project member: a user, or a team whose members all get the role. A user who matches several
+ * entries (directly and through teams) gets the permissions of every matching role.
+ */
+export type ProjectMember = { userId: string; teamId?: never; role: ProjectRole } | { teamId: string; userId?: never; role: ProjectRole };
 
 export interface CommentReaction {
   emoji: string;
@@ -865,6 +866,8 @@ export interface AuthorizationRequest {
   project?: Project;
   /** The specific record, when relevant (e.g. the comment being edited). */
   resource?: { type: 'task' | 'comment' | 'attachment'; ownerId?: string };
+  /** Ids of the teams the actor belongs to (from `team.memberIds`), resolved by the engine. */
+  teamIds: string[];
 }
 
 export type AuthorizationPolicy = (request: AuthorizationRequest) => boolean | Promise<boolean>;

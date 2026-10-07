@@ -115,7 +115,12 @@ export const CreateProjectSchema = strictObject({
   description: z.string().optional(),
   ownerId: z.string().optional(),
   members: z
-    .array(strictObject({ userId: nonEmpty, role: z.enum(['admin', 'project_manager', 'contributor', 'viewer']) }))
+    .array(
+      z.union([
+        strictObject({ userId: nonEmpty, role: z.enum(['admin', 'project_manager', 'contributor', 'viewer']) }),
+        strictObject({ teamId: nonEmpty, role: z.enum(['admin', 'project_manager', 'contributor', 'viewer']) })
+      ])
+    )
     .optional(),
   teamIds: z.array(z.string()).optional(),
   workflowId: z.string().optional(),

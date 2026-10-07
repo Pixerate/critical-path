@@ -144,6 +144,9 @@ export class CriticalPathEngine {
       config.webhookDelivery
     );
     this.events.subscribe('*', (event) => this.webhooks.handle(event));
+    this.events.subscribe('*', (event) => {
+      if (event.name.startsWith('team.')) this.teamMembership.clear();
+    });
 
     if (config.plugins) {
       for (const plugin of config.plugins) {
@@ -213,7 +216,28 @@ export class CriticalPathEngine {
     if (!this.enforcing) return true;
     if (project && !this.inActorTenant(project)) return false;
     const policy = this.config.authorize;
-    return policy ? await policy({ actor: this.actor!, action, project, resource }) : true;
+    return policy ? await policy({ actor: this.actor!, action, project, resource, teamIds: await this.actorTeamIds() }) : true;
+  }
+
+  /**
+   * Team memberships per user, shared by all views of this engine and cleared whenever a team
+   * changes through the engine. (Direct `engine.store` team writes are not seen until then.)
+   */
+  private readonly teamMembership = new Map<string, Promise<string[]>>();
+
+  private actorTeamIds(): Promise<string[]> {
+    if (!this.actor) return Promise.resolve([]);
+    const { userId, tenantId } = this.actor;
+    const key = `${tenantId ?? ''}:${userId}`;
+    let teams = this.teamMembership.get(key);
+    if (!teams) {
+      teams = this.store
+        .getTeams()
+        .then((all) => all.filter((t) => (t.tenantId ?? undefined) === tenantId && t.memberIds.includes(userId)).map((t) => t.id));
+      this.teamMembership.set(key, teams);
+      teams.catch(() => this.teamMembership.delete(key));
+    }
+    return teams;
   }
 
   /** The project if the actor may read it, otherwise null (callers report "not found"). */
@@ -464,7 +488,9 @@ export class CriticalPathEngine {
 
   // --- Projects ---
   async getProjects(): Promise<Project[]> {
-    const projects = await this.store.getProjects();
+    // Tenant scoping runs in the store; role checks then run per project.
+    const tenantId = this.enforcing ? this.actor?.tenantId : undefined;
+    const projects = await this.store.getProjects(tenantId ? { tenantId } : undefined);
     return this.filterReadable(projects, (p) => p.id);
   }
 

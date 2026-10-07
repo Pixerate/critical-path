@@ -171,11 +171,11 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Tenancy compares `tenantId` values with `===`. SQLite returns `NULL` columns as `null`, while in-memory and Firestore records omit the field (`undefined`).
 - **Solution / Workaround**: `SQLiteStore` maps `tenantId` with `row.tenantId ?? undefined`. Custom adapters must do the same for any tenant-scoped entity (projects, workflows, teams).
 
-### `Project.members` Is `{ userId, role }[]`
+### `Project.members` Entries Are `{ userId, role }` or `{ teamId, role }`
 - **Area / Package**: `@critical-path/core`, storage adapters, request schemas
 - **Symptom / Behavior**: Existing data or clients that stored `members` as a list of user ids fail validation, or members get no permissions.
 - **Root Cause**: Role-based authorization needs a role per member, so `members` changed from `string[]` to `ProjectMember[]`.
-- **Solution / Workaround**: Migrate stored projects to `members: ids.map((userId) => ({ userId, role: 'contributor' }))` (or the role you intend) and send the new shape from clients.
+- **Solution / Workaround**: Migrate stored projects to `members: ids.map((userId) => ({ userId, role: 'contributor' }))` (or the role you intend) and send the new shape from clients. Team entries give every user in `team.memberIds` the role; memberships are cached per engine and refreshed on `team.*` events, so update teams through the engine rather than `engine.store`.
 
 ### Webhook Deliveries Are In-Process and Not Durable by Default
 - **Area / Package**: `@critical-path/core` (`WebhookDispatcher`, `InProcessWebhookQueue`)

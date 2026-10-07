@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { StorageAdapter } from './index.js';
+import type { ProjectFilter, StorageAdapter } from './index.js';
 import { decodeCursor, encodeCursor, pageSize, type ActivityQuery, type Page, type TaskQuery } from './query.js';
 import type {
   Project,
@@ -328,6 +328,7 @@ export class SQLiteStore implements StorageAdapter {
         // Column may already exist
       }
     }
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_projects_tenant ON projects (tenantId)');
   }
 
   private columnCache = new Map<string, Set<string>>();
@@ -360,9 +361,12 @@ export class SQLiteStore implements StorageAdapter {
   }
 
   // --- Projects ---
-  async getProjects(): Promise<Project[]> {
-    const stmt = this.db.prepare('SELECT * FROM projects');
-    const rows = stmt.all() as any[];
+  async getProjects(filter?: ProjectFilter): Promise<Project[]> {
+    const rows = (
+      filter?.tenantId
+        ? this.db.prepare('SELECT * FROM projects WHERE tenantId = ?').all(filter.tenantId)
+        : this.db.prepare('SELECT * FROM projects').all()
+    ) as any[];
     return rows.map((r) => this.mapProject(r));
   }
 

@@ -29,8 +29,14 @@ import {
 
 export * from './query.js';
 
+export interface ProjectFilter {
+  /** Only projects owned by this tenant. */
+  tenantId?: string;
+}
+
 export interface ProjectRepository {
-  getProjects(): Promise<Project[]>;
+  /** All projects, or only those matching `filter` (applied by the store, not in memory). */
+  getProjects(filter?: ProjectFilter): Promise<Project[]>;
   getProject(id: string): Promise<Project | null>;
   createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project>;
   updateProject(id: string, updates: Partial<Project>): Promise<Project | null>;
@@ -180,8 +186,9 @@ export class InMemoryStore implements StorageAdapter {
     });
   }
 
-  async getProjects(): Promise<Project[]> {
-    return Array.from(this.projects.values());
+  async getProjects(filter?: ProjectFilter): Promise<Project[]> {
+    const projects = Array.from(this.projects.values());
+    return filter?.tenantId ? projects.filter((p) => p.tenantId === filter.tenantId) : projects;
   }
 
   async getProject(id: string): Promise<Project | null> {
