@@ -1,5 +1,22 @@
 # @critical-path/mcp
 
+## 0.13.0
+
+### Minor Changes
+
+- f548659: Resource levelling for critical path analysis.
+  
+  - `calculateCriticalPath(id, { calendars: 'assignee', levelResources: true })`, or `criticalPathLevelResources` on the engine, schedules each assignee on one task at a time. Tasks are placed in priority order at the earliest time their predecessors are done and their assignee is free on their own calendar. Tasks are not split, and unassigned tasks are unconstrained.
+  - `levelingPriority`: `'slack'` (default: least unlevelled slack, then task priority), `'priority'`, `'dueDate'` or `'order'`.
+  - Slack and critical tasks are recomputed over dependencies plus each assignee's task sequence. Tasks report `levelingDelayHours` and `waitingOn`; the analysis reports `leveled` and `unleveledProjectEndDate`.
+  - REST: `?levelResources=true&levelingPriority=...` (400 for invalid values, or for levelling without `calendars=assignee`). Client options and MCP arguments to match.
+
+### Patch Changes
+
+- Updated dependencies [f548659]
+  - @critical-path/core@0.42.0
+  - @critical-path/client@0.22.0
+
 ## 0.12.1
 
 ### Patch Changes
