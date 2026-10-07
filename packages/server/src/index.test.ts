@@ -752,5 +752,83 @@ describe('@critical-path/server Router Tests', () => {
       expect((await handle(new Request('http://localhost/other/projects'))).status).toBe(404);
     });
   });
+
+  describe('request body validation', () => {
+    const send = (router: CriticalPathRouter, method: string, path: string, body: unknown, token?: string) =>
+      router.handleRequest(
+        new Request(`http://localhost:3000/api/critical-path${path}`, {
+          method,
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify(body)
+        })
+      );
+
+    it('ignores attempts to move tasks or rewrite server-assigned fields', async () => {
+      const router = new CriticalPathRouter();
+      const home = await router.engine.createProject({ key: 'HOME', name: 'Home' });
+      const other = await router.engine.createProject({ key: 'OTH', name: 'Other' });
+      const task = await router.engine.createTask({ projectId: home.id, title: 'Stay' });
+
+      const res = await send(router, 'PATCH', `/tasks/${task.id}`, {
+        title: 'Renamed',
+        projectId: other.id,
+        id: 'hijacked',
+        createdAt: '1999-01-01T00:00:00.000Z',
+        injected: '<script>'
+      });
+      expect(res.status).toBe(200);
+      const stored = await router.engine.getTask(task.id);
+      expect(stored?.title).toBe('Renamed');
+      expect(stored?.projectId).toBe(home.id);
+      expect(stored?.createdAt).toBe(task.createdAt);
+      expect((stored as any).injected).toBeUndefined();
+    });
+
+    it('returns 400 with field-level issues for invalid bodies', async () => {
+      const router = new CriticalPathRouter();
+      const project = await router.engine.createProject({ key: 'VAL', name: 'Validation' });
+
+      const res = await send(router, 'POST', '/tasks', { projectId: project.id, title: '', progress: 'half' });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.issues.map((i: { path: string }) => i.path).sort()).toEqual(['progress', 'title']);
+
+      expect((await send(router, 'POST', '/projects', [])).status).toBe(400);
+      expect((await send(router, 'POST', '/iterations', { projectId: project.id, name: 'S1', status: 'later' })).status).toBe(400);
+    });
+
+    it('requires an author unless the caller is resolved, and path ids win over body ids', async () => {
+      const router = new CriticalPathRouter(undefined, {
+        getContext: (request) => {
+          const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+          return token ? { userId: token } : null;
+        }
+      });
+      const project = await router.engine.createProject({ key: 'AUT', name: 'Authors' });
+      const task = await router.engine.createTask({ projectId: project.id, title: 'T' });
+      const decoy = await router.engine.createTask({ projectId: project.id, title: 'Decoy' });
+
+      const anonymous = await send(router, 'POST', `/tasks/${task.id}/comments`, { content: 'hi' });
+      expect(anonymous.status).toBe(400);
+      expect((await anonymous.json()).error).toContain('authorId');
+
+      const authed = await send(router, 'POST', `/tasks/${task.id}/comments`, { content: 'hi', taskId: decoy.id }, 'alice');
+      expect(authed.status).toBe(201);
+      const { comment } = await authed.json();
+      expect(comment.authorId).toBe('alice');
+      expect(comment.taskId).toBe(task.id);
+    });
+
+    it('keeps accepting actor claims from unauthenticated trusted callers', async () => {
+      const router = new CriticalPathRouter();
+      const project = await router.engine.createProject({ key: 'CLI', name: 'CLI' });
+      const task = await router.engine.createTask({ projectId: project.id, title: 'T' });
+
+      const res = await send(router, 'PATCH', `/tasks/${task.id}`, { isBlocked: true, actorId: 'agent-7', actorType: 'agent' });
+      expect(res.status).toBe(200);
+      const activities = await router.engine.store.getActivities({ taskId: task.id });
+      expect(activities.some((a) => a.actorId === 'agent-7')).toBe(true);
+    });
+  });
 });
 

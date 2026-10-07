@@ -140,6 +140,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@1.21.7)(lightningcss@1.33.0)(yaml@2.9.0)
 
   packages/core:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -177,6 +181,9 @@ importers:
       zod:
         specifier: ^3.24.0
         version: 3.25.76
+      zod-to-json-schema:
+        specifier: ^3.25.2
+        version: 3.25.2(zod@3.25.76)
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -221,6 +228,9 @@ importers:
       '@critical-path/core':
         specifier: workspace:*
         version: link:../core
+      zod-to-json-schema:
+        specifier: ^3.25.2
+        version: 3.25.2(zod@4.5.4)
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -7743,6 +7753,10 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:
       zod: 3.25.76
+
+  zod-to-json-schema@3.25.2(zod@4.5.4):
+    dependencies:
+      zod: 4.5.4
 
   zod-to-ts@1.2.0(typescript@5.9.3)(zod@3.25.76):
     dependencies:

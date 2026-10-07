@@ -31,7 +31,8 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@critical-path/core": "workspace:*"
+    "@critical-path/core": "workspace:*",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

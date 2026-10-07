@@ -122,6 +122,17 @@ try {
 
 Cycle detection follows the full upstream chain, so indirect cycles (A → B → C → D → A) are rejected as well as direct ones.
 
+#### Request Payload Schemas (`@critical-path/core/schemas`)
+
+```ts
+import { CreateTaskSchema, UpdateTaskSchema, parsePayload } from '@critical-path/core/schemas';
+
+const input = parsePayload(CreateTaskSchema, await request.json()); // throws ValidationError with `issues`
+await engine.createTask(input);
+```
+
+Create and update schemas exist for workflows, projects, tasks, dependencies, deliverables, teams, containers, iterations, comments, reactions, attachments and time entries. They strip server-assigned fields and unknown keys. The schemas live on a subpath so importing `@critical-path/core` in a browser bundle does not pull in zod. A compile-time test fails the build if a domain type gains a field its schema lacks.
+
 #### Attributing Mutations to a User (`withActor`)
 
 ```ts

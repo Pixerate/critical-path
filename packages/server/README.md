@@ -86,11 +86,29 @@ For other Fetch runtimes (Workers, Deno, Bun, Hono), use `createUniversalHandler
 
 ---
 
+## ✅ Request Validation & OpenAPI
+
+Every request body is parsed with the zod schemas from `@critical-path/core/schemas` before it reaches the engine:
+
+- Wrong types or missing required fields return `400` with `issues: [{ path, message }]`.
+- Server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, and the owning `projectId` on updates) and unknown keys are stripped, so a `PATCH` cannot move a task to another project or rewrite timestamps.
+- Comments, reactions and attachments need an author (`authorId`, `userId`, `uploaderId`) unless `getContext` resolves the caller, in which case the caller is used.
+
+`GET /openapi.json` serves an OpenAPI 3.1 document whose request bodies are generated from the same schemas (behind the same auth as other routes). To publish it statically:
+
+```ts
+import { buildOpenApiDocument } from '@critical-path/server';
+
+const doc = buildOpenApiDocument({ serverUrl: 'https://app.example.com/api/critical-path' });
+```
+
+---
+
 ## ⚠️ Error Responses
 
 | Status | When |
 | :--- | :--- |
-| `400` | Malformed JSON, `ValidationError`, workflow transition or custom field validation failures |
+| `400` | Malformed JSON, invalid body (with `issues`), `ValidationError`, workflow transition or custom field validation failures |
 | `401` | `requireAuth` is set and no user was resolved |
 | `404` | Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ "success": true }`) |
 | `409` | `CircularDependencyError` (body includes `cyclePath`) |

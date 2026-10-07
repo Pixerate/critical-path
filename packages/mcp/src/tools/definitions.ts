@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { CriticalPathEngine } from '@critical-path/core';
 import type { CriticalPathClient } from '@critical-path/client';
 
@@ -9,12 +10,24 @@ export interface ToolDefinition<TParams = any, TResult = any> {
   title: string;
   description: string;
   zodSchema: z.ZodObject<any>;
+  /** JSON Schema shown to MCP clients. Generated from `zodSchema` by `defineTool`. */
   inputSchema: Record<string, unknown>;
   annotations?: {
     readOnlyHint?: boolean;
     requiresConfirmation?: boolean;
   };
   execute: (args: TParams, target: BackendContext, ambientContext?: { projectId?: string }) => Promise<TResult>;
+}
+
+/**
+ * Declares a tool, generating its JSON Schema `inputSchema` from `zodSchema` so the schema the
+ * model sees and the one arguments are validated against cannot drift apart.
+ */
+export function defineTool<TParams = any, TResult = any>(
+  spec: Omit<ToolDefinition<TParams, TResult>, 'inputSchema'>
+): ToolDefinition<TParams, TResult> {
+  const { $schema: _schema, ...inputSchema } = zodToJsonSchema(spec.zodSchema, { $refStrategy: 'none' }) as Record<string, unknown>;
+  return { ...spec, inputSchema };
 }
 
 export class ToolArgumentError extends Error {
@@ -45,44 +58,31 @@ export async function resolveBackend(target: BackendContext) {
   return { isEngine };
 }
 
-export const listProjectsTool: ToolDefinition = {
+export const listProjectsTool = defineTool({
   name: 'list_projects',
   title: 'List Projects',
   description: 'Retrieve all projects in the workspace.',
   zodSchema: z.object({}),
-  inputSchema: {
-    type: 'object',
-    properties: {},
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (_args, target) => {
     return target.getProjects();
   }
-};
+});
 
-export const getProjectTool: ToolDefinition<{ id: string }> = {
+export const getProjectTool = defineTool<{ id: string }>({
   name: 'get_project',
   title: 'Get Project',
   description: 'Get details of a specific project by its ID.',
   zodSchema: z.object({
     id: z.string().describe('The project ID')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      id: { type: 'string', description: 'The project ID' }
-    },
-    required: ['id'],
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (args, target) => {
     return target.getProject(args.id);
   }
-};
+});
 
-export const createProjectTool: ToolDefinition<{ name: string; description?: string; key?: string }> = {
+export const createProjectTool = defineTool<{ name: string; description?: string; key?: string }>({
   name: 'create_project',
   title: 'Create Project',
   description: 'Create a new project workspace.',
@@ -91,27 +91,17 @@ export const createProjectTool: ToolDefinition<{ name: string; description?: str
     description: z.string().optional().describe('Description of the project'),
     key: z.string().optional().describe('Short project key/prefix (e.g. "PROJ")')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      name: { type: 'string', description: 'Name of the project' },
-      description: { type: 'string', description: 'Description of the project' },
-      key: { type: 'string', description: 'Short project key/prefix (e.g. "PROJ")' }
-    },
-    required: ['name'],
-    additionalProperties: false
-  },
   execute: async (args, target) => {
     return target.createProject(args);
   }
-};
+});
 
-export const listTasksTool: ToolDefinition<{
+export const listTasksTool = defineTool<{
   projectId?: string;
   status?: string;
   priority?: string;
   assigneeId?: string;
-}> = {
+}>({
   name: 'list_tasks',
   title: 'List Tasks',
   description: 'List tasks, optionally filtered by project, status, priority, or assignee.',
@@ -121,20 +111,6 @@ export const listTasksTool: ToolDefinition<{
     priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().describe('Filter by priority'),
     assigneeId: z.string().optional().describe('Filter by assignee ID')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      projectId: { type: 'string', description: 'Filter by project ID' },
-      status: { type: 'string', description: 'Filter by task status key' },
-      priority: {
-        type: 'string',
-        enum: ['urgent', 'high', 'medium', 'low', 'none'],
-        description: 'Filter by priority'
-      },
-      assigneeId: { type: 'string', description: 'Filter by assignee ID' }
-    },
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
@@ -150,30 +126,22 @@ export const listTasksTool: ToolDefinition<{
     }
     return tasks;
   }
-};
+});
 
-export const getTaskTool: ToolDefinition<{ id: string }> = {
+export const getTaskTool = defineTool<{ id: string }>({
   name: 'get_task',
   title: 'Get Task',
   description: 'Get task details by ID.',
   zodSchema: z.object({
     id: z.string().describe('The task ID')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      id: { type: 'string', description: 'The task ID' }
-    },
-    required: ['id'],
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (args, target) => {
     return target.getTask(args.id);
   }
-};
+});
 
-export const createTaskTool: ToolDefinition<{
+export const createTaskTool = defineTool<{
   projectId?: string;
   title: string;
   description?: string;
@@ -185,7 +153,7 @@ export const createTaskTool: ToolDefinition<{
   estimatedHours?: number;
   isBlocked?: boolean;
   blockedReason?: string;
-}> = {
+}>({
   name: 'create_task',
   title: 'Create Task',
   description: 'Create a new task within a project.',
@@ -202,24 +170,6 @@ export const createTaskTool: ToolDefinition<{
     isBlocked: z.boolean().optional().describe('Whether the task is blocked'),
     blockedReason: z.string().optional().describe('Reason why the task is blocked')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      projectId: { type: 'string', description: 'Project ID (inferred from active view if omitted)' },
-      title: { type: 'string', description: 'Title of the task' },
-      description: { type: 'string', description: 'Detailed description' },
-      status: { type: 'string', description: 'Status key' },
-      priority: { type: 'string', enum: ['urgent', 'high', 'medium', 'low', 'none'] },
-      assigneeId: { type: 'string', description: 'User ID of assignee' },
-      dueDate: { type: 'string', description: 'Due date in ISO 8601 format' },
-      tags: { type: 'array', items: { type: 'string' } },
-      estimatedHours: { type: 'number' },
-      isBlocked: { type: 'boolean', description: 'Whether the task is blocked' },
-      blockedReason: { type: 'string', description: 'Reason why the task is blocked' }
-    },
-    required: ['title'],
-    additionalProperties: false
-  },
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
     if (!projectId) {
@@ -240,9 +190,9 @@ export const createTaskTool: ToolDefinition<{
     };
     return target.createTask(input);
   }
-};
+});
 
-export const updateTaskTool: ToolDefinition<{
+export const updateTaskTool = defineTool<{
   id: string;
   title?: string;
   description?: string;
@@ -255,7 +205,7 @@ export const updateTaskTool: ToolDefinition<{
   loggedHours?: number;
   isBlocked?: boolean;
   blockedReason?: string;
-}> = {
+}>({
   name: 'update_task',
   title: 'Update Task',
   description: 'Update fields of an existing task (e.g. title, status, priority, assignee).',
@@ -270,70 +220,36 @@ export const updateTaskTool: ToolDefinition<{
     tags: z.array(z.string()).optional(),
     estimatedHours: z.number().optional(),
     loggedHours: z.number().optional(),
-    isBlocked: z.boolean().optional(),
-    blockedReason: z.string().optional()
+    isBlocked: z.boolean().optional().describe('Whether the task is blocked'),
+    blockedReason: z.string().optional().describe('Reason why the task is blocked')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      id: { type: 'string', description: 'Task ID' },
-      title: { type: 'string' },
-      description: { type: 'string' },
-      status: { type: 'string' },
-      priority: { type: 'string', enum: ['urgent', 'high', 'medium', 'low', 'none'] },
-      assigneeId: { type: 'string' },
-      dueDate: { type: 'string' },
-      tags: { type: 'array', items: { type: 'string' } },
-      estimatedHours: { type: 'number' },
-      loggedHours: { type: 'number' },
-      isBlocked: { type: 'boolean', description: 'Whether the task is blocked' },
-      blockedReason: { type: 'string', description: 'Reason why the task is blocked' }
-    },
-    required: ['id'],
-    additionalProperties: false
-  },
   execute: async (args, target) => {
     const { id, ...updates } = args;
     return target.updateTask(id, updates);
   }
-};
+});
 
-export const deleteTaskTool: ToolDefinition<{ id: string }> = {
+export const deleteTaskTool = defineTool<{ id: string }>({
   name: 'delete_task',
   title: 'Delete Task',
   description: 'Delete a task by ID.',
   zodSchema: z.object({
     id: z.string().describe('The task ID to delete')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      id: { type: 'string', description: 'The task ID' }
-    },
-    required: ['id'],
-    additionalProperties: false
-  },
   annotations: { requiresConfirmation: true },
   execute: async (args, target) => {
     const success = await target.deleteTask(args.id);
     return { success };
   }
-};
+});
 
-export const listDeliverablesTool: ToolDefinition<{ projectId?: string }> = {
+export const listDeliverablesTool = defineTool<{ projectId?: string }>({
   name: 'list_deliverables',
   title: 'List Deliverables',
   description: 'List deliverables/milestones for a project.',
   zodSchema: z.object({
     projectId: z.string().optional().describe('Project ID')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      projectId: { type: 'string', description: 'Project ID' }
-    },
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
@@ -343,15 +259,15 @@ export const listDeliverablesTool: ToolDefinition<{ projectId?: string }> = {
     }
     return [];
   }
-};
+});
 
-export const createDeliverableTool: ToolDefinition<{
+export const createDeliverableTool = defineTool<{
   projectId?: string;
   title: string;
   description?: string;
   dueDate?: string;
   taskIds?: string[];
-}> = {
+}>({
   name: 'create_deliverable',
   title: 'Create Deliverable',
   description: 'Create a milestone deliverable within a project.',
@@ -362,18 +278,6 @@ export const createDeliverableTool: ToolDefinition<{
     dueDate: z.string().optional(),
     taskIds: z.array(z.string()).optional()
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      projectId: { type: 'string' },
-      title: { type: 'string' },
-      description: { type: 'string' },
-      dueDate: { type: 'string' },
-      taskIds: { type: 'array', items: { type: 'string' } }
-    },
-    required: ['title'],
-    additionalProperties: false
-  },
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
     if (!projectId) throw new Error('projectId is required to create a deliverable.');
@@ -385,23 +289,15 @@ export const createDeliverableTool: ToolDefinition<{
     }
     throw new Error('createDeliverable is not supported by this backend target.');
   }
-};
+});
 
-export const listCommentsTool: ToolDefinition<{ taskId: string }> = {
+export const listCommentsTool = defineTool<{ taskId: string }>({
   name: 'list_comments',
   title: 'List Comments',
   description: 'List comments associated with a task.',
   zodSchema: z.object({
     taskId: z.string().describe('The task ID')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      taskId: { type: 'string', description: 'The task ID' }
-    },
-    required: ['taskId'],
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (args, target) => {
     if ('getComments' in target && typeof (target as any).getComments === 'function') {
@@ -409,9 +305,9 @@ export const listCommentsTool: ToolDefinition<{ taskId: string }> = {
     }
     return [];
   }
-};
+});
 
-export const addCommentTool: ToolDefinition<{ taskId: string; content: string; authorId: string }> = {
+export const addCommentTool = defineTool<{ taskId: string; content: string; authorId: string }>({
   name: 'add_comment',
   title: 'Add Comment',
   description: 'Add a comment to a task.',
@@ -420,16 +316,6 @@ export const addCommentTool: ToolDefinition<{ taskId: string; content: string; a
     content: z.string().describe('Comment body/markdown'),
     authorId: z.string().describe('Author user ID')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      taskId: { type: 'string', description: 'The task ID' },
-      content: { type: 'string', description: 'Comment body/markdown' },
-      authorId: { type: 'string', description: 'Author user ID' }
-    },
-    required: ['taskId', 'content', 'authorId'],
-    additionalProperties: false
-  },
   execute: async (args, target) => {
     return (target as any).addComment({
       taskId: args.taskId,
@@ -437,22 +323,15 @@ export const addCommentTool: ToolDefinition<{ taskId: string; content: string; a
       authorId: args.authorId
     });
   }
-};
+});
 
-export const calculateCriticalPathTool: ToolDefinition<{ projectId?: string }> = {
+export const calculateCriticalPathTool = defineTool<{ projectId?: string }>({
   name: 'calculate_critical_path',
   title: 'Calculate Critical Path',
   description: 'Calculate Critical Path Method (CPM) schedule, early/late start and finish, total slack, and critical bottlenecks for a project.',
   zodSchema: z.object({
     projectId: z.string().optional().describe('Project ID (falls back to ambient context if omitted)')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      projectId: { type: 'string', description: 'Project ID (falls back to ambient context if omitted)' }
-    },
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
@@ -461,14 +340,14 @@ export const calculateCriticalPathTool: ToolDefinition<{ projectId?: string }> =
     }
     return (target as any).calculateCriticalPath(projectId);
   }
-};
+});
 
-export const getTimelineLadderTool: ToolDefinition<{
+export const getTimelineLadderTool = defineTool<{
   projectId?: string;
   level?: 'macro' | 'standard' | 'concrete' | 'all';
   containerId?: string;
   iterationId?: string;
-}> = {
+}>({
   name: 'get_timeline_ladder',
   title: 'Get Timeline Ladder of Abstraction',
   description: 'Retrieve Ladder of Abstraction for a project timeline across macro phase envelopes, standard Gantt tasks & CPM, and concrete deliverables/time/attachments.',
@@ -478,16 +357,6 @@ export const getTimelineLadderTool: ToolDefinition<{
     containerId: z.string().optional().describe('Optional container ID filter'),
     iterationId: z.string().optional().describe('Optional iteration/sprint ID filter')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      projectId: { type: 'string', description: 'Project ID (falls back to ambient context if omitted)' },
-      level: { type: 'string', enum: ['macro', 'standard', 'concrete', 'all'], description: 'Abstraction level' },
-      containerId: { type: 'string', description: 'Optional container ID filter' },
-      iterationId: { type: 'string', description: 'Optional iteration/sprint ID filter' }
-    },
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
@@ -500,72 +369,48 @@ export const getTimelineLadderTool: ToolDefinition<{
       iterationId: args.iterationId
     });
   }
-};
+});
 
-export const getTaskLadderTool: ToolDefinition<{ taskId: string }> = {
+export const getTaskLadderTool = defineTool<{ taskId: string }>({
   name: 'get_task_ladder',
   title: 'Get Task Ladder View',
   description: 'Retrieve multi-scale ladder view for a single task, connecting its macro phase, standard CPM timeline position, and concrete work evidence.',
   zodSchema: z.object({
     taskId: z.string().describe('The task ID')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      taskId: { type: 'string', description: 'The task ID' }
-    },
-    required: ['taskId'],
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (args, target) => {
     return (target as any).getTaskLadder(args.taskId);
   }
-};
+});
 
-export const getTaskMetricsTool: ToolDefinition<{ taskId: string }> = {
+export const getTaskMetricsTool = defineTool<{ taskId: string }>({
   name: 'get_task_metrics',
   title: 'Get Task Metrics',
   description: 'Retrieve multi-dimensional task metrics including inferred actuals, active working duration, effort/duration/schedule variances, progress inference, and Earned Value Management (EVM) metrics.',
   zodSchema: z.object({
     taskId: z.string().describe('The task ID')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      taskId: { type: 'string', description: 'The task ID' }
-    },
-    required: ['taskId'],
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (args, target) => {
     return (target as any).getTaskMetrics(args.taskId);
   }
-};
+});
 
-export const getTaskProgressHistoryTool: ToolDefinition<{ taskId: string }> = {
+export const getTaskProgressHistoryTool = defineTool<{ taskId: string }>({
   name: 'get_task_progress_history',
   title: 'Get Task Progress History',
   description: 'Retrieve time-series progress data points and curve shape classification (linear, s_curve, early_surge, late_rush, stalled) for a task.',
   zodSchema: z.object({
     taskId: z.string().describe('The task ID')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      taskId: { type: 'string', description: 'The task ID' }
-    },
-    required: ['taskId'],
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (args, target) => {
     return (target as any).getTaskProgressHistory(args.taskId);
   }
-};
+});
 
-export const getWorkloadDistributionTool: ToolDefinition<{
+export const getWorkloadDistributionTool = defineTool<{
   projectId?: string;
   startDate?: string;
   endDate?: string;
@@ -573,7 +418,7 @@ export const getWorkloadDistributionTool: ToolDefinition<{
   groupBy?: 'assignee' | 'team' | 'taskType' | 'priority' | 'status';
   metric?: 'scheduled' | 'logged' | 'remaining' | 'blended';
   defaultWeeklyCapacityHours?: number;
-}> = {
+}>({
   name: 'get_workload_distribution',
   title: 'Get Workload Distribution',
   description: 'Retrieve time-series workload and capacity distribution suitable for streamgraphs, stacked charts, and team capacity planning.',
@@ -586,19 +431,6 @@ export const getWorkloadDistributionTool: ToolDefinition<{
     metric: z.enum(['scheduled', 'logged', 'remaining', 'blended']).optional().describe('Effort metric mode'),
     defaultWeeklyCapacityHours: z.number().optional().describe('Default weekly capacity hours per person (default 40)')
   }),
-  inputSchema: {
-    type: 'object',
-    properties: {
-      projectId: { type: 'string', description: 'Project ID (optional, defaults to workspace-wide or ambient project)' },
-      startDate: { type: 'string', description: 'Start date ISO (YYYY-MM-DD)' },
-      endDate: { type: 'string', description: 'End date ISO (YYYY-MM-DD)' },
-      interval: { type: 'string', enum: ['day', 'week', 'month'], description: 'Bucket interval' },
-      groupBy: { type: 'string', enum: ['assignee', 'team', 'taskType', 'priority', 'status'], description: 'Dimension to segment by' },
-      metric: { type: 'string', enum: ['scheduled', 'logged', 'remaining', 'blended'], description: 'Effort metric mode' },
-      defaultWeeklyCapacityHours: { type: 'number', description: 'Default weekly capacity hours per person' }
-    },
-    additionalProperties: false
-  },
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
@@ -611,7 +443,7 @@ export const getWorkloadDistributionTool: ToolDefinition<{
       defaultWeeklyCapacityHours: args.defaultWeeklyCapacityHours
     });
   }
-};
+});
 
 export const ALL_TOOLS: ToolDefinition[] = [
   listProjectsTool,
