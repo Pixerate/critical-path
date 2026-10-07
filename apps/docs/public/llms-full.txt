@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-07T21:12:48.908Z
+> Documentation generated on: 2026-10-07T21:26:12.092Z
 
 ================================================================================
 
@@ -467,7 +467,8 @@ interface Task {
   reporterId?: string;
   sprintId?: string;
   dueDate?: string;            // ISO-8601 string (e.g. 2026-09-15T00:00:00Z)
-  estimatedHours?: number;     // Used for Critical Path calculations
+  estimatedHours?: number;     // Effort, used for Critical Path calculations
+  allocation?: number;         // Share of the assignee's time, (0, 1], default 1
   loggedHours?: number;
   tags?: string[];
   customFields?: Record<string, unknown>;
@@ -2284,6 +2285,7 @@ export interface Task {
   sprintId?: string;
   dueDate?: string;
   estimatedHours?: number;
+  allocation?: number; // share of the assignee's time, (0, 1]; default 1
   loggedHours?: number;
   tags?: string[];
   customFields?: Record<string, unknown>;
