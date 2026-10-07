@@ -9,6 +9,7 @@
  * The test runner functions are passed in so core has no test-framework dependency.
  */
 import type { StorageAdapter } from '../store/index.js';
+import type { WebhookOutboxStore } from '../webhooks/outbox.js';
 import type { Project, Task, Team, Workflow, Attachment, Deliverable, TaskContainer, Iteration, Comment } from '../types/index.js';
 
 type Describe = (name: string, fn: () => void) => void;
@@ -325,6 +326,25 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
 
       const webhook = await store.addWebhook({ name: 'Hook', url: 'https://example.com/h', secret: 'whsec_x', events: ['*'], active: true, tenantId: 'tenant-1' });
       expect(await store.getWebhook(webhook.id)).toMatchObject({ name: 'Hook', secret: 'whsec_x', events: ['*'], active: true, tenantId: 'tenant-1' });
+    });
+
+    it('claims due webhook outbox jobs with a lease (if the adapter implements WebhookOutboxStore)', async () => {
+      const outbox = (await createStore()) as unknown as Partial<WebhookOutboxStore>;
+      if (!outbox.putWebhookJob || !outbox.claimWebhookJobs || !outbox.deleteWebhookJob) return;
+      const job = (attempt: number) => ({ id: 'evt_1:wh_1', webhookId: 'wh_1', url: 'https://example.com/h', event: 'task.created', body: '{}', attempt });
+      await outbox.putWebhookJob({ key: 'evt_1:wh_1:1', job: job(1), runAt: 1_000 });
+      await outbox.putWebhookJob({ key: 'evt_1:wh_1:2', job: job(2), runAt: 5_000 });
+
+      const claimed = await outbox.claimWebhookJobs(2_000, 10, 500);
+      expect(claimed).toEqual([{ key: 'evt_1:wh_1:1', job: job(1), runAt: 1_000 }]);
+      expect(await outbox.claimWebhookJobs(2_000, 10, 500)).toHaveLength(0); // leased
+      expect(await outbox.claimWebhookJobs(2_600, 10, 500)).toHaveLength(1); // lease expired
+
+      await outbox.deleteWebhookJob('evt_1:wh_1:1');
+      expect(await outbox.claimWebhookJobs(10_000, 1, 500)).toEqual([{ key: 'evt_1:wh_1:2', job: job(2), runAt: 5_000 }]);
+      expect(await outbox.claimWebhookJobs(20_000, 10, 500)).toHaveLength(1);
+      await outbox.deleteWebhookJob('evt_1:wh_1:2');
+      expect(await outbox.claimWebhookJobs(30_000, 10, 500)).toHaveLength(0);
     });
   });
 }

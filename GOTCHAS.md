@@ -181,7 +181,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `@critical-path/core` (`WebhookDispatcher`, `InProcessWebhookQueue`)
 - **Symptom / Behavior**: Webhooks that were waiting for a retry never arrive after a deploy or crash. Tests that assert on deliveries are flaky.
 - **Root Cause**: The default queue schedules attempts with in-memory timers (unref'd so they never keep the process alive). Deliveries are also asynchronous, so they complete after the mutation returns.
-- **Solution / Workaround**: In tests, `await engine.webhooks.idle()` before asserting. For guaranteed delivery, pass `webhookDelivery.queue` backed by a persistent job system and call `engine.webhooks.deliver(job)` from its worker. Note that `engine.events.clear()` also removes the webhook subscription.
+- **Solution / Workaround**: In tests, `await engine.webhooks.idle()` before asserting. For durable delivery, pass `new OutboxWebhookQueue(store)` as `webhookDelivery.queue` and call `start()` (or `processDue()`); it is at-least-once, so deduplicate on `X-CriticalPath-Delivery`. Alternatively, pass a queue backed by your job system that calls `engine.webhooks.deliver(job)`. Note that `engine.events.clear()` also removes the webhook subscription.
 
 ### Webhooks Mirror Domain Events, So One Change Can Send Several Deliveries
 - **Area / Package**: `@critical-path/core` webhooks
@@ -189,11 +189,11 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Webhooks are driven by the domain event bus, so every published event is delivered.
 - **Solution / Workaround**: Subscribe only to the events you need, and deduplicate on `X-CriticalPath-Delivery`, which is stable across retries.
 
-### Webhook URL Checks Do Not Resolve DNS
-- **Area / Package**: `@critical-path/core` (`assertWebhookUrl`)
-- **Symptom / Behavior**: `http://localhost:3000/hook` is rejected in development, while a public hostname that resolves to a private IP is accepted.
-- **Root Cause**: The SSRF guard only inspects literal hostnames and IPs.
-- **Solution / Workaround**: Set `webhookDelivery.allowPrivateUrls: true` for local development. In production, also restrict outbound traffic at the network or egress-proxy level.
+### Webhook Deliveries Resolve DNS and Refuse Private Targets
+- **Area / Package**: `@critical-path/core` (`assertWebhookUrl`, `assertPublicWebhookHost`)
+- **Symptom / Behavior**: `http://localhost:3000/hook` is rejected in development. A webhook on a public name that resolves to a private IP fails every attempt with "resolves to private address". Tests that create webhooks hang or retry because they perform real DNS lookups.
+- **Root Cause**: Registration rejects private literals and local names. Each delivery attempt resolves the host (via `node:dns` when available) and fails if any address is private. The check and the connection resolve separately, so DNS rebinding with a tiny TTL is not fully prevented. Edge runtimes without `node:dns` only get the literal check.
+- **Solution / Workaround**: Set `webhookDelivery.allowPrivateUrls: true` for local development. In tests, pass `resolveHost: async () => ['93.184.215.14']` together with a mock `fetch`. In production, also restrict egress at the network level.
 
 ### Plugin Hooks Are Validated, Isolated, and Cannot Move Tasks
 - **Area / Package**: `@critical-path/core` (`PluginRegistry`, `CriticalPathEngine`)

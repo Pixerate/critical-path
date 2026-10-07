@@ -70,16 +70,34 @@ new CriticalPathEngine({
     maxAttempts: 5,          // retries at 1s, 2s, 4s, 8s (retryBaseDelayMs doubles)
     retryBaseDelayMs: 1_000,
     allowPrivateUrls: false, // block localhost / private network targets (set true in development)
+    resolveHost: undefined,  // DNS resolver for the private-address check (default: node:dns where available)
     onDeliveryFailed: (job, error) => logger.error('webhook failed', job.url, error)
   }
 });
 ```
 
-Any `2xx` response counts as delivered. Other statuses, network errors and timeouts are retried.
+Any `2xx` response counts as delivered. Other statuses (including redirects, which are never followed), network errors and timeouts are retried.
 
 ### Durability
 
-The default queue keeps pending deliveries in memory, so deliveries still waiting to be retried are lost if the process restarts. For guaranteed delivery, supply a `queue` that persists jobs and calls `engine.webhooks.deliver(job)` from a worker:
+The default queue keeps pending deliveries in memory, so deliveries still waiting to be retried are lost if the process restarts. For durable delivery, use the built-in outbox, which stores each attempt in your storage adapter (`SQLiteStore`, `FirebaseStore` and `InMemoryStore` implement `WebhookOutboxStore`):
+
+```ts
+import { CriticalPathEngine, OutboxWebhookQueue, SQLiteStore } from '@critical-path/core';
+
+const store = new SQLiteStore({ filename: 'app.db' });
+const outbox = new OutboxWebhookQueue(store, { pollIntervalMs: 1_000, leaseMs: 60_000 });
+const engine = new CriticalPathEngine({ store, webhookDelivery: { queue: outbox } });
+
+outbox.start();            // poll in this process
+// or: await outbox.processDue() from a cron job / scheduled function
+```
+
+Each attempt is a separate entry. A worker leases the entries it claims, so other workers skip them, and deletes each one after the attempt (a failed attempt first stores its retry). If a worker dies mid-delivery, the entry is claimed again when its lease expires. Delivery is therefore **at-least-once**: deduplicate on `X-CriticalPath-Delivery`. `FirebaseStore` claims without a transaction, so concurrent workers can occasionally deliver the same attempt twice.
+
+Jobs are enqueued after the mutation is stored, so a crash between the two can still drop an event.
+
+To use an existing job system instead, supply a `queue` that persists jobs and calls `engine.webhooks.deliver(job)` from a worker:
 
 ```ts
 const engine = new CriticalPathEngine({
@@ -97,5 +115,8 @@ worker.process('critical-path-webhook', (job) => engine.webhooks.deliver(job.dat
 
 ### Security notes
 
-- URLs must be `http` or `https`. Literal private and local addresses (`localhost`, `10.x`, `192.168.x`, `169.254.x`, ...) are rejected unless `allowPrivateUrls` is set. Hostnames that *resolve* to private addresses are not detected; restrict outbound traffic at the network level for full SSRF protection.
+- URLs must be `http` or `https`. Private, loopback, link-local, carrier-grade NAT, multicast and reserved addresses are rejected unless `allowPrivateUrls` is set, including encoded forms (`http://2130706433/`) and IPv4 embedded in IPv6 (`[::ffff:127.0.0.1]`), as are `localhost`, `*.internal` and `*.local` names.
+- Before each attempt the hostname is resolved, and the delivery fails if **any** address is private. On runtimes without `node:dns` (for example edge workers) only literal hosts are checked unless you pass `resolveHost`.
+- Redirects are not followed, so a receiver cannot bounce a delivery to an internal host.
+- The connection resolves DNS again after the check, so a host with a very short TTL could still switch addresses between the two (DNS rebinding). For complete protection, also restrict outbound traffic at the network or egress-proxy level, or pass a `fetch` whose connections are pinned to checked addresses.
 - Secrets are stored by the storage adapter as given. Protect your database accordingly.

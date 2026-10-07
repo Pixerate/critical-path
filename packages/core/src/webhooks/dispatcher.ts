@@ -1,6 +1,7 @@
 import type { Webhook } from '../types/index.js';
 import type { DomainEvent } from '../domain/events.js';
 import { signWebhookPayload } from './signature.js';
+import { defaultHostResolver, isIpLiteral, isPrivateAddress, isPrivateHostname, type HostResolver } from './address.js';
 
 /** One attempt to deliver one event to one webhook. Serializable, so durable queues can store it. */
 export interface WebhookDeliveryJob {
@@ -23,6 +24,8 @@ export interface WebhookDeliveryJob {
  */
 export interface WebhookDeliveryQueue {
   enqueue(job: WebhookDeliveryJob, delayMs: number): void | Promise<void>;
+  /** Called once by the dispatcher with the function that runs a job. */
+  attach?(deliver: (job: WebhookDeliveryJob) => Promise<void>): void;
 }
 
 export interface WebhookDeliveryOptions {
@@ -37,10 +40,16 @@ export interface WebhookDeliveryOptions {
   /** First retry delay; doubles each attempt. Default 1 000 ms. */
   retryBaseDelayMs?: number;
   /**
-   * Allow webhook URLs that point at localhost or private network addresses. Default `false`,
-   * which blocks literal private hosts to reduce SSRF risk (DNS-based tricks are not detected).
+   * Allow webhook URLs that point at localhost or private network addresses. Default `false`:
+   * private IP literals and local names are rejected, and before each attempt the host is resolved
+   * and the delivery fails if any address is private. Redirects are never followed.
    */
   allowPrivateUrls?: boolean;
+  /**
+   * Resolves hostnames for the private-address check. Default: `node:dns` lookup where the runtime
+   * has it; on runtimes without DNS access (e.g. edge workers) only literal hosts are checked.
+   */
+  resolveHost?: HostResolver;
   onDelivered?: (job: WebhookDeliveryJob, status: number) => void;
   /** Called after the final failed attempt. Default: `console.warn`. */
   onDeliveryFailed?: (job: WebhookDeliveryJob, error: unknown) => void;
@@ -78,9 +87,7 @@ export class InProcessWebhookQueue implements WebhookDeliveryQueue {
   }
 }
 
-const PRIVATE_HOST = /^(localhost|.*\.localhost|.*\.internal|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|\[::1?\]|\[f[cd][0-9a-f]*:.*\]|\[fe80:.*\])$/i;
-
-/** Throws if `url` is not an acceptable webhook target. */
+/** Throws if `url` is not an acceptable webhook target. Checks the URL only; see `assertPublicWebhookHost` for DNS. */
 export function assertWebhookUrl(url: string, allowPrivateUrls = false): void {
   let parsed: URL;
   try {
@@ -91,8 +98,19 @@ export function assertWebhookUrl(url: string, allowPrivateUrls = false): void {
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     throw new Error('Webhook URLs must use http or https.');
   }
-  if (!allowPrivateUrls && PRIVATE_HOST.test(parsed.hostname)) {
+  if (!allowPrivateUrls && isPrivateHostname(parsed.hostname)) {
     throw new Error(`Webhook URL host "${parsed.hostname}" is a private or local address. Set webhookDelivery.allowPrivateUrls to allow it.`);
+  }
+}
+
+/** Throws if `hostname` resolves to any private address. */
+export async function assertPublicWebhookHost(hostname: string, resolve: HostResolver): Promise<void> {
+  if (isIpLiteral(hostname)) return; // already checked by assertWebhookUrl
+  const addresses = await resolve(hostname);
+  if (addresses.length === 0) throw new Error(`Webhook host "${hostname}" did not resolve.`);
+  const blocked = addresses.find((address) => isPrivateAddress(address));
+  if (blocked) {
+    throw new Error(`Webhook host "${hostname}" resolves to private address ${blocked}. Set webhookDelivery.allowPrivateUrls to allow it.`);
   }
 }
 
@@ -103,6 +121,7 @@ export function assertWebhookUrl(url: string, allowPrivateUrls = false): void {
 export class WebhookDispatcher {
   private readonly queue: WebhookDeliveryQueue;
   private readonly fetchImpl: typeof fetch;
+  private readonly resolveHost?: HostResolver;
   private cache?: Promise<Webhook[]>;
 
   constructor(
@@ -110,7 +129,9 @@ export class WebhookDispatcher {
     private readonly options: WebhookDeliveryOptions = {}
   ) {
     this.queue = options.queue ?? new InProcessWebhookQueue((job) => this.deliver(job));
+    this.queue.attach?.((job) => this.deliver(job));
     this.fetchImpl = options.fetch ?? ((...args) => fetch(...args));
+    this.resolveHost = options.resolveHost ?? defaultHostResolver();
   }
 
   /** Drops cached webhooks; call after creating, updating or deleting one. */
@@ -157,6 +178,9 @@ export class WebhookDispatcher {
     const maxAttempts = this.options.maxAttempts ?? 5;
     try {
       assertWebhookUrl(job.url, this.options.allowPrivateUrls);
+      if (!this.options.allowPrivateUrls && this.resolveHost) {
+        await assertPublicWebhookHost(new URL(job.url).hostname, this.resolveHost);
+      }
       const timestamp = Math.floor(Date.now() / 1000);
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -172,6 +196,8 @@ export class WebhookDispatcher {
         method: 'POST',
         headers,
         body: job.body,
+        // A redirect could point at an internal host, so 3xx responses count as failures.
+        redirect: 'manual',
         signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000)
       });
       if (!response.ok) throw new Error(`Webhook responded with HTTP ${response.status}`);

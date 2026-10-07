@@ -43,6 +43,7 @@ describe('team, container and iteration events', () => {
     const delivered: Array<{ url: string; event: string }> = [];
     const engine = new CriticalPathEngine({
       webhookDelivery: {
+        resolveHost: async () => ['93.184.215.14'],
         fetch: (async (url: string, init: RequestInit) => {
           delivered.push({ url, event: JSON.parse(init.body as string).event });
           return new Response(null, { status: 204 });
