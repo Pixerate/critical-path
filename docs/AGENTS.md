@@ -29,13 +29,11 @@ When requested to mount Critical Path into a Next.js application:
 // File: app/api/critical-path/[...path]/route.ts
 import { createNextHandler } from '@critical-path/server';
 
-const handler = createNextHandler({
-  initialData: {
-    projects: [{ id: 'p1', key: 'MAIN', name: 'Product Roadmap' }]
-  }
-});
+import { SQLiteStore } from '@critical-path/core';
 
-export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE, handler as OPTIONS };
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler({
+  store: new SQLiteStore({ filename: 'app.db' })
+});
 ```
 
 ### 2. Generating a SvelteKit API Endpoint
@@ -45,11 +43,10 @@ When requested to mount Critical Path into a SvelteKit application:
 ```ts
 // File: src/routes/api/critical-path/[...path]/+server.ts
 import { createSvelteKitHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
 
 const handler = createSvelteKitHandler({
-  initialData: {
-    projects: [{ id: 'p1', key: 'SVELTE', name: 'SvelteKit Workspace' }]
-  }
+  store: new SQLiteStore({ filename: 'app.db' })
 });
 
 export const GET = handler.GET;

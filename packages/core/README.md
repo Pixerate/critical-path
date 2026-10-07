@@ -38,7 +38,7 @@
   - Comprehensive CPM analysis via `calculateCriticalPath(projectId)` identifying project bottleneck tasks and critical path duration.
 - **Work Schedules, Working Hours, Working Days & Holidays Subsystem**:
   - Configurable `WorkSchedule` data model defining day-by-day active working hours (e.g. 09:00–17:00), non-working days/weekends, and organization or regional `Holiday` exemptions.
-  - Multi-level schedule inheritance hierarchy: Task Assignee / Team -> Project -> Global Engine Default (`DEFAULT_WORK_SCHEDULE`).
+  - Multi-level schedule inheritance hierarchy: Task Assignee / Team -> Project -> Global Engine Default (`DEFAULT_WORK_SCHEDULE`), used by workload and capacity calculations. CPM date projections use the project (or engine default) schedule.
   - Calendar math domain operations (`addWorkingHours`, `subtractWorkingHours`, `getWorkingHoursBetween`, `getWorkingDaysBetween`, `getNetAvailableCapacity`).
   - Automatic exclusion of weekends and holidays during Critical Path Method (CPM) forward and backward schedule passes (`earlyStartDate`, `earlyFinishDate`, `lateStartDate`, `lateFinishDate`, `totalWorkingHours`, `projectEndDate`).
   - Calendar-aware capacity reductions in Workload Distribution and working-day schedule variance metrics (`scheduleVarianceWorkingDays`).

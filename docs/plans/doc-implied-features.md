@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) shipped; phase 4 item 8 (client SDK) on `feat/client-sdk`, item 9 (S3) on `feat/s3-presign`, item 10 (config) shipped; phase 5 store conformance on `test/store-conformance`, runnable examples and scaffolder on `feat/runnable-examples`.
+Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) shipped; phase 4 item 8 (client SDK) on `feat/client-sdk`, item 9 (S3) on `feat/s3-presign`, item 10 (config) shipped; phase 5 store conformance on `test/store-conformance`, runnable examples and scaffolder on `feat/runnable-examples`, security policy and README accuracy on `docs/security-readme`.
 
 Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
@@ -272,6 +272,14 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - Add `SECURITY.md` (the README links to a reporting workflow that does not exist).
 - Until phases 1–2 land, change the README checklist items for RBAC, Authentication, and route middlewares from `[x]` to "in progress" with a link to this plan.
 - Mark File Attachments as implemented (README says "Planned" but adapters exist).
+
+**Implemented**:
+- **`SECURITY.md`:** private reporting through GitHub Security Advisories, supported versions and scope. Private vulnerability reporting must be enabled in the repository settings.
+- **README fixes:**
+  - Quick start and plugin examples now use the working export pattern and valid configuration. The old `initialData` examples lacked required fields.
+  - Feature claims corrected: framework support (Express and Fastify need a bridge), domain event coverage, deliverable statuses, custom field types, WebMCP wording, and schedule hierarchy scope (workload only, not CPM).
+  - Checklist updated: attachments done, OpenAPI export, data encryption reworded as not provided at rest.
+- **Docs site and developer guide:** the schedule pages state where the hierarchy applies.
 
 ---
 

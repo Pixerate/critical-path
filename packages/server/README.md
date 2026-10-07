@@ -22,17 +22,13 @@ File: `app/api/critical-path/[...path]/route.ts`
 
 ```ts
 import { createNextHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
 
-const handler = createNextHandler({
-  initialData: {
-    projects: [{ id: 'p1', key: 'PROJ', name: 'Product Roadmap' }]
-  }
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler({
+  store: new SQLiteStore({ filename: 'critical-path.db' })
 });
 
-export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE, handler as OPTIONS };
-
-// Equivalent: the handler also exposes one property per method
-// export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler({ ... });
+// Equivalent: the handler is also callable, so `export { handler as GET, ... }` works too.
 ```
 
 ---

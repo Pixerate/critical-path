@@ -78,6 +78,8 @@ holidays: [
 
 Schedules can be declared at multiple levels of granularity and resolve with clean hierarchical fallback:
 
+> **Where this applies:** workload and capacity calculations resolve each assignee's schedule through this hierarchy (users come from the engine's `users` directory). Critical-path (CPM) date projections currently use a single calendar for the whole project: `options.schedule`, then `project.schedule`, then the engine's `defaultSchedule`.
+
 ```
   ┌────────────────────────────────────────────────────────┐
   │ 1. Assignee User Schedule (user.schedule)              │
