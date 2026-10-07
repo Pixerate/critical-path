@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) on `feat/task-query`.
+Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) shipped; phase 4 item 8 (client SDK) on `feat/client-sdk`.
 
 Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
@@ -207,6 +207,18 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 **Today**: server routes with no client method — `POST /tasks/:id/dependencies`, `DELETE /projects/:id`, `PATCH /projects/:id`, `GET /containers/:id`, `GET /iterations/:id`, task-scoped comments/attachments. Client errors are plain `Error` objects with no status.
 
 **Design**: add the methods; `CriticalPathError { status, code, details }`; per-call `AbortSignal`; async `headers` provider for token refresh; URL-encode path ids. Add a test that enumerates router routes and asserts a client method exists for each.
+
+**Implemented**:
+- **Errors:** `CriticalPathError` with `status`, `issues`, `body` and `isNotFound`.
+- **Headers:** an async `headers` provider, resolved on every request.
+- **Timeouts:** `timeoutMs`.
+- **Retries:** opt-in for GET only, on network errors and 429/502/503/504, honouring `Retry-After`.
+- **Scoped clients:** `client.with({ signal, headers, timeoutMs })` adds per-call options without changing every method signature.
+- **Content-Type:** sent only with a body.
+- **Path ids:** all encoded.
+- **New methods:** `getWebhook`, `getContainer` and `getIteration`.
+- **Coverage test:** `routes.test.ts` maps every OpenAPI route to a client method.
+- **Follow-up:** have the React and Svelte data hooks use `with({ signal })` to cancel stale requests on unmount or when the project changes.
 
 ---
 

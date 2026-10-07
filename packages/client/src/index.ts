@@ -123,11 +123,67 @@ export interface UpdateStatusResult {
   timestamp: number;
 }
 
+type HeaderMap = Record<string, string>;
+
 export interface ClientOptions {
-  baseUrl: string; // e.g. "http://localhost:3000/api/critical-path"
-  headers?: Record<string, string>;
+  /** API base URL, e.g. `http://localhost:3000/api/critical-path`. */
+  baseUrl: string;
+  /**
+   * Headers sent with every request. Pass a function to compute them per request, e.g. to attach
+   * a freshly refreshed access token: `headers: async () => ({ Authorization: `Bearer ${await getToken()}` })`.
+   */
+  headers?: HeaderMap | (() => HeaderMap | Promise<HeaderMap>);
   fetch?: typeof fetch;
+  /** Abort requests that take longer than this. Default: no timeout. */
+  timeoutMs?: number;
+  /**
+   * Retry GET requests that fail with a network error, 429, 502, 503 or 504. Default: no retries.
+   * Delays double from `baseDelayMs` (default 250 ms) and honour `Retry-After` on 429/503.
+   */
+  retry?: { retries: number; baseDelayMs?: number };
 }
+
+/** Per-call options for a scoped client (see `CriticalPathClient.with`). */
+export interface RequestOptions {
+  signal?: AbortSignal;
+  headers?: HeaderMap;
+  timeoutMs?: number;
+}
+
+/**
+ * Error thrown for non-2xx responses. Carries the HTTP status and the server's error details
+ * (`issues` for validation errors, `cyclePath` for dependency cycles, and so on).
+ */
+export class CriticalPathError extends Error {
+  /** HTTP status code. */
+  readonly status: number;
+  /** Field-level validation problems for 400 responses. */
+  readonly issues?: Array<{ path: string; message: string }>;
+  /** The parsed JSON error body, if any (e.g. `fromStatus`, `toStatus`, `cyclePath`, `fieldKey`). */
+  readonly body?: Record<string, unknown>;
+
+  constructor(message: string, status: number, body?: Record<string, unknown>) {
+    super(message);
+    this.name = 'CriticalPathError';
+    this.status = status;
+    this.body = body;
+    this.issues = Array.isArray(body?.issues) ? (body!.issues as CriticalPathError['issues']) : undefined;
+  }
+
+  get isNotFound(): boolean {
+    return this.status === 404;
+  }
+}
+
+const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
+const sleep = (ms: number, signal?: AbortSignal | null) =>
+  new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    }, { once: true });
+  });
 
 function toBase64(data: Uint8Array | ArrayBuffer): string {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
@@ -138,22 +194,32 @@ function toBase64(data: Uint8Array | ArrayBuffer): string {
   return btoa(binary);
 }
 
-class NotFoundResponseError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'NotFoundResponseError';
-  }
-}
-
 export class CriticalPathClient {
-  private baseUrl: string;
-  private headers: Record<string, string>;
-  private customFetch: typeof fetch;
+  private readonly baseUrl: string;
+  private readonly options: ClientOptions;
+  private readonly customFetch: typeof fetch;
+  /** Set on scoped clients created by `with()`. */
+  private readonly requestOptions?: RequestOptions;
 
   constructor(options: ClientOptions) {
+    this.options = options;
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
-    this.headers = options.headers || {};
-    this.customFetch = options.fetch || globalThis.fetch;
+    this.customFetch = options.fetch || ((...args) => globalThis.fetch(...args));
+  }
+
+  /**
+   * Returns a client that applies `options` to every call, e.g. to cancel requests when a
+   * component unmounts: `client.with({ signal: controller.signal }).getTasks(projectId)`.
+   */
+  with(options: RequestOptions): CriticalPathClient {
+    const scoped = Object.create(this) as CriticalPathClient;
+    const merged: RequestOptions = {
+      ...this.requestOptions,
+      ...options,
+      headers: { ...this.requestOptions?.headers, ...options.headers }
+    };
+    Object.defineProperty(scoped, 'requestOptions', { value: merged });
+    return scoped;
   }
 
   /**
@@ -165,35 +231,60 @@ export class CriticalPathClient {
       const res = await this.request<{ success: boolean }>(endpoint, { method: 'DELETE' });
       return res.success;
     } catch (err) {
-      if (err instanceof NotFoundResponseError) return false;
+      if (err instanceof CriticalPathError && err.isNotFound) return false;
       throw err;
     }
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(endpoint: string, init: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-    const response = await this.customFetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.headers,
-        ...options.headers
-      }
-    });
+    const method = (init.method ?? 'GET').toUpperCase();
+    const configured = typeof this.options.headers === 'function' ? await this.options.headers() : this.options.headers;
+    const headers: HeaderMap = {
+      ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...configured,
+      ...this.requestOptions?.headers
+    };
+    const timeoutMs = this.requestOptions?.timeoutMs ?? this.options.timeoutMs;
+    const signals = [this.requestOptions?.signal, timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined].filter(
+      (s): s is AbortSignal => !!s
+    );
+    const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+    const retries = method === 'GET' ? this.options.retry?.retries ?? 0 : 0;
+    const baseDelay = this.options.retry?.baseDelayMs ?? 250;
 
-    if (!response.ok) {
-      let errorMsg = `HTTP Error ${response.status}: ${response.statusText}`;
+    for (let attempt = 0; ; attempt++) {
+      let response: Response;
       try {
-        const errJson = await response.json();
-        if (errJson.error) errorMsg = errJson.error;
-      } catch {
-        // Fallback to HTTP error
+        response = await this.customFetch(url, { ...init, method, headers, signal });
+      } catch (err) {
+        // Network failure; never retry after an abort or timeout.
+        if (attempt < retries && !signal?.aborted) {
+          await sleep(baseDelay * 2 ** attempt, signal);
+          continue;
+        }
+        throw err;
       }
-      throw response.status === 404 ? new NotFoundResponseError(errorMsg) : new Error(errorMsg);
-    }
 
-    return response.json();
+      if (response.ok) return response.json() as Promise<T>;
+
+      if (attempt < retries && RETRYABLE_STATUSES.has(response.status)) {
+        const retryAfter = Number(response.headers.get('Retry-After'));
+        await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : baseDelay * 2 ** attempt, signal);
+        continue;
+      }
+
+      let body: Record<string, unknown> | undefined;
+      try {
+        body = await response.json();
+      } catch {
+        // Non-JSON error body
+      }
+      const message = typeof body?.error === 'string' ? body.error : `HTTP Error ${response.status}: ${response.statusText}`;
+      throw new CriticalPathError(message, response.status, body);
+    }
   }
+
 
   // Workflows
   async getWorkflows(): Promise<Workflow[]> {
@@ -202,7 +293,7 @@ export class CriticalPathClient {
   }
 
   async getWorkflow(id: string): Promise<Workflow> {
-    const res = await this.request<{ workflow: Workflow }>(`/workflows/${id}`);
+    const res = await this.request<{ workflow: Workflow }>(`/workflows/${encodeURIComponent(id)}`);
     return res.workflow;
   }
 
@@ -215,7 +306,7 @@ export class CriticalPathClient {
   }
 
   async updateWorkflow(id: string, updates: UpdateWorkflowBody): Promise<Workflow> {
-    const res = await this.request<{ workflow: Workflow }>(`/workflows/${id}`, {
+    const res = await this.request<{ workflow: Workflow }>(`/workflows/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
     });
@@ -223,7 +314,7 @@ export class CriticalPathClient {
   }
 
   async deleteWorkflow(id: string): Promise<boolean> {
-    return this.deleteRequest(`/workflows/${id}`);
+    return this.deleteRequest(`/workflows/${encodeURIComponent(id)}`);
   }
 
   // Projects
@@ -233,7 +324,7 @@ export class CriticalPathClient {
   }
 
   async getProject(id: string): Promise<Project> {
-    const res = await this.request<{ project: Project }>(`/projects/${id}`);
+    const res = await this.request<{ project: Project }>(`/projects/${encodeURIComponent(id)}`);
     return res.project;
   }
 
@@ -339,7 +430,7 @@ export class CriticalPathClient {
   }
 
   async getTask(id: string): Promise<Task> {
-    const res = await this.request<{ task: Task }>(`/tasks/${id}`);
+    const res = await this.request<{ task: Task }>(`/tasks/${encodeURIComponent(id)}`);
     return res.task;
   }
 
@@ -373,7 +464,7 @@ export class CriticalPathClient {
   }
 
   async updateTask(id: string, updates: UpdateTaskBody): Promise<Task> {
-    const res = await this.request<{ task: Task }>(`/tasks/${id}`, {
+    const res = await this.request<{ task: Task }>(`/tasks/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
     });
@@ -450,6 +541,10 @@ export class CriticalPathClient {
     return (await this.request<{ webhooks: PublicWebhook[] }>('/webhooks')).webhooks;
   }
 
+  async getWebhook(id: string): Promise<PublicWebhook> {
+    return (await this.request<{ webhook: PublicWebhook }>(`/webhooks/${encodeURIComponent(id)}`)).webhook;
+  }
+
   /** Registers a webhook. The returned `secret` is shown only once; store it to verify deliveries. */
   async createWebhook(data: CreateWebhookBody): Promise<{ webhook: PublicWebhook; secret: string }> {
     return this.request<{ webhook: PublicWebhook; secret: string }>('/webhooks', {
@@ -519,7 +614,7 @@ export class CriticalPathClient {
   }
 
   async getTeam(id: string): Promise<Team> {
-    const res = await this.request<{ team: Team }>(`/teams/${id}`);
+    const res = await this.request<{ team: Team }>(`/teams/${encodeURIComponent(id)}`);
     return res.team;
   }
 
@@ -532,7 +627,7 @@ export class CriticalPathClient {
   }
 
   async updateTeam(id: string, updates: UpdateTeamBody): Promise<Team> {
-    const res = await this.request<{ team: Team }>(`/teams/${id}`, {
+    const res = await this.request<{ team: Team }>(`/teams/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
     });
@@ -540,13 +635,17 @@ export class CriticalPathClient {
   }
 
   async deleteTeam(id: string): Promise<boolean> {
-    return this.deleteRequest(`/teams/${id}`);
+    return this.deleteRequest(`/teams/${encodeURIComponent(id)}`);
   }
 
   // Containers
   async getContainers(projectId: string): Promise<TaskContainer[]> {
     const res = await this.request<{ containers: TaskContainer[] }>(`/containers?projectId=${encodeURIComponent(projectId)}`);
     return res.containers;
+  }
+
+  async getContainer(id: string): Promise<TaskContainer> {
+    return (await this.request<{ container: TaskContainer }>(`/containers/${encodeURIComponent(id)}`)).container;
   }
 
   async createContainer(data: CreateContainerBody): Promise<TaskContainer> {
@@ -558,7 +657,7 @@ export class CriticalPathClient {
   }
 
   async updateContainer(id: string, updates: UpdateContainerBody): Promise<TaskContainer> {
-    const res = await this.request<{ container: TaskContainer }>(`/containers/${id}`, {
+    const res = await this.request<{ container: TaskContainer }>(`/containers/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
     });
@@ -566,7 +665,7 @@ export class CriticalPathClient {
   }
 
   async deleteContainer(id: string): Promise<boolean> {
-    return this.deleteRequest(`/containers/${id}`);
+    return this.deleteRequest(`/containers/${encodeURIComponent(id)}`);
   }
 
   // Deliverables
@@ -576,12 +675,12 @@ export class CriticalPathClient {
   }
 
   async getDeliverable(id: string): Promise<Deliverable> {
-    const res = await this.request<{ deliverable: Deliverable }>(`/deliverables/${id}`);
+    const res = await this.request<{ deliverable: Deliverable }>(`/deliverables/${encodeURIComponent(id)}`);
     return res.deliverable;
   }
 
   async getDeliverableSummary(id: string): Promise<DeliverableSummary> {
-    const res = await this.request<{ summary: DeliverableSummary }>(`/deliverables/${id}/summary`);
+    const res = await this.request<{ summary: DeliverableSummary }>(`/deliverables/${encodeURIComponent(id)}/summary`);
     return res.summary;
   }
 
@@ -594,7 +693,7 @@ export class CriticalPathClient {
   }
 
   async updateDeliverable(id: string, updates: UpdateDeliverableBody): Promise<Deliverable> {
-    const res = await this.request<{ deliverable: Deliverable }>(`/deliverables/${id}`, {
+    const res = await this.request<{ deliverable: Deliverable }>(`/deliverables/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
     });
@@ -602,13 +701,17 @@ export class CriticalPathClient {
   }
 
   async deleteDeliverable(id: string): Promise<boolean> {
-    return this.deleteRequest(`/deliverables/${id}`);
+    return this.deleteRequest(`/deliverables/${encodeURIComponent(id)}`);
   }
 
   // Iterations
   async getIterations(projectId: string): Promise<Iteration[]> {
     const res = await this.request<{ iterations: Iteration[] }>(`/iterations?projectId=${encodeURIComponent(projectId)}`);
     return res.iterations;
+  }
+
+  async getIteration(id: string): Promise<Iteration> {
+    return (await this.request<{ iteration: Iteration }>(`/iterations/${encodeURIComponent(id)}`)).iteration;
   }
 
   async createIteration(data: CreateIterationBody): Promise<Iteration> {
@@ -620,7 +723,7 @@ export class CriticalPathClient {
   }
 
   async updateIteration(id: string, updates: UpdateIterationBody): Promise<Iteration> {
-    const res = await this.request<{ iteration: Iteration }>(`/iterations/${id}`, {
+    const res = await this.request<{ iteration: Iteration }>(`/iterations/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
     });
@@ -628,7 +731,7 @@ export class CriticalPathClient {
   }
 
   async deleteIteration(id: string): Promise<boolean> {
-    return this.deleteRequest(`/iterations/${id}`);
+    return this.deleteRequest(`/iterations/${encodeURIComponent(id)}`);
   }
 
   // Activity Stream

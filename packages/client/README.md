@@ -86,6 +86,56 @@ const taskLadder = await client.getTaskLadder(newTask.id);
 
 ---
 
+## ⚙️ Configuration
+
+```ts
+const client = new CriticalPathClient({
+  baseUrl: '/api/critical-path',
+  // Static headers, or a function called before every request (e.g. to refresh tokens)
+  headers: async () => ({ Authorization: `Bearer ${await auth.getAccessToken()}` }),
+  timeoutMs: 15_000,                       // abort slow requests (default: none)
+  retry: { retries: 2, baseDelayMs: 250 }, // GET only: network errors, 429, 502-504 (default: off)
+  fetch: customFetch                       // optional fetch implementation
+});
+```
+
+### Cancellation and per-call headers
+
+`with()` returns a scoped client that applies options to every call it makes:
+
+```ts
+const controller = new AbortController();
+const tasks = await client.with({ signal: controller.signal }).getTasks(projectId);
+// later, e.g. when a component unmounts:
+controller.abort();
+
+await client.with({ headers: { 'X-Request-Id': id }, timeoutMs: 5_000 }).getProject(projectId);
+```
+
+### Errors
+
+Non-2xx responses throw `CriticalPathError`:
+
+```ts
+import { CriticalPathError } from '@critical-path/client';
+
+try {
+  await client.addDependency(taskId, { dependsOnTaskId });
+} catch (err) {
+  if (err instanceof CriticalPathError) {
+    err.status;          // e.g. 409
+    err.issues;          // field-level problems for 400 validation errors
+    err.body?.cyclePath; // the rest of the server's error body
+  }
+}
+```
+
+Delete methods resolve to `false` instead of throwing when the resource does not exist. Network failures, timeouts (`TimeoutError`) and cancellations (`AbortError`) are thrown as-is.
+
+Every server route has a client method; `routes.test.ts` fails if a route is added without one.
+
+---
+
 ## 📄 License
 
 MIT © [Critical Path](https://github.com/Pixerate/Critical-Path)

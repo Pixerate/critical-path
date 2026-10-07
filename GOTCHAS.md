@@ -225,3 +225,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Lists use keyset pagination ordered by `createdAt` then `id`. Ids are random, so they only break ties, not creation order within a millisecond.
 - **Solution / Workaround**: Follow `nextCursor` (the client's `getTasks` / `getActivities` already do), or raise `limit` up to 500. Don't rely on sub-millisecond creation order; sort by your own field (e.g. a fractional `orderIndex`) for user-defined ordering. `FirebaseStore` only pushes the project filter down to Firestore and filters the rest in memory, so very large projects should prefer SQLite or a custom adapter until Firestore composite-index queries are added.
 
+### Client Cancellation Uses `AbortSignal.any` and `AbortSignal.timeout`
+- **Area / Package**: `@critical-path/client`
+- **Symptom / Behavior**: `AbortSignal.any is not a function` in older runtimes when combining `with({ signal })` and `timeoutMs`.
+- **Root Cause**: The client combines caller signals with timeouts using `AbortSignal.any` (Node 20.3+, browsers from 2023) and `AbortSignal.timeout`.
+- **Solution / Workaround**: Use a supported runtime (the repo targets Node 24), or polyfill `AbortSignal.any`. Retries apply only to GET requests and stop as soon as the signal aborts.
+
