@@ -34,6 +34,10 @@ const inMemorySqlite = new SQLiteStore({
 
 ---
 
+## Transactions
+
+`SQLiteStore` implements `transaction(fn)`, so cascading deletes (`deleteTask`, `deleteProject`, `deleteContainer`, `deleteIteration`, `deleteDeliverable`) are atomic. All requests share one connection. While a transaction is open, calls made from inside it (including plugin hooks it triggers) join it, other calls wait until it ends, and the transaction itself starts only after in-flight calls finish. A failed cascade therefore cannot roll back an unrelated request's write.
+
 ## Auto-Migration
 
 `SQLiteStore` automatically checks and initializes required schema tables (`projects`, `tasks`, `dependencies`, `custom_statuses`, `audit_logs`) upon instantiation, so no external migration step is needed.

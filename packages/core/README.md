@@ -131,7 +131,7 @@ try {
 
 Remove a dependency with `engine.removeDependency(dependencyId)` (publishes `dependency.removed`).
 
-Deletes cascade: `deleteTask` removes subtasks (or detaches them with `{ subtasks: 'detach' }`), dependencies, comments, attachments with their stored files, and time entries; `deleteProject` also removes containers, iterations and deliverables; deleting a container, iteration or deliverable clears the reference on its tasks. The activity log is kept as an audit trail.
+Deletes cascade: `deleteTask` removes subtasks (or detaches them with `{ subtasks: 'detach' }`), dependencies, comments, attachments with their stored files, and time entries; `deleteProject` also removes containers, iterations and deliverables; deleting a container, iteration or deliverable clears the reference on its tasks. The activity log is kept as an audit trail. On stores with `transaction` (such as `SQLiteStore`), each cascade is atomic: if any step fails, for example because a `beforeTaskDelete` hook throws for a subtask, nothing is deleted. Events, after-hooks and file deletions run only after commit.
 
 Cycle detection follows the full upstream chain, so indirect cycles (A → B → C → D → A) are rejected as well as direct ones.
 

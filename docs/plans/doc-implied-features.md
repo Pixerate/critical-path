@@ -175,7 +175,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - **Bugs fixed by the tests,** which run against all three adapters:
   - SQLite returned `null` for unset fields.
   - Firestore updates could not clear fields; for example, a reopened task stayed completed.
-- **No transactions:** cascades are ordered child-first and idempotent instead, since the store has no transaction API. A transaction hook is a follow-up.
+- **Transactions:** cascades are ordered child-first and idempotent. Follow-up done: optional `StorageAdapter.transaction(fn)`, implemented by `SQLiteStore` (AsyncLocalStorage-gated, so concurrent requests stay out). The engine runs cascades inside it and defers events, after-hooks and file deletions until commit. Firestore remains non-transactional because its transactions require reads before writes.
 
 ---
 

@@ -739,6 +739,7 @@ Discrete interfaces are provided for repository segregation:
 - `DependencyRepository`
 - `WebhookRepository`
 - `StorageAdapter` (composition of all repositories)
+- `StorageAdapter.transaction(fn)` (optional: makes cascading deletes atomic; `SQLiteStore` implements it)
 - `WebhookOutboxStore` (optional: `putWebhookJob`, `claimWebhookJobs`, `deleteWebhookJob`, for `OutboxWebhookQueue`)
 
 ---

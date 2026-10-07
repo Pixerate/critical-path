@@ -207,11 +207,17 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Project `customFieldDefinitions` may only use built-in types or types registered by a plugin, so fields that could never validate are caught at configuration time.
 - **Solution / Workaround**: Register the plugin providing the type in `plugins` on every engine instance (including MCP servers and workers) that reads or writes those projects.
 
-### Deletes Cascade, but Without a Transaction
-- **Area / Package**: `@critical-path/core` (`deleteTask`, `deleteProject`, `deleteContainer`, `deleteIteration`, `deleteDeliverable`)
-- **Symptom / Behavior**: Deleting a task removes its subtasks, comments, attachments (and files), dependencies and time entries; deleting a project removes all its planning records. If the process crashes mid-cascade, some child records may remain.
-- **Root Cause**: The storage interface has no transaction API, so cascades run as a series of individual deletes (child records first, the parent last).
-- **Solution / Workaround**: Re-run the delete to finish an interrupted cascade (it is idempotent: missing records are skipped). Use `deleteTask(id, { subtasks: 'detach' })` to keep subtasks. Activity log entries are intentionally kept.
+### Deletes Cascade, Atomically Only on Stores with `transaction`
+- **Area / Package**: `@critical-path/core` (`deleteTask`, `deleteProject`, `deleteContainer`, `deleteIteration`, `deleteDeliverable`, `StorageAdapter.transaction`)
+- **Symptom / Behavior**: Deleting a task removes its subtasks, comments, attachments (and files), dependencies and time entries; deleting a project removes all its planning records. On `InMemoryStore`, `FirebaseStore` and adapters without `transaction`, a crash or a throwing `beforeTaskDelete` hook mid-cascade leaves some records deleted and others not. On `SQLiteStore`, the whole cascade rolls back.
+- **Root Cause**: Cascades run as a series of individual deletes (child records first, the parent last). The engine wraps them in `store.transaction` only when the adapter provides it, deferring events, after-hooks and file deletions until commit.
+- **Solution / Workaround**: Implement `transaction` in custom adapters (use a dedicated connection, so concurrent requests stay out of it). Without it, re-run the delete to finish an interrupted cascade; it is idempotent, skipping missing records. Use `deleteTask(id, { subtasks: 'detach' })` to keep subtasks. Activity log entries are intentionally kept.
+
+### SQLiteStore Is a Proxy That Serializes Around Transactions
+- **Area / Package**: `@critical-path/core` (`SQLiteStore`)
+- **Symptom / Behavior**: `new SQLiteStore()` returns a Proxy. While a cascade transaction is open, unrelated store calls wait for it to finish.
+- **Root Cause**: Every request shares one synchronous `DatabaseSync` connection, so a write from another request could otherwise land inside an open transaction and be rolled back with it. Calls made inside the transaction's async context (found via `AsyncLocalStorage`) join it, so plugin hooks that read through the engine do not deadlock.
+- **Solution / Workaround**: Nothing to do in normal use. Code that starts work inside a `beforeTaskDelete` hook and waits for it from a different async context (for example, a queue that calls back into the engine) will wait for the transaction; avoid blocking on such work inside hooks.
 
 ### Storage Adapters Must Return Unset Optional Fields as Absent, and Must Be Able to Clear Them
 - **Area / Package**: `@critical-path/core` (`SQLiteStore`, `FirebaseStore`, custom adapters)
