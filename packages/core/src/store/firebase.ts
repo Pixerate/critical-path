@@ -424,7 +424,9 @@ export class FirebaseStore implements StorageAdapter {
   // --- Comments ---
   async getComments(taskId: string): Promise<Comment[]> {
     const snap = await this.db.collection('comments').where('taskId', '==', taskId).get();
-    return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+    return snap.docs
+      .map((doc) => ({ ...doc.data(), id: doc.id }) as Comment)
+      .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
   }
 
   async getComment(id: string): Promise<Comment | null> {
@@ -497,7 +499,15 @@ export class FirebaseStore implements StorageAdapter {
     } else {
       snap = await this.db.collection('attachments').get();
     }
-    return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+    // One filter is pushed down to Firestore; the others are applied here.
+    return snap.docs
+      .map((doc) => ({ ...doc.data(), id: doc.id }) as Attachment)
+      .filter(
+        (a) =>
+          (!filter?.taskId || a.taskId === filter.taskId) &&
+          (!filter?.projectId || a.projectId === filter.projectId) &&
+          (!filter?.commentId || a.commentId === filter.commentId)
+      );
   }
 
   async getAttachment(id: string): Promise<Attachment | null> {
@@ -530,7 +540,11 @@ export class FirebaseStore implements StorageAdapter {
     } else {
       snap = await this.db.collection('activities').get();
     }
-    return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+    // Apply the remaining filter and return newest first, like the other adapters.
+    return snap.docs
+      .map((doc) => ({ ...doc.data(), id: doc.id }) as Activity)
+      .filter((a) => (!filter?.projectId || a.projectId === filter.projectId) && (!filter?.taskId || a.taskId === filter.taskId))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   }
 
   async queryActivities(query: ActivityQuery): Promise<Page<Activity>> {

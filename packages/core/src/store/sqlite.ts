@@ -23,6 +23,9 @@ import { generateProjectKey } from '../utils/key.js';
  * SQLite returns NULL columns as `null`, while domain objects leave unset optional fields out.
  * Dropping nulls keeps SQLiteStore results identical to the other adapters.
  */
+const EXTRA_TABLES = ['projects', 'tasks', 'teams', 'attachments'] as const;
+type ExtraTable = (typeof EXTRA_TABLES)[number];
+
 function dropNulls<T extends object>(row: T): T {
   return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null)) as T;
 }
@@ -308,6 +311,16 @@ export class SQLiteStore implements StorageAdapter {
       }
     }
 
+    // Fields without a dedicated column are kept in a JSON `extra` column, so entities round-trip
+    // even when their types gain fields this schema does not know about.
+    for (const table of EXTRA_TABLES) {
+      try {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN extra TEXT`);
+      } catch {
+        // Column may already exist
+      }
+    }
+
     for (const table of ['projects', 'workflows', 'teams']) {
       try {
         this.db.exec(`ALTER TABLE ${table} ADD COLUMN tenantId TEXT`);
@@ -315,6 +328,35 @@ export class SQLiteStore implements StorageAdapter {
         // Column may already exist
       }
     }
+  }
+
+  private columnCache = new Map<string, Set<string>>();
+
+  private columnsOf(table: ExtraTable): Set<string> {
+    let columns = this.columnCache.get(table);
+    if (!columns) {
+      const info = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      columns = new Set(info.map((c) => c.name));
+      this.columnCache.set(table, columns);
+    }
+    return columns;
+  }
+
+  /** Stores every defined field that has no dedicated column in the row's `extra` JSON. */
+  private writeExtra(table: ExtraTable, entity: object): void {
+    const columns = this.columnsOf(table);
+    const extra = Object.fromEntries(
+      Object.entries(entity).filter(([key, value]) => !columns.has(key) && value !== undefined)
+    );
+    this.db
+      .prepare(`UPDATE ${table} SET extra = ? WHERE id = ?`)
+      .run(Object.keys(extra).length ? JSON.stringify(extra) : null, (entity as { id: string }).id);
+  }
+
+  /** Merges the `extra` JSON back into a row. */
+  private expandExtra(row: any): any {
+    const { extra, ...rest } = row;
+    return extra ? { ...rest, ...JSON.parse(extra) } : rest;
   }
 
   // --- Projects ---
@@ -357,6 +399,7 @@ export class SQLiteStore implements StorageAdapter {
       newProj.createdAt,
       newProj.updatedAt
     );
+    this.writeExtra('projects', newProj);
     return newProj;
   }
 
@@ -390,6 +433,7 @@ export class SQLiteStore implements StorageAdapter {
       updated.updatedAt,
       id
     );
+    this.writeExtra('projects', updated);
     return updated;
   }
 
@@ -503,6 +547,7 @@ export class SQLiteStore implements StorageAdapter {
       newTeam.createdAt,
       newTeam.updatedAt
     );
+    this.writeExtra('teams', newTeam);
     return newTeam;
   }
 
@@ -523,6 +568,7 @@ export class SQLiteStore implements StorageAdapter {
       updated.updatedAt,
       id
     );
+    this.writeExtra('teams', updated);
     return updated;
   }
 
@@ -812,6 +858,7 @@ export class SQLiteStore implements StorageAdapter {
       newTask.createdAt,
       newTask.updatedAt
     );
+    this.writeExtra('tasks', newTask);
     return newTask;
   }
 
@@ -877,6 +924,7 @@ export class SQLiteStore implements StorageAdapter {
       updated.updatedAt,
       id
     );
+    this.writeExtra('tasks', updated);
     return updated;
   }
 
@@ -1099,7 +1147,7 @@ export class SQLiteStore implements StorageAdapter {
     const rows = stmt.all(...params) as any[];
     return rows.map((r) =>
       dropNulls({
-        ...r,
+        ...this.expandExtra(r),
         sizeBytes: Number(r.sizeBytes),
         metadata: r.metadata ? JSON.parse(r.metadata) : undefined
       })
@@ -1111,7 +1159,7 @@ export class SQLiteStore implements StorageAdapter {
     const row = stmt.get(id) as any;
     if (!row) return null;
     return dropNulls({
-      ...row,
+      ...this.expandExtra(row),
       sizeBytes: Number(row.sizeBytes),
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined
     });
@@ -1147,6 +1195,7 @@ export class SQLiteStore implements StorageAdapter {
       newAtt.createdAt,
       newAtt.updatedAt
     );
+    this.writeExtra('attachments', newAtt);
     return newAtt;
   }
 
@@ -1370,7 +1419,7 @@ export class SQLiteStore implements StorageAdapter {
   // Helper mappers
   private mapProject(row: any): Project {
     return dropNulls({
-      ...row,
+      ...this.expandExtra(row),
       tenantId: row.tenantId ?? undefined,
       workflowId: row.workflowId || undefined,
       taskTypes: row.taskTypes ? JSON.parse(row.taskTypes) : undefined,
@@ -1395,7 +1444,7 @@ export class SQLiteStore implements StorageAdapter {
 
   private mapTeam(row: any): Team {
     return dropNulls({
-      ...row,
+      ...this.expandExtra(row),
       tenantId: row.tenantId ?? undefined,
       memberIds: row.memberIds ? JSON.parse(row.memberIds) : []
     });
@@ -1403,7 +1452,7 @@ export class SQLiteStore implements StorageAdapter {
 
   private mapTask(row: any): Task {
     return dropNulls({
-      ...row,
+      ...this.expandExtra(row),
       actualDurationSeconds: row.actualDurationSeconds ?? undefined,
       inProgressSince: row.inProgressSince || undefined,
       blockedDurationSeconds: row.blockedDurationSeconds ?? undefined,

@@ -146,6 +146,17 @@ await engine.createTask(input);
 
 Create and update schemas exist for workflows, projects, tasks, dependencies, deliverables, teams, containers, iterations, comments, reactions, attachments and time entries. They are strict: server-assigned fields, identity fields and unknown keys are rejected. The schemas live on a subpath so importing `@critical-path/core` in a browser bundle does not pull in zod. A compile-time test fails the build if a domain type gains a field its schema lacks.
 
+#### Custom Storage Adapters & Conformance
+
+Implement `StorageAdapter` for your database and verify it with the same suite the built-in adapters pass:
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { runStorageAdapterConformance } from '@critical-path/core/testing';
+
+runStorageAdapterConformance({ name: 'PostgresStore', createStore: () => new PostgresStore(db), describe, it, expect });
+```
+
 #### Querying & Pagination
 
 ```ts

@@ -510,6 +510,17 @@ export class PostgresStorageAdapter implements StorageAdapter {
 }
 ```
 
+Verify it with the conformance suite the built-in adapters run (`@critical-path/core/testing`):
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { runStorageAdapterConformance } from '@critical-path/core/testing';
+
+runStorageAdapterConformance({ name: 'Postgres', createStore: () => new PostgresStorageAdapter(db), describe, it, expect });
+```
+
+It checks field round-trips, partial updates and clearing, not-found contracts, combined filters and sort orders. See `apps/docs/src/content/docs/storage/custom.md` for the full contract.
+
 ---
 
 ## 9. File Storage Adapters (Attachments & S3 / Firebase Storage)
