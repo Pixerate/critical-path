@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-07T05:57:58.487Z
+> Documentation generated on: 2026-10-07T06:21:16.268Z
 
 ================================================================================
 
@@ -1008,7 +1008,7 @@ export {
 
 ## Authentication & Context Injection
 
-You can inject request context, such as the authenticated user ID or tenant ID:
+Pass router options as the second argument. `getContext` resolves the caller for each request; when it returns a `userId`, every mutation in that request is attributed to that user (activity log, comment authors, reactions, time entries, uploads), and identity fields in request bodies such as `actorId` or `authorId` are ignored.
 
 ```typescript
 import { createNextHandler } from '@critical-path/server';
@@ -1017,17 +1017,30 @@ import { auth } from '@/lib/auth'; // Your auth solution
 
 const store = new SQLiteStore({ filename: 'app.db' });
 
-const handler = createNextHandler({
-  store,
-  getContext: async (req) => {
-    const session = await auth();
-    return {
-      userId: session?.user?.id,
-      tenantId: session?.user?.tenantId,
-    };
-  },
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(
+  { store },
+  {
+    getContext: async () => {
+      const session = await auth();
+      return session?.user ? { userId: session.user.id, userName: session.user.name ?? undefined } : null;
+    },
+    requireAuth: true, // 401 when getContext returns no userId
+  }
+);
+```
+
+Extra fields you return (for example `tenantId` or `roles`) are carried on the context for upcoming authorization hooks.
+
+### CORS and Mount Path
+
+```typescript
+createNextHandler({ store }, {
+  basePath: '/api/critical-path',
+  cors: { origins: ['https://app.example.com'], credentials: true },
 });
 ```
+
+`cors` defaults to `{ origins: '*' }` without credentials; pass `false` to send no CORS headers (same-origin apps).
 
 --------------------------------------------------------------------------------
 
@@ -1062,21 +1075,24 @@ export const OPTIONS = handler;
 
 ## Using with Locals & Session
 
+`getContext` receives the SvelteKit `RequestEvent`, so you can read the user your `hooks.server.ts` placed on `locals`:
+
 ```typescript
 import { createSvelteKitHandler } from '@critical-path/server';
 import { SQLiteStore } from '@critical-path/core';
 
 const store = new SQLiteStore({ filename: 'app.db' });
 
-const handler = createSvelteKitHandler({
-  store,
-  getContext: async (event) => {
-    return {
-      userId: event.locals.user?.id,
-    };
-  },
-});
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createSvelteKitHandler(
+  { store },
+  {
+    getContext: (event) => (event.locals.user ? { userId: event.locals.user.id } : null),
+    requireAuth: true,
+  }
+);
 ```
+
+When a `userId` is resolved, all mutations in the request are attributed to that user and identity fields in request bodies are ignored. The other router options (`basePath`, `cors`, `onError`, `exposeErrors`) are accepted here too.
 
 --------------------------------------------------------------------------------
 
@@ -1103,6 +1119,22 @@ export default {
     return handleRequest(request);
   },
 };
+```
+
+`createUniversalHandler(config, options)` accepts the same router options as the framework adapters:
+
+```typescript
+const handleRequest = createUniversalHandler(
+  { store },
+  {
+    basePath: '/api/pm',
+    getContext: async (request) => {
+      const user = await verifyBearerToken(request.headers.get('Authorization'));
+      return user ? { userId: user.id } : null;
+    },
+    requireAuth: true,
+  }
+);
 ```
 
 --------------------------------------------------------------------------------
@@ -2014,6 +2046,7 @@ Errors are returned as JSON with an `error` message and, where useful, extra det
 | Status | When |
 | :--- | :--- |
 | `400` | Malformed JSON body, `ValidationError`, invalid workflow transition (`fromStatus`, `toStatus`), custom field validation failure (`fieldKey`), invalid attachment |
+| `401` | `requireAuth` is enabled and no user was resolved by `getContext` |
 | `404` | Unknown route, missing resource (`NotFoundError`), or `DELETE` of a resource that does not exist |
 | `409` | Dependency would create a cycle (`cyclePath`) |
 | `500` | Unexpected server error. The message is `Internal Server Error` unless the router's `exposeErrors` option is on (default: only when `NODE_ENV === 'development'`). The error is passed to the `onError` option, or logged with `console.error`. |
