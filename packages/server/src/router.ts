@@ -17,6 +17,10 @@ export interface RequestContext {
   userId?: string;
   userName?: string;
   actorType?: AuthorType;
+  /** Tenant the caller belongs to; scopes projects, workflows and teams (see `Actor.tenantId`). */
+  tenantId?: string;
+  /** Workspace roles, e.g. `['admin']`, interpreted by the engine's `authorize` policy. */
+  roles?: string[];
   [key: string]: unknown;
 }
 
@@ -179,8 +183,14 @@ export class CriticalPathRouter {
     // Every request runs as an actor, so authorship never comes from request bodies.
     const engine = this.engine.withActor(
       context?.userId
-        ? { userId: context.userId, username: context.userName, actorType: context.actorType }
-        : ANONYMOUS_ACTOR
+        ? {
+            userId: context.userId,
+            username: context.userName,
+            actorType: context.actorType,
+            tenantId: context.tenantId,
+            roles: context.roles
+          }
+        : { ...ANONYMOUS_ACTOR, tenantId: context?.tenantId }
     );
 
     try {
@@ -539,7 +549,7 @@ export class CriticalPathRouter {
         if (method === 'GET') {
           const projectId = url.searchParams.get('projectId') || undefined;
           const taskId = url.searchParams.get('taskId') || undefined;
-          const activities = await engine.store.getActivities({ projectId, taskId });
+          const activities = await engine.getActivities({ projectId, taskId });
           return this.jsonResponse({ activities });
         }
       }
@@ -643,7 +653,7 @@ export class CriticalPathRouter {
         if (method === 'GET') {
           const taskId = url.searchParams.get('taskId');
           if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
-          const entries = await engine.store.getTimeEntries(taskId);
+          const entries = await engine.getTimeEntries(taskId);
           return this.jsonResponse({ timeEntries: entries });
         }
         if (method === 'POST') {
@@ -757,6 +767,8 @@ export class CriticalPathRouter {
         return this.jsonResponse({ error: e.message, cyclePath: e.cyclePath }, 409);
       case 'NotFoundError':
         return this.jsonResponse({ error: e.message }, 404);
+      case 'ForbiddenError':
+        return this.jsonResponse({ error: e.message }, 403);
     }
 
     // Unexpected errors may carry internals (SQL, URLs, config details), so they are only

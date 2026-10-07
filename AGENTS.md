@@ -99,7 +99,7 @@ export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(
 );
 ```
 
-Identity never comes from request bodies (the API rejects `actorId`, `authorId`, `userId`, `uploaderId`); attribute mutations with `getContext` on the router or `engine.withActor(actor)` in server code.
+Enable permissions with `authorize: createRolePolicy()` in the engine config and return `tenantId` / `roles` from `getContext`; checks run inside the engine for every `withActor` view. Identity never comes from request bodies (the API rejects `actorId`, `authorId`, `userId`, `uploaderId`); attribute mutations with `getContext` on the router or `engine.withActor(actor)` in server code.
 
 ### 4. Generating a Custom Critical Path Plugin
 

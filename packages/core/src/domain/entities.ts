@@ -1,4 +1,5 @@
 import type {
+  ProjectMember,
   Task,
   Project,
   Workflow,
@@ -524,7 +525,7 @@ export class ProjectEntity extends BaseEntity {
   public name: string;
   public description?: string;
   public ownerId?: string;
-  public members?: string[];
+  public members?: ProjectMember[];
   public teamIds?: string[];
   public workflowId?: string;
   public workflow?: Workflow;

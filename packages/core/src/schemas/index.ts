@@ -111,7 +111,9 @@ export const CreateProjectSchema = strictObject({
   name: nonEmpty,
   description: z.string().optional(),
   ownerId: z.string().optional(),
-  members: z.array(z.string()).optional(),
+  members: z
+    .array(strictObject({ userId: nonEmpty, role: z.enum(['admin', 'project_manager', 'contributor', 'viewer']) }))
+    .optional(),
   teamIds: z.array(z.string()).optional(),
   workflowId: z.string().optional(),
   taskTypes: z.array(TaskTypeDefinitionSchema).optional(),
@@ -303,6 +305,8 @@ export const UploadAttachmentSchema = strictObject({
 });
 
 export const PresignAttachmentSchema = strictObject({
+  /** Project the upload belongs to; scoped callers may only write under `projects/<projectId>/`. */
+  projectId: nonEmpty,
   storageKey: nonEmpty,
   expiresInSeconds: z.number().int().positive().optional(),
   contentType: z.string().optional()

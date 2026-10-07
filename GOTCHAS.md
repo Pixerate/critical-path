@@ -159,3 +159,21 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Request bodies never carry identity. The router runs every request through `engine.withActor(...)` as the user resolved by `getContext`, or as `ANONYMOUS_ACTOR` when there is none.
 - **Solution / Workaround**: Configure `getContext` on the router to map your session or API token to a user. Agents using the `critical-path` CLI or `@critical-path/mcp --api` authenticate with a token (`CRITICAL_PATH_KEY` / `CRITICAL_PATH_API_TOKEN`) that `getContext` maps to the agent's identity; the old `--author` / `CRITICAL_PATH_AUTHOR_ID` options no longer exist. A local MCP server using an `engine` attributes writes to its `actor` option (default `mcp-agent`).
 
+### Authorization Only Applies to `withActor` Views, and `engine.store` Bypasses It
+- **Area / Package**: `@critical-path/core` (`authorize`, `createRolePolicy`), `@critical-path/server`, `@critical-path/mcp`
+- **Symptom / Behavior**: A policy appears to have no effect, or an MCP server/agent is denied everything after a policy is enabled.
+- **Root Cause**: Checks run only on views from `engine.withActor(actor)`. The base engine is trusted, and `engine.store` never checks anything. Engine-backed MCP servers act as their `actor` option (default `mcp-agent`), which has no project memberships.
+- **Solution / Workaround**: Call the engine through a view for anything user-driven (the router and MCP server already do). Read data via engine methods (`getActivities`, `getTimeEntries`) rather than `engine.store`. Give MCP servers an explicit `actor` with memberships or `roles: ['admin']` (and a `tenantId` when multi-tenant). Inside the engine, cascades that are already authorized use the private `elevated()` view so they are not re-checked per child record.
+
+### Tenant Ids Are `undefined`, Never `null`
+- **Area / Package**: `@critical-path/core` (`SQLiteStore`, tenancy checks)
+- **Symptom / Behavior**: Single-tenant projects stop finding their default workflow, or tenant checks fail for records without a tenant.
+- **Root Cause**: Tenancy compares `tenantId` values with `===`. SQLite returns `NULL` columns as `null`, while in-memory and Firestore records omit the field (`undefined`).
+- **Solution / Workaround**: `SQLiteStore` maps `tenantId` with `row.tenantId ?? undefined`. Custom adapters must do the same for any tenant-scoped entity (projects, workflows, teams).
+
+### `Project.members` Is `{ userId, role }[]`
+- **Area / Package**: `@critical-path/core`, storage adapters, request schemas
+- **Symptom / Behavior**: Existing data or clients that stored `members` as a list of user ids fail validation, or members get no permissions.
+- **Root Cause**: Role-based authorization needs a role per member, so `members` changed from `string[]` to `ProjectMember[]`.
+- **Solution / Workaround**: Migrate stored projects to `members: ids.map((userId) => ({ userId, role: 'contributor' }))` (or the role you intend) and send the new shape from clients.
+

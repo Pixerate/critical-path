@@ -268,6 +268,7 @@ All endpoints return JSON responses.
 ### Error Responses
 - `400` - Malformed JSON body, invalid body (response includes `issues`), `ValidationError`, illegal workflow transition, custom field or attachment validation failure.
 - `401` - `requireAuth` is enabled and `getContext` resolved no user.
+- `403` - The engine's `authorize` policy denied the action (`ForbiddenError`). Projects the caller cannot read, or in another tenant, return `404` instead.
 - `404` - Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ success: true }`; client SDK delete methods resolve to `false` on 404).
 - `409` - `CircularDependencyError` (response includes `cyclePath`).
 - `500` - Unexpected error. The body is `Internal Server Error` unless `exposeErrors` is enabled (default: only when `NODE_ENV === 'development'`). Pass `onError(error, request)` as a router/adapter option to report errors or return a custom `Response`; otherwise they are logged with `console.error`.
@@ -308,6 +309,8 @@ export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(
   }
 );
 ```
+
+Return `tenantId` and `roles` from `getContext` to enable tenant isolation and role checks. Enable role checks with `authorize: createRolePolicy()` in the engine config (`createNextHandler({ store, authorize: createRolePolicy() }, { getContext })`). Membership lives in `project.members` (`{ userId, role }[]`). See `apps/docs/src/content/docs/core/authorization.md`.
 
 For SvelteKit, `getContext` receives the `RequestEvent` (so `event.locals.user` is available). For other Fetch runtimes use `createUniversalHandler(config, options)`.
 

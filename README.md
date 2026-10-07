@@ -133,7 +133,7 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 - [ ] **GraphQL API**: *(Planned)*
 - [x] **Webhook & Hook Support**: Async lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, etc.)
 - [x] **Flexible Data Models**: Custom fields, custom statuses, and configurable priority levels
-- [x] **Role-Based Access Control**: Project and task level RBAC role definitions
+- [x] **Role-Based Access Control & Multi-Tenancy**: `createRolePolicy()` with project membership roles (viewer, contributor, project manager, admin), workspace superusers, custom `authorize` policies, and `tenantId` isolation, enforced in the engine for REST and MCP alike
 
 
 ### Project & Task Management

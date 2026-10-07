@@ -279,6 +279,14 @@ export class SQLiteStore implements StorageAdapter {
     } catch {
       // Column may already exist
     }
+
+    for (const table of ['projects', 'workflows', 'teams']) {
+      try {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN tenantId TEXT`);
+      } catch {
+        // Column may already exist
+      }
+    }
   }
 
   // --- Projects ---
@@ -301,8 +309,8 @@ export class SQLiteStore implements StorageAdapter {
     const newProj: Project = { ...project, key, id, createdAt: now, updatedAt: now };
 
     const stmt = this.db.prepare(`
-      INSERT INTO projects (id, key, name, description, ownerId, members, teamIds, workflowId, taskTypes, statusDefinitions, priorityDefinitions, customFieldDefinitions, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO projects (id, key, name, description, ownerId, members, teamIds, workflowId, taskTypes, statusDefinitions, priorityDefinitions, customFieldDefinitions, tenantId, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newProj.id,
@@ -317,6 +325,7 @@ export class SQLiteStore implements StorageAdapter {
       JSON.stringify(newProj.statusDefinitions || []),
       JSON.stringify(newProj.priorityDefinitions || []),
       JSON.stringify(newProj.customFieldDefinitions || []),
+      newProj.tenantId ?? null,
       newProj.createdAt,
       newProj.updatedAt
     );
@@ -375,8 +384,8 @@ export class SQLiteStore implements StorageAdapter {
     const newWf: Workflow = { ...workflow, id, createdAt: now, updatedAt: now };
 
     const stmt = this.db.prepare(`
-      INSERT INTO workflows (id, name, description, statuses, transitions, taskTypes, defaultStatusKey, isDefault, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO workflows (id, name, description, statuses, transitions, taskTypes, defaultStatusKey, isDefault, tenantId, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newWf.id,
@@ -387,6 +396,7 @@ export class SQLiteStore implements StorageAdapter {
       newWf.taskTypes ? JSON.stringify(newWf.taskTypes) : null,
       newWf.defaultStatusKey || null,
       newWf.isDefault ? 1 : 0,
+      newWf.tenantId ?? null,
       newWf.createdAt,
       newWf.updatedAt
     );
@@ -452,8 +462,8 @@ export class SQLiteStore implements StorageAdapter {
     const newTeam: Team = { ...team, id, createdAt: now, updatedAt: now };
 
     const stmt = this.db.prepare(`
-      INSERT INTO teams (id, name, description, leaderId, memberIds, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO teams (id, name, description, leaderId, memberIds, tenantId, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newTeam.id,
@@ -461,6 +471,7 @@ export class SQLiteStore implements StorageAdapter {
       newTeam.description || null,
       newTeam.leaderId || null,
       JSON.stringify(newTeam.memberIds || []),
+      newTeam.tenantId ?? null,
       newTeam.createdAt,
       newTeam.updatedAt
     );
@@ -1195,6 +1206,7 @@ export class SQLiteStore implements StorageAdapter {
   private mapProject(row: any): Project {
     return {
       ...row,
+      tenantId: row.tenantId ?? undefined,
       workflowId: row.workflowId || undefined,
       taskTypes: row.taskTypes ? JSON.parse(row.taskTypes) : undefined,
       members: row.members ? JSON.parse(row.members) : [],
@@ -1208,6 +1220,7 @@ export class SQLiteStore implements StorageAdapter {
   private mapWorkflow(row: any): Workflow {
     return {
       ...row,
+      tenantId: row.tenantId ?? undefined,
       statuses: row.statuses ? JSON.parse(row.statuses) : [],
       transitions: row.transitions ? JSON.parse(row.transitions) : [],
       taskTypes: row.taskTypes ? JSON.parse(row.taskTypes) : undefined,
@@ -1218,6 +1231,7 @@ export class SQLiteStore implements StorageAdapter {
   private mapTeam(row: any): Team {
     return {
       ...row,
+      tenantId: row.tenantId ?? undefined,
       memberIds: row.memberIds ? JSON.parse(row.memberIds) : []
     };
   }

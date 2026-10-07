@@ -46,7 +46,8 @@ type SameKeys<Schema, Expected> = [Exclude<keyof Schema, keyof Expected>, Exclud
   : { extraInSchema: Exclude<keyof Schema, keyof Expected>; missingFromSchema: Exclude<keyof Expected, keyof Schema> };
 
 type Infer<S extends z.ZodTypeAny> = z.infer<S>;
-type ServerAssigned = 'id' | 'createdAt' | 'updatedAt';
+// tenantId is stamped from the actor by the engine, never accepted from payloads.
+type ServerAssigned = 'id' | 'createdAt' | 'updatedAt' | 'tenantId';
 // Identity is resolved by the server (withActor), never accepted in payloads.
 type CommentIdentity = 'authorId' | 'authorType';
 type UploaderIdentity = 'uploaderId' | 'uploaderType';
@@ -55,7 +56,7 @@ const keyChecks: true[] = [
   true as SameKeys<Infer<typeof CreateTaskSchema>, Omit<CreateTaskInput, 'key'>>,
   true as SameKeys<Infer<typeof UpdateTaskSchema>, Omit<Task, ServerAssigned | 'key' | 'projectId'>>,
   // `workflow` is a denormalised copy resolved from `workflowId`, so it is not writable.
-  true as SameKeys<Infer<typeof CreateProjectSchema>, Omit<CreateProjectInput, 'workflow'>>,
+  true as SameKeys<Infer<typeof CreateProjectSchema>, Omit<CreateProjectInput, 'workflow' | 'tenantId'>>,
   true as SameKeys<Infer<typeof UpdateProjectSchema>, Omit<Project, ServerAssigned | 'workflow'>>,
   true as SameKeys<Infer<typeof CreateWorkflowSchema>, Omit<Workflow, ServerAssigned>>,
   true as SameKeys<Infer<typeof CreateDeliverableSchema>, CreateDeliverableInput>,

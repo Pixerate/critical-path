@@ -1,5 +1,7 @@
 import type {
+  Activity,
   Actor,
+  AuthorizationAction,
   CriticalPathConfig,
   Project,
   Task,
@@ -82,7 +84,7 @@ import {
 import { validateAttachmentUrl, AttachmentValidationError } from '../domain/entities.js';
 import { validateCustomFieldValues } from '../domain/custom-fields.js';
 import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
-import { ValidationError, NotFoundError } from '../domain/errors.js';
+import { ValidationError, NotFoundError, ForbiddenError } from '../domain/errors.js';
 import { calculateCPM, type CPMOptions } from '../domain/cpm.js';
 import { buildTimelineLadder, aggregateConcreteEvidenceForTask } from '../domain/ladder.js';
 import {
@@ -101,6 +103,8 @@ export class CriticalPathEngine {
   public readonly ready: Promise<void> = Promise.resolve();
   /** The identity mutations are attributed to. Set only on views returned by `withActor`. */
   public readonly actor?: Actor;
+  /** Set on internal views that keep the actor for attribution but skip authorization. */
+  private readonly authorizationBypassed?: boolean;
 
   constructor(config: CriticalPathConfig = {}) {
     this.config = config;
@@ -138,6 +142,112 @@ export class CriticalPathEngine {
 
   private actorIdOr(fallback: string): string {
     return this.actor?.userId ?? fallback;
+  }
+
+  // --- Authorization (applies only to withActor views; the base engine is trusted) ---
+
+  /**
+   * True when calls must be checked: on a withActor view (not an internal elevated view) with a
+   * policy or a tenant to enforce. Otherwise there is nothing to check, so lookups are skipped.
+   */
+  private get enforcing(): boolean {
+    return !!this.actor && !this.authorizationBypassed && (!!this.config.authorize || !!this.actor.tenantId);
+  }
+
+  /** A view that keeps the actor for attribution but skips checks, for cascades already authorized. */
+  private elevated(): CriticalPathEngine {
+    if (!this.enforcing) return this;
+    const view = Object.create(this) as CriticalPathEngine;
+    Object.defineProperty(view, 'authorizationBypassed', { value: true });
+    return view;
+  }
+
+  private inActorTenant(entity: { tenantId?: string } | null | undefined): boolean {
+    const tenant = this.actor?.tenantId;
+    return !tenant || entity?.tenantId === tenant;
+  }
+
+  private async isAllowed(
+    action: AuthorizationAction,
+    project?: Project,
+    resource?: { type: 'task' | 'comment' | 'attachment'; ownerId?: string }
+  ): Promise<boolean> {
+    if (!this.enforcing) return true;
+    if (project && !this.inActorTenant(project)) return false;
+    const policy = this.config.authorize;
+    return policy ? await policy({ actor: this.actor!, action, project, resource }) : true;
+  }
+
+  /** The project if the actor may read it, otherwise null (callers report "not found"). */
+  private async readableProject(projectId: string | undefined): Promise<Project | null> {
+    if (!projectId) return null;
+    const project = await this.store.getProject(projectId);
+    if (!project) return null;
+    return (await this.isAllowed('project.read', project)) ? project : null;
+  }
+
+  private async canReadProject(projectId: string | undefined): Promise<boolean> {
+    if (!this.enforcing) return true;
+    return (await this.readableProject(projectId)) !== null;
+  }
+
+  /**
+   * Ensures the actor may perform `action` in `projectId`. Projects the actor cannot read (or
+   * that belong to another tenant) are reported as not found so their existence is not revealed.
+   */
+  private async requireProjectAccess(
+    action: AuthorizationAction,
+    projectId: string | undefined,
+    resource?: { type: 'task' | 'comment' | 'attachment'; ownerId?: string }
+  ): Promise<void> {
+    if (!this.enforcing) return;
+    const project = await this.readableProject(projectId);
+    if (!project) throw new NotFoundError(`Project "${projectId}" not found.`);
+    if (action !== 'project.read' && !(await this.isAllowed(action, project, resource))) {
+      throw new ForbiddenError(`Not allowed to ${action} in project "${projectId}".`);
+    }
+  }
+
+  private async requireWorkspaceAccess(action: 'project.create' | 'workspace.manage'): Promise<void> {
+    if (!(await this.isAllowed(action))) throw new ForbiddenError(`Not allowed to ${action}.`);
+  }
+
+  /** Keeps only items in projects the actor may read. Items with no project are hidden on views. */
+  private async filterReadable<T>(
+    items: T[],
+    projectIdOf: (item: T) => string | undefined | Promise<string | undefined>
+  ): Promise<T[]> {
+    if (!this.enforcing) return items;
+    const readable = new Map<string, boolean>();
+    const result: T[] = [];
+    for (const item of items) {
+      const projectId = await projectIdOf(item);
+      if (!projectId) continue;
+      if (!readable.has(projectId)) readable.set(projectId, await this.canReadProject(projectId));
+      if (readable.get(projectId)) result.push(item);
+    }
+    return result;
+  }
+
+  private async projectIdOfTask(taskId: string | undefined): Promise<string | undefined> {
+    return taskId ? (await this.store.getTask(taskId))?.projectId : undefined;
+  }
+
+  private async projectIdOfComment(commentId: string | undefined): Promise<string | undefined> {
+    if (!commentId) return undefined;
+    const comment = await this.store.getComment(commentId);
+    return this.projectIdOfTask(comment?.taskId);
+  }
+
+  private async projectIdOfAttachment(a: { projectId?: string; taskId?: string; commentId?: string }): Promise<string | undefined> {
+    return a.projectId ?? (await this.projectIdOfTask(a.taskId)) ?? (await this.projectIdOfComment(a.commentId));
+  }
+
+  /** Strips fields only the engine may set (tenancy) from updates made through a view. */
+  private withoutTenant<T extends { tenantId?: string }>(updates: T): T {
+    if (!this.actor || !('tenantId' in updates)) return updates;
+    const { tenantId: _ignored, ...rest } = updates;
+    return rest as T;
   }
 
   private async seedInitialData(data: NonNullable<CriticalPathConfig['initialData']>): Promise<void> {
@@ -180,15 +290,18 @@ export class CriticalPathEngine {
 
   // --- Workflows ---
   async getWorkflows(): Promise<Workflow[]> {
-    return this.store.getWorkflows();
+    const workflows = await this.store.getWorkflows();
+    return workflows.filter((w) => this.inActorTenant(w));
   }
 
   async getWorkflow(id: string): Promise<Workflow | null> {
-    return this.store.getWorkflow(id);
+    const workflow = await this.store.getWorkflow(id);
+    return workflow && this.inActorTenant(workflow) ? workflow : null;
   }
 
   async createWorkflow(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow> {
-    const created = await this.store.createWorkflow(workflow);
+    await this.requireWorkspaceAccess('workspace.manage');
+    const created = await this.store.createWorkflow({ ...workflow, tenantId: this.actor ? this.actor.tenantId : workflow.tenantId });
     const now = new Date().toISOString();
 
     const event: WorkflowCreatedEvent = {
@@ -211,8 +324,10 @@ export class CriticalPathEngine {
   }
 
   async updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow | null> {
-    const existing = await this.store.getWorkflow(id);
+    const existing = await this.getWorkflow(id);
     if (!existing) return null;
+    await this.requireWorkspaceAccess('workspace.manage');
+    updates = this.withoutTenant(updates);
 
     const updated = await this.store.updateWorkflow(id, updates);
     if (updated) {
@@ -238,8 +353,9 @@ export class CriticalPathEngine {
   }
 
   async deleteWorkflow(id: string): Promise<boolean> {
-    const existing = await this.store.getWorkflow(id);
+    const existing = await this.getWorkflow(id);
     if (!existing) return false;
+    await this.requireWorkspaceAccess('workspace.manage');
 
     const deleted = await this.store.deleteWorkflow(id);
     if (deleted) {
@@ -272,7 +388,8 @@ export class CriticalPathEngine {
       if (wf) return wf;
     }
 
-    const workflows = await this.store.getWorkflows();
+    // Only fall back to workflows from the project's own tenant.
+    const workflows = (await this.store.getWorkflows()).filter((w) => w.tenantId === project?.tenantId);
     const defaultWf = workflows.find((w) => w.isDefault);
     if (defaultWf) return defaultWf;
     if (workflows.length > 0) return workflows[0];
@@ -281,21 +398,21 @@ export class CriticalPathEngine {
   }
 
   async getAllowedTaskTransitions(taskId: string): Promise<string[]> {
-    const task = await this.store.getTask(taskId);
+    const task = await this.getTask(taskId);
     if (!task) return [];
     const workflow = await this.resolveProjectWorkflow(task.projectId);
     return getAllowedTransitions(workflow || undefined, task.status);
   }
 
   async getAllowedNextTaskTransitions(taskId: string): Promise<string[]> {
-    const task = await this.store.getTask(taskId);
+    const task = await this.getTask(taskId);
     if (!task) return [];
     const workflow = await this.resolveProjectWorkflow(task.projectId);
     return getAllowedNextStatuses(workflow || undefined, task.status);
   }
 
   async getAllowedPreviousTaskTransitions(taskId: string): Promise<string[]> {
-    const task = await this.store.getTask(taskId);
+    const task = await this.getTask(taskId);
     if (!task) return [];
     const workflow = await this.resolveProjectWorkflow(task.projectId);
     return getAllowedPreviousStatuses(workflow || undefined, task.status);
@@ -303,15 +420,24 @@ export class CriticalPathEngine {
 
   // --- Projects ---
   async getProjects(): Promise<Project[]> {
-    return this.store.getProjects();
+    const projects = await this.store.getProjects();
+    return this.filterReadable(projects, (p) => p.id);
   }
 
   async getProject(id: string): Promise<Project | null> {
-    return this.store.getProject(id);
+    if (!this.enforcing) return this.store.getProject(id);
+    return this.readableProject(id);
   }
 
   async createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project> {
-    const created = await this.store.createProject(project);
+    await this.requireWorkspaceAccess('project.create');
+    // Views always use the actor's tenant (possibly none); only trusted base-engine calls may set it.
+    const input = { ...project, tenantId: this.actor ? this.actor.tenantId : project.tenantId };
+    // The creator administers the project they create.
+    if (this.actor && this.actor.userId !== 'anonymous' && !input.members?.some((m) => m.userId === this.actor!.userId)) {
+      input.members = [...(input.members ?? []), { userId: this.actor.userId, role: 'admin' }];
+    }
+    const created = await this.store.createProject(input);
     const now = new Date().toISOString();
 
     const event: ProjectCreatedEvent = {
@@ -335,8 +461,11 @@ export class CriticalPathEngine {
   }
 
   async updateProject(id: string, updates: Partial<Project>): Promise<Project | null> {
-    const existing = await this.store.getProject(id);
+    const existing = await this.getProject(id);
     if (!existing) return null;
+    await this.requireProjectAccess('project.update', id);
+    if ('members' in updates) await this.requireProjectAccess('project.manage_members', id);
+    updates = this.withoutTenant(updates);
 
     const updated = await this.store.updateProject(id, updates);
     if (updated) {
@@ -367,13 +496,16 @@ export class CriticalPathEngine {
    * hooks run and `task.deleted` events fire before `project.deleted` is published.
    */
   async deleteProject(id: string): Promise<boolean> {
-    const existing = await this.store.getProject(id);
+    const existing = await this.getProject(id);
     if (!existing) return false;
+    await this.requireProjectAccess('project.delete', id);
+    // Deleting the project implies deleting its tasks; skip per-task checks for the cascade.
+    const cascade = this.elevated();
 
     const tasks = await this.store.getTasks(id);
     const deletedTaskIds: string[] = [];
     for (const task of tasks) {
-      if (await this.deleteTask(task.id)) {
+      if (await cascade.deleteTask(task.id)) {
         deletedTaskIds.push(task.id);
       }
     }
@@ -404,14 +536,19 @@ export class CriticalPathEngine {
 
   // --- Tasks ---
   async getTasks(projectId?: string): Promise<Task[]> {
-    return this.store.getTasks(projectId);
+    if (projectId && !(await this.canReadProject(projectId))) return [];
+    const tasks = await this.store.getTasks(projectId);
+    return projectId ? tasks : this.filterReadable(tasks, (t) => t.projectId);
   }
 
   async getTask(id: string): Promise<Task | null> {
-    return this.store.getTask(id);
+    const task = await this.store.getTask(id);
+    if (!task) return null;
+    return (await this.canReadProject(task.projectId)) ? task : null;
   }
 
   async createTask(taskInput: CreateTaskInput): Promise<Task> {
+    await this.requireProjectAccess('task.create', taskInput.projectId);
     if (this.actor && !taskInput.reporterId) {
       taskInput = { ...taskInput, reporterId: this.actor.userId };
     }
@@ -519,8 +656,9 @@ export class CriticalPathEngine {
       actor?: { userId: string; username?: string; actorType?: string };
     }
   ): Promise<Task | null> {
-    const existing = await this.store.getTask(id);
+    const existing = await this.getTask(id);
     if (!existing) return null;
+    await this.requireProjectAccess('task.update', existing.projectId);
 
     // Identity comes from trusted options or the withActor view, never from the update payload.
     options = options ?? (this.actor ? { actor: this.actor } : undefined);
@@ -916,8 +1054,9 @@ export class CriticalPathEngine {
   }
 
   async deleteTask(id: string): Promise<boolean> {
-    const existing = await this.store.getTask(id);
+    const existing = await this.getTask(id);
     if (!existing) return false;
+    await this.requireProjectAccess('task.delete', existing.projectId);
 
     await this.plugins.runBeforeTaskDelete(id);
     const deleted = await this.store.deleteTask(id);
@@ -954,6 +1093,12 @@ export class CriticalPathEngine {
 
   // --- Task Dependencies & Graph ---
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
+    if (this.enforcing) {
+      const [task, upstream] = await Promise.all([this.getTask(dep.taskId), this.getTask(dep.dependsOnTaskId)]);
+      if (!task) throw new NotFoundError(`Task "${dep.taskId}" not found.`);
+      if (!upstream) throw new NotFoundError(`Task "${dep.dependsOnTaskId}" not found.`);
+      await this.requireProjectAccess('task.update', task.projectId);
+    }
     // Enforce Directed Acyclic Graph (DAG) Invariant
     const reachableDeps = await this.collectUpstreamDependencies(dep.dependsOnTaskId);
     const cycleCheck = detectDependencyCycle(reachableDeps, dep);
@@ -1009,6 +1154,9 @@ export class CriticalPathEngine {
   }
 
   async getTaskDependencyGraph(taskId: string): Promise<TaskDependencyGraph> {
+    if (this.enforcing && !(await this.getTask(taskId))) {
+      return { taskId, upstreamTasks: [], downstreamTasks: [], dependencies: [] };
+    }
     const dependencies = await this.store.getDependencies(taskId);
     const upstreamTaskIds = new Set<string>();
     const downstreamTaskIds = new Set<string>();
@@ -1022,11 +1170,11 @@ export class CriticalPathEngine {
     }
 
     const upstreamTasks = (
-      await Promise.all(Array.from(upstreamTaskIds).map((id) => this.store.getTask(id)))
+      await Promise.all(Array.from(upstreamTaskIds).map((id) => this.getTask(id)))
     ).filter((t): t is Task => t !== null);
 
     const downstreamTasks = (
-      await Promise.all(Array.from(downstreamTaskIds).map((id) => this.store.getTask(id)))
+      await Promise.all(Array.from(downstreamTaskIds).map((id) => this.getTask(id)))
     ).filter((t): t is Task => t !== null);
 
     return {
@@ -1064,7 +1212,11 @@ export class CriticalPathEngine {
       throw new ValidationError('Logged hours must be a positive number.');
     }
 
-    const task = await this.store.getTask(entry.taskId);
+    const task = await this.getTask(entry.taskId);
+    if (this.enforcing) {
+      if (!task) throw new NotFoundError(`Task "${entry.taskId}" not found.`);
+      await this.requireProjectAccess('time.log', task.projectId);
+    }
     if (task) {
       const newLoggedHours = (task.loggedHours || 0) + entry.hours;
       const newActualHours = (task.actualHours || 0) + entry.hours;
@@ -1100,16 +1252,34 @@ export class CriticalPathEngine {
 
   // --- Comments ---
   async getComments(taskId: string): Promise<Comment[]> {
+    if (this.enforcing && !(await this.getTask(taskId))) return [];
     return this.store.getComments(taskId);
   }
 
   async getComment(id: string): Promise<Comment | null> {
-    return this.store.getComment(id);
+    const comment = await this.store.getComment(id);
+    if (!comment) return null;
+    return (await this.canReadProject(await this.projectIdOfTask(comment.taskId))) ? comment : null;
+  }
+
+  async getActivities(filter?: { projectId?: string; taskId?: string }): Promise<Activity[]> {
+    const activities = await this.store.getActivities(filter);
+    return this.filterReadable(activities, (a) => a.projectId ?? this.projectIdOfTask(a.taskId));
+  }
+
+  async getTimeEntries(taskId: string): Promise<TimeEntry[]> {
+    if (this.enforcing && !(await this.getTask(taskId))) return [];
+    return this.store.getTimeEntries(taskId);
   }
 
   async addComment(
     input: Omit<Comment, 'id' | 'createdAt' | 'updatedAt' | 'authorId'> & { authorId?: string }
   ): Promise<Comment> {
+    if (this.enforcing) {
+      const task = await this.getTask(input.taskId);
+      if (!task) throw new NotFoundError(`Task "${input.taskId}" not found.`);
+      await this.requireProjectAccess('comment.create', task.projectId);
+    }
     const comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'> = this.actor
       ? { ...input, authorId: this.actor.userId, authorType: this.actor.actorType ?? 'user' }
       : { ...input, authorId: input.authorId ?? 'system' };
@@ -1132,8 +1302,12 @@ export class CriticalPathEngine {
   }
 
   async updateComment(id: string, updates: Partial<Comment>): Promise<Comment | null> {
-    const existing = await this.store.getComment(id);
+    const existing = await this.getComment(id);
     if (!existing) return null;
+    await this.requireProjectAccess('comment.moderate', await this.projectIdOfTask(existing.taskId), {
+      type: 'comment',
+      ownerId: existing.authorId
+    });
 
     const mentions = updates.mentions ?? (updates.content ? extractMentions(updates.content) : undefined);
     const toUpdate = mentions !== undefined ? { ...updates, mentions } : updates;
@@ -1157,8 +1331,12 @@ export class CriticalPathEngine {
   }
 
   async deleteComment(id: string): Promise<boolean> {
-    const existing = await this.store.getComment(id);
+    const existing = await this.getComment(id);
     if (!existing) return false;
+    await this.requireProjectAccess('comment.moderate', await this.projectIdOfTask(existing.taskId), {
+      type: 'comment',
+      ownerId: existing.authorId
+    });
 
     const deleted = await this.store.deleteComment(id);
     if (deleted) {
@@ -1180,8 +1358,9 @@ export class CriticalPathEngine {
 
   async addCommentReaction(commentId: string, input: { emoji: string; userId?: string }): Promise<Comment | null> {
     const reaction = { emoji: input.emoji, userId: this.actor?.userId ?? input.userId ?? 'system' };
-    const existing = await this.store.getComment(commentId);
+    const existing = await this.getComment(commentId);
     if (!existing) return null;
+    await this.requireProjectAccess('comment.create', await this.projectIdOfTask(existing.taskId));
 
     let updated: Comment | null;
     if (this.store.addReaction) {
@@ -1226,8 +1405,9 @@ export class CriticalPathEngine {
 
   async removeCommentReaction(commentId: string, input: { emoji: string; userId?: string }): Promise<Comment | null> {
     const reaction = { emoji: input.emoji, userId: this.actor?.userId ?? input.userId ?? 'system' };
-    const existing = await this.store.getComment(commentId);
+    const existing = await this.getComment(commentId);
     if (!existing) return null;
+    await this.requireProjectAccess('comment.create', await this.projectIdOfTask(existing.taskId));
 
     let updated: Comment | null;
     if (this.store.removeReaction) {
@@ -1258,7 +1438,9 @@ export class CriticalPathEngine {
 
   // --- Attachments ---
   async getAttachments(filter?: { taskId?: string; projectId?: string; commentId?: string; artifactType?: string }): Promise<Attachment[]> {
-    const attachments = await this.store.getAttachments(filter);
+    const attachments = await this.filterReadable(await this.store.getAttachments(filter), (a) =>
+      this.projectIdOfAttachment(a)
+    );
     if (filter?.artifactType) {
       return attachments.filter(a => a.artifactType === filter.artifactType);
     }
@@ -1266,12 +1448,22 @@ export class CriticalPathEngine {
   }
 
   async getAttachment(id: string): Promise<Attachment | null> {
-    return this.store.getAttachment(id);
+    const attachment = await this.store.getAttachment(id);
+    if (!attachment) return null;
+    return (await this.canReadProject(await this.projectIdOfAttachment(attachment))) ? attachment : null;
+  }
+
+  private async requireAttachmentCreate(link: { projectId?: string; taskId?: string; commentId?: string }): Promise<void> {
+    if (!this.enforcing) return;
+    const projectId = await this.projectIdOfAttachment(link);
+    if (!projectId) throw new ValidationError('Attachments must reference a project, task or comment.');
+    await this.requireProjectAccess('attachment.create', projectId);
   }
 
   async createAttachment(
     input: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt' | 'uploaderId'> & { uploaderId?: string }
   ): Promise<Attachment> {
+    await this.requireAttachmentCreate(input);
     const attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'> = this.actor
       ? { ...input, uploaderId: this.actor.userId, uploaderType: this.actor.actorType ?? 'user' }
       : { ...input, uploaderId: input.uploaderId ?? 'system' };
@@ -1294,8 +1486,12 @@ export class CriticalPathEngine {
   }
 
   async deleteAttachment(id: string): Promise<boolean> {
-    const existing = await this.store.getAttachment(id);
+    const existing = await this.getAttachment(id);
     if (!existing) return false;
+    await this.requireProjectAccess('attachment.delete', await this.projectIdOfAttachment(existing), {
+      type: 'attachment',
+      ownerId: existing.uploaderId
+    });
 
     if (existing.storageKey && this.fileStorage) {
       try {
@@ -1337,6 +1533,8 @@ export class CriticalPathEngine {
     if (!this.fileStorage) {
       throw new Error('No FileStorageAdapter configured in CriticalPathEngine. Pass "fileStorage" in config to enable direct file uploads.');
     }
+    // Check before uploading so denied requests do not leave orphaned files behind.
+    await this.requireAttachmentCreate(input);
 
     const uploadResult = await this.fileStorage.upload({
       filename: input.filename,
@@ -1394,24 +1592,41 @@ export class CriticalPathEngine {
     throw new Error(`Cannot read attachment "${id}": no valid storageKey or URL found.`);
   }
 
-  async getPresignedAttachmentUploadUrl(options: PresignedUrlOptions): Promise<PresignedUploadResult> {
+  async getPresignedAttachmentUploadUrl(
+    options: PresignedUrlOptions & { projectId?: string }
+  ): Promise<PresignedUploadResult> {
     if (!this.fileStorage || !this.fileStorage.getPresignedUploadUrl) {
       throw new Error('Presigned uploads are not supported by the configured FileStorageAdapter.');
     }
-    return this.fileStorage.getPresignedUploadUrl(options);
+    const { projectId, ...presign } = options;
+    if (this.enforcing) {
+      // Scoped callers may only write under their project's prefix.
+      if (!projectId) throw new ValidationError('projectId is required for presigned uploads.');
+      await this.requireProjectAccess('attachment.create', projectId);
+      const prefix = `projects/${projectId}/`;
+      const key = presign.storageKey.replace(/^\/+/, '');
+      if (key.split('/').some((segment) => segment === '..' || segment === '.')) {
+        throw new ValidationError('storageKey must not contain "." or ".." segments.');
+      }
+      presign.storageKey = key.startsWith(prefix) ? key : prefix + key;
+    }
+    return this.fileStorage.getPresignedUploadUrl(presign);
   }
 
   // --- Teams ---
   async getTeams(): Promise<Team[]> {
-    return this.store.getTeams();
+    const teams = await this.store.getTeams();
+    return teams.filter((t) => this.inActorTenant(t));
   }
 
   async getTeam(id: string): Promise<Team | null> {
-    return this.store.getTeam(id);
+    const team = await this.store.getTeam(id);
+    return team && this.inActorTenant(team) ? team : null;
   }
 
   async createTeam(team: Omit<Team, 'id' | 'createdAt' | 'updatedAt'>): Promise<Team> {
-    const created = await this.store.createTeam(team);
+    await this.requireWorkspaceAccess('workspace.manage');
+    const created = await this.store.createTeam({ ...team, tenantId: this.actor ? this.actor.tenantId : team.tenantId });
     const now = new Date().toISOString();
 
     const event: TeamCreatedEvent = {
@@ -1429,23 +1644,31 @@ export class CriticalPathEngine {
   }
 
   async updateTeam(id: string, updates: Partial<Team>): Promise<Team | null> {
-    return this.store.updateTeam(id, updates);
+    if (!(await this.getTeam(id))) return null;
+    await this.requireWorkspaceAccess('workspace.manage');
+    return this.store.updateTeam(id, this.withoutTenant(updates));
   }
 
   async deleteTeam(id: string): Promise<boolean> {
+    if (!(await this.getTeam(id))) return false;
+    await this.requireWorkspaceAccess('workspace.manage');
     return this.store.deleteTeam(id);
   }
 
   // --- Containers ---
   async getContainers(projectId: string): Promise<TaskContainer[]> {
+    if (!(await this.canReadProject(projectId))) return [];
     return this.store.getContainers(projectId);
   }
 
   async getContainer(id: string): Promise<TaskContainer | null> {
-    return this.store.getContainer(id);
+    const container = await this.store.getContainer(id);
+    if (!container) return null;
+    return (await this.canReadProject(container.projectId)) ? container : null;
   }
 
   async createContainer(container: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer> {
+    await this.requireProjectAccess('plan.manage', container.projectId);
     const created = await this.store.createContainer(container);
     const now = new Date().toISOString();
 
@@ -1464,23 +1687,33 @@ export class CriticalPathEngine {
   }
 
   async updateContainer(id: string, updates: Partial<TaskContainer>): Promise<TaskContainer | null> {
+    const existing = await this.getContainer(id);
+    if (!existing) return null;
+    await this.requireProjectAccess('plan.manage', existing.projectId);
     return this.store.updateContainer(id, updates);
   }
 
   async deleteContainer(id: string): Promise<boolean> {
+    const existing = await this.getContainer(id);
+    if (!existing) return false;
+    await this.requireProjectAccess('plan.manage', existing.projectId);
     return this.store.deleteContainer(id);
   }
 
   // --- Deliverables ---
   async getDeliverables(projectId: string): Promise<Deliverable[]> {
+    if (!(await this.canReadProject(projectId))) return [];
     return this.store.getDeliverables(projectId);
   }
 
   async getDeliverable(id: string): Promise<Deliverable | null> {
-    return this.store.getDeliverable(id);
+    const deliverable = await this.store.getDeliverable(id);
+    if (!deliverable) return null;
+    return (await this.canReadProject(deliverable.projectId)) ? deliverable : null;
   }
 
   async createDeliverable(input: CreateDeliverableInput): Promise<Deliverable> {
+    await this.requireProjectAccess('plan.manage', input.projectId);
     const project = await this.store.getProject(input.projectId);
     if (project?.customFieldDefinitions && input.customFields) {
       validateCustomFieldValues(project.customFieldDefinitions, input.customFields);
@@ -1515,8 +1748,9 @@ export class CriticalPathEngine {
   }
 
   async updateDeliverable(id: string, updates: Partial<Deliverable>): Promise<Deliverable | null> {
-    const existing = await this.store.getDeliverable(id);
+    const existing = await this.getDeliverable(id);
     if (!existing) return null;
+    await this.requireProjectAccess('plan.manage', existing.projectId);
 
     if (updates.status && updates.status === 'delivered' && !existing.deliveredAt && !updates.deliveredAt) {
       updates.deliveredAt = new Date().toISOString();
@@ -1569,8 +1803,9 @@ export class CriticalPathEngine {
   }
 
   async deleteDeliverable(id: string): Promise<boolean> {
-    const existing = await this.store.getDeliverable(id);
+    const existing = await this.getDeliverable(id);
     if (!existing) return false;
+    await this.requireProjectAccess('plan.manage', existing.projectId);
 
     const deleted = await this.store.deleteDeliverable(id);
     if (deleted) {
@@ -1597,7 +1832,7 @@ export class CriticalPathEngine {
   }
 
   async getDeliverableSummary(deliverableId: string): Promise<DeliverableSummary | null> {
-    const deliverable = await this.store.getDeliverable(deliverableId);
+    const deliverable = await this.getDeliverable(deliverableId);
     if (!deliverable) return null;
 
     const project = await this.store.getProject(deliverable.projectId);
@@ -1645,14 +1880,18 @@ export class CriticalPathEngine {
 
   // --- Iterations ---
   async getIterations(projectId: string): Promise<Iteration[]> {
+    if (!(await this.canReadProject(projectId))) return [];
     return this.store.getIterations(projectId);
   }
 
   async getIteration(id: string): Promise<Iteration | null> {
-    return this.store.getIteration(id);
+    const iteration = await this.store.getIteration(id);
+    if (!iteration) return null;
+    return (await this.canReadProject(iteration.projectId)) ? iteration : null;
   }
 
   async createIteration(iteration: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
+    await this.requireProjectAccess('plan.manage', iteration.projectId);
     const created = await this.store.createIteration(iteration);
     if (created.status === 'active') {
       const now = new Date().toISOString();
@@ -1671,8 +1910,9 @@ export class CriticalPathEngine {
   }
 
   async updateIteration(id: string, updates: Partial<Iteration>): Promise<Iteration | null> {
-    const existing = await this.store.getIteration(id);
+    const existing = await this.getIteration(id);
     if (!existing) return null;
+    await this.requireProjectAccess('plan.manage', existing.projectId);
 
     const updated = await this.store.updateIteration(id, updates);
     if (updated) {
@@ -1705,6 +1945,9 @@ export class CriticalPathEngine {
   }
 
   async deleteIteration(id: string): Promise<boolean> {
+    const existing = await this.getIteration(id);
+    if (!existing) return false;
+    await this.requireProjectAccess('plan.manage', existing.projectId);
     return this.store.deleteIteration(id);
   }
 
@@ -1713,6 +1956,7 @@ export class CriticalPathEngine {
     projectId: string,
     options: CPMOptions = {}
   ): Promise<CriticalPathAnalysis> {
+    await this.requireProjectAccess('project.read', projectId);
     const project = await this.store.getProject(projectId);
     const tasks = await this.store.getTasks(projectId);
     const allDepArrays = await Promise.all(tasks.map((t) => this.store.getDependencies(t.id)));
@@ -1735,6 +1979,7 @@ export class CriticalPathEngine {
     projectId: string,
     options: TimelineLadderOptions = {}
   ): Promise<TimelineLadder> {
+    await this.requireProjectAccess('project.read', projectId);
     const project = await this.store.getProject(projectId);
     if (!project) {
       throw new NotFoundError(`Project with ID "${projectId}" not found.`);
@@ -1791,7 +2036,7 @@ export class CriticalPathEngine {
   }
 
   async getTaskLadder(taskId: string): Promise<TaskLadderView | null> {
-    const task = await this.store.getTask(taskId);
+    const task = await this.getTask(taskId);
     if (!task) return null;
 
     const project = await this.store.getProject(task.projectId);
@@ -1815,7 +2060,7 @@ export class CriticalPathEngine {
   }
 
   async getTaskMetrics(taskId: string, options?: MetricOptions): Promise<TaskMetrics | null> {
-    const task = await this.store.getTask(taskId);
+    const task = await this.getTask(taskId);
     if (!task) return null;
 
     const [activities, timeEntries, project, workflow] = await Promise.all([
@@ -1834,7 +2079,7 @@ export class CriticalPathEngine {
   }
 
   async getTaskProgressHistory(taskId: string, options?: MetricOptions): Promise<TaskProgressHistory | null> {
-    const task = await this.store.getTask(taskId);
+    const task = await this.getTask(taskId);
     if (!task) return null;
 
     const [activities, project, workflow] = await Promise.all([
@@ -1855,8 +2100,9 @@ export class CriticalPathEngine {
     projectId?: string,
     options: WorkloadDistributionOptions = {}
   ): Promise<WorkloadDistribution> {
-    const tasks = await this.store.getTasks(projectId);
-    const teams = await this.store.getTeams();
+    if (projectId) await this.requireProjectAccess('project.read', projectId);
+    const tasks = await this.getTasks(projectId);
+    const teams = await this.getTeams();
     const project = projectId ? await this.store.getProject(projectId) : undefined;
     const schedule = options.schedule || project?.schedule || this.config.defaultSchedule;
 
