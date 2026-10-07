@@ -1,5 +1,6 @@
 /// <reference types="svelte" />
 import type { CriticalPathClient } from '@critical-path/client';
+import { LatestRequest } from './latest-request.js';
 import type {
   WorkloadDistribution,
   WorkloadDistributionOptions,
@@ -10,6 +11,7 @@ import type {
 } from '@critical-path/core';
 
 export class WorkloadState {
+  #fetchRequest = new LatestRequest();
   data = $state<WorkloadDistribution | null>(null);
   interval = $state<WorkloadInterval>('week');
   groupBy = $state<WorkloadGroupBy>('assignee');
@@ -56,21 +58,29 @@ export class WorkloadState {
   }
 
   async fetch(options?: WorkloadDistributionOptions) {
+    const { api, signal } = this.#fetchRequest.begin(this.client);
     this.loading = true;
     this.error = null;
     try {
-      this.data = await this.client.getWorkloadDistribution(this.projectId, {
+      this.data = await api.getWorkloadDistribution(this.projectId, {
         ...this.initialOptions,
         interval: this.interval,
         groupBy: this.groupBy,
         metric: this.metric,
         ...options
       });
+      if (signal.aborted) return;
     } catch (err) {
+      if (signal.aborted) return;
       this.error = err instanceof Error ? err : new Error(String(err));
     } finally {
-      this.loading = false;
+      if (!signal.aborted) this.loading = false;
     }
+  }
+
+  /** Cancels in-flight requests, e.g. from a component's onDestroy. */
+  destroy() {
+    this.#fetchRequest.cancel();
   }
 }
 

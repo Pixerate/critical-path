@@ -202,6 +202,19 @@ Fluidly traverse between Macro phase health, Standard Gantt tasks with CPM criti
 
 ---
 
+## 🧹 Stale Requests & Cleanup
+
+Each state class aborts its previous request when `fetch()` (or `fetchMetrics()`, ...) is called again, so the newest call always wins. Call `destroy()` when a component goes away to cancel anything still in flight:
+
+```svelte
+<script lang="ts">
+  import { onDestroy } from 'svelte';
+  const tasks = createTaskState(client, projectId);
+  onDestroy(() => tasks.destroy());
+</script>
+```
+
+
 ## 📄 License
 
 MIT © [Critical Path](https://github.com/Pixerate/Critical-Path)

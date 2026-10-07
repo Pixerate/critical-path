@@ -1,7 +1,9 @@
 /// <reference types="svelte" />
 import type { CriticalPathClient } from '@critical-path/client';
+import { LatestRequest } from './latest-request.js';
 
 export class TaskTransitionsState {
+  #fetchRequest = new LatestRequest();
   allowedTransitions = $state<string[]>([]);
   loading = $state<boolean>(false);
   error = $state<Error | null>(null);
@@ -9,6 +11,7 @@ export class TaskTransitionsState {
   constructor(private client: CriticalPathClient, public taskId?: string) {}
 
   async fetch(taskId?: string) {
+    const { api, signal } = this.#fetchRequest.begin(this.client);
     const targetTaskId = taskId || this.taskId;
     if (!targetTaskId) {
       this.allowedTransitions = [];
@@ -19,12 +22,19 @@ export class TaskTransitionsState {
     this.loading = true;
     this.error = null;
     try {
-      this.allowedTransitions = await this.client.getAllowedTaskTransitions(targetTaskId);
+      this.allowedTransitions = await api.getAllowedTaskTransitions(targetTaskId);
+      if (signal.aborted) return;
     } catch (err) {
+      if (signal.aborted) return;
       this.error = err instanceof Error ? err : new Error(String(err));
     } finally {
-      this.loading = false;
+      if (!signal.aborted) this.loading = false;
     }
+  }
+
+  /** Cancels in-flight requests, e.g. from a component's onDestroy. */
+  destroy() {
+    this.#fetchRequest.cancel();
   }
 }
 

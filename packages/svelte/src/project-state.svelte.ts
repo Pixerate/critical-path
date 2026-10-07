@@ -1,8 +1,10 @@
 /// <reference types="svelte" />
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Project } from '@critical-path/core';
+import { LatestRequest } from './latest-request.js';
 
 export class ProjectState {
+  #fetchRequest = new LatestRequest();
   data = $state<Project[]>([]);
   loading = $state<boolean>(false);
   error = $state<Error | null>(null);
@@ -10,14 +12,17 @@ export class ProjectState {
   constructor(private client: CriticalPathClient) {}
 
   async fetch() {
+    const { api, signal } = this.#fetchRequest.begin(this.client);
     this.loading = true;
     this.error = null;
     try {
-      this.data = await this.client.getProjects();
+      this.data = await api.getProjects();
+      if (signal.aborted) return;
     } catch (err) {
+      if (signal.aborted) return;
       this.error = err instanceof Error ? err : new Error(String(err));
     } finally {
-      this.loading = false;
+      if (!signal.aborted) this.loading = false;
     }
   }
 
@@ -46,6 +51,11 @@ export class ProjectState {
       this.error = errorObj;
       throw errorObj;
     }
+  }
+
+  /** Cancels in-flight requests, e.g. from a component's onDestroy. */
+  destroy() {
+    this.#fetchRequest.cancel();
   }
 }
 

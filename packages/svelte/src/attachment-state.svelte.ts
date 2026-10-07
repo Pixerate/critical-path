@@ -1,6 +1,7 @@
 /// <reference types="svelte" />
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Attachment } from '@critical-path/core';
+import { LatestRequest } from './latest-request.js';
 
 export interface AttachmentFilter {
   taskId?: string;
@@ -9,6 +10,7 @@ export interface AttachmentFilter {
 }
 
 export class AttachmentState {
+  #fetchRequest = new LatestRequest();
   data = $state<Attachment[]>([]);
   loading = $state<boolean>(false);
   error = $state<Error | null>(null);
@@ -16,17 +18,20 @@ export class AttachmentState {
   constructor(private client: CriticalPathClient, public filter?: AttachmentFilter) {}
 
   async fetch(filter?: AttachmentFilter) {
+    const { api, signal } = this.#fetchRequest.begin(this.client);
     if (filter) {
       this.filter = filter;
     }
     this.loading = true;
     this.error = null;
     try {
-      this.data = await this.client.getAttachments(this.filter);
+      this.data = await api.getAttachments(this.filter);
+      if (signal.aborted) return;
     } catch (err) {
+      if (signal.aborted) return;
       this.error = err instanceof Error ? err : new Error(String(err));
     } finally {
-      this.loading = false;
+      if (!signal.aborted) this.loading = false;
     }
   }
 
@@ -53,6 +58,11 @@ export class AttachmentState {
       this.error = errorObj;
       throw errorObj;
     }
+  }
+
+  /** Cancels in-flight requests, e.g. from a component's onDestroy. */
+  destroy() {
+    this.#fetchRequest.cancel();
   }
 }
 

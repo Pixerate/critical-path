@@ -2,8 +2,10 @@
 import type { CreateTaskBody, UpdateTaskBody } from '@critical-path/core/schemas';
 import type { CriticalPathClient } from '@critical-path/client';
 import { type Task, type TaskStatus, isTempTaskId } from '@critical-path/core';
+import { LatestRequest } from './latest-request.js';
 
 export class TaskState {
+  #fetchRequest = new LatestRequest();
   data = $state<Task[]>([]);
   loading = $state<boolean>(false);
   error = $state<Error | null>(null);
@@ -17,14 +19,17 @@ export class TaskState {
   ) {}
 
   async fetch() {
+    const { api, signal } = this.#fetchRequest.begin(this.client);
     this.loading = true;
     this.error = null;
     try {
-      this.data = await this.client.getTasks(this.projectId);
+      this.data = await api.getTasks(this.projectId);
+      if (signal.aborted) return;
     } catch (err) {
+      if (signal.aborted) return;
       this.error = err instanceof Error ? err : new Error(String(err));
     } finally {
-      this.loading = false;
+      if (!signal.aborted) this.loading = false;
     }
   }
 
@@ -184,6 +189,11 @@ export class TaskState {
       this.error = errorObj;
       throw errorObj;
     }
+  }
+
+  /** Cancels in-flight requests, e.g. from a component's onDestroy. */
+  destroy() {
+    this.#fetchRequest.cancel();
   }
 }
 

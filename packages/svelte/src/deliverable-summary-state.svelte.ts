@@ -1,8 +1,10 @@
 /// <reference types="svelte" />
 import type { CriticalPathClient } from '@critical-path/client';
 import type { DeliverableSummary } from '@critical-path/core';
+import { LatestRequest } from './latest-request.js';
 
 export class DeliverableSummaryState {
+  #fetchRequest = new LatestRequest();
   summary = $state<DeliverableSummary | null>(null);
   loading = $state<boolean>(false);
   error = $state<Error | null>(null);
@@ -14,6 +16,7 @@ export class DeliverableSummaryState {
   constructor(private client: CriticalPathClient, public deliverableId?: string) {}
 
   async fetch(deliverableId?: string) {
+    const { api, signal } = this.#fetchRequest.begin(this.client);
     const targetId = deliverableId || this.deliverableId;
     if (!targetId) {
       this.summary = null;
@@ -24,12 +27,19 @@ export class DeliverableSummaryState {
     this.loading = true;
     this.error = null;
     try {
-      this.summary = await this.client.getDeliverableSummary(targetId);
+      this.summary = await api.getDeliverableSummary(targetId);
+      if (signal.aborted) return;
     } catch (err) {
+      if (signal.aborted) return;
       this.error = err instanceof Error ? err : new Error(String(err));
     } finally {
-      this.loading = false;
+      if (!signal.aborted) this.loading = false;
     }
+  }
+
+  /** Cancels in-flight requests, e.g. from a component's onDestroy. */
+  destroy() {
+    this.#fetchRequest.cancel();
   }
 }
 
