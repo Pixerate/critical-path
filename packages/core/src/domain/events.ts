@@ -124,6 +124,11 @@ export interface TaskDependencyAddedEvent extends DomainEvent<{ dependency: Task
   readonly aggregateType: 'Dependency';
 }
 
+export interface TaskDependencyRemovedEvent extends DomainEvent<{ dependency: TaskDependency }> {
+  readonly name: 'dependency.removed';
+  readonly aggregateType: 'Dependency';
+}
+
 export interface ProjectCreatedEvent extends DomainEvent<{ project: Project }> {
   readonly name: 'project.created';
   readonly aggregateType: 'Project';
@@ -210,6 +215,7 @@ export type CriticalPathDomainEvent =
   | AttachmentCreatedEvent
   | AttachmentDeletedEvent
   | TaskDependencyAddedEvent
+  | TaskDependencyRemovedEvent
   | ProjectCreatedEvent
   | ProjectUpdatedEvent
   | ProjectDeletedEvent
@@ -288,6 +294,7 @@ export const DOMAIN_EVENT_NAMES = [
   'deliverable.status_changed',
   'deliverable.updated',
   'dependency.added',
+  'dependency.removed',
   'iteration.completed',
   'iteration.started',
   'project.created',

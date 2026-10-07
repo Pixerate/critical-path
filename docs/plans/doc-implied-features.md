@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`.
+Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`.
 
 Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
@@ -165,6 +165,17 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - SQLite: wrap in a transaction; Firestore: chunked batches of ≤500.
 
 **Tests**: belongs in the store conformance suite (see below).
+
+**Implemented**:
+- **New store methods:** `getDependency`, `removeDependency` and `deleteTimeEntry`, implemented as required methods.
+- **`deleteTask`:** cascades to subtasks recursively (or detaches them with `subtasks: 'detach'`), dependencies, comments, attachments with their files (including comment attachments), and time entries.
+- **`deleteProject`:** also removes containers, iterations, deliverables and project attachments. `deletedTaskIds` now includes subtasks.
+- **Clearing references:** deleting a container, iteration or deliverable clears the reference on its tasks, and nested containers are detached.
+- **`removeDependency`:** new engine method, `DELETE /tasks/:id/dependencies/:depId` route, `dependency.removed` event, and a client method.
+- **Bugs fixed by the tests,** which run against all three adapters:
+  - SQLite returned `null` for unset fields.
+  - Firestore updates could not clear fields; for example, a reopened task stayed completed.
+- **No transactions:** cascades are ordered child-first and idempotent instead, since the store has no transaction API. A transaction hook is a follow-up.
 
 ---
 

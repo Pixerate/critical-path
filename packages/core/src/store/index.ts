@@ -92,11 +92,15 @@ export interface ActivityRepository {
 export interface TimeEntryRepository {
   getTimeEntries(taskId: string): Promise<TimeEntry[]>;
   logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string }): Promise<TimeEntry>;
+  deleteTimeEntry(id: string): Promise<boolean>;
 }
 
 export interface DependencyRepository {
+  /** Dependencies where `taskId` is either the dependent or the upstream task. */
   getDependencies(taskId: string): Promise<TaskDependency[]>;
+  getDependency(id: string): Promise<TaskDependency | null>;
   addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency>;
+  removeDependency(id: string): Promise<boolean>;
 }
 
 export interface WebhookRepository {
@@ -522,6 +526,10 @@ export class InMemoryStore implements StorageAdapter {
     return newEntry;
   }
 
+  async deleteTimeEntry(id: string): Promise<boolean> {
+    return this.timeEntries.delete(id);
+  }
+
   // Dependencies
   async getDependencies(taskId: string): Promise<TaskDependency[]> {
     return Array.from(this.dependencies.values()).filter(
@@ -529,11 +537,19 @@ export class InMemoryStore implements StorageAdapter {
     );
   }
 
+  async getDependency(id: string): Promise<TaskDependency | null> {
+    return this.dependencies.get(id) ?? null;
+  }
+
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
     const id = `dep_${Math.random().toString(36).substring(2, 9)}`;
     const newDep: TaskDependency = { ...dep, id };
     this.dependencies.set(id, newDep);
     return newDep;
+  }
+
+  async removeDependency(id: string): Promise<boolean> {
+    return this.dependencies.delete(id);
   }
 
   // Webhooks

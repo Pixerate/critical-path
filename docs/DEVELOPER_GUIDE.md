@@ -216,7 +216,7 @@ All endpoints return JSON responses.
 - `POST /api/critical-path/projects` - Create project.
 - `GET /api/critical-path/projects/:id` - Get project by ID.
 - `PATCH /api/critical-path/projects/:id` - Update project (`id`, `createdAt`, `updatedAt` are rejected with `400`).
-- `DELETE /api/critical-path/projects/:id` - Delete project and its tasks (publishes `task.deleted` per task, then `project.deleted`).
+- `DELETE /api/critical-path/projects/:id` - Delete project with its tasks, containers, iterations, deliverables and attachments (publishes `task.deleted` per task, then `project.deleted`).
 
 ### Deliverables
 - `GET /api/critical-path/deliverables?projectId=:id` - List deliverables for project.
@@ -238,7 +238,8 @@ All endpoints return JSON responses.
 - `POST /api/critical-path/tasks` - Create task.
 - `GET /api/critical-path/tasks/:id` - Get task by ID.
 - `PATCH /api/critical-path/tasks/:id` - Update task (enforces workflow transition rules; returns HTTP 400 on illegal transitions).
-- `DELETE /api/critical-path/tasks/:id` - Delete task.
+- `DELETE /api/critical-path/tasks/:id` - Delete task with its subtasks, dependencies, comments, attachments (and files) and time entries. `?subtasks=detach` keeps subtasks.
+- `DELETE /api/critical-path/tasks/:id/dependencies/:dependencyId` - Remove a dependency (`dependency.removed` event).
 - `GET /api/critical-path/tasks/:id/transitions` - Get allowed next statuses for task.
 - `POST /api/critical-path/tasks/:id/dependencies` - Add dependency `{ dependsOnTaskId, type? }` (HTTP 409 if it would create a cycle, including indirect ones).
 

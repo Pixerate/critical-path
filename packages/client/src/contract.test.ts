@@ -32,7 +32,14 @@ describe('client ↔ server contract', () => {
     const task = await client.createTask({ projectId: project.id, title: 'Wire it up' });
     expect(task.reporterId).toBe('alice');
     const other = await client.createTask({ projectId: project.id, title: 'Upstream' });
-    await client.addDependency(task.id, { dependsOnTaskId: other.id });
+    const dependency = await client.addDependency(task.id, { dependsOnTaskId: other.id });
+    const unrelated = await client.createTask({ projectId: project.id, title: 'Unrelated' });
+    expect(await client.removeDependency(unrelated.id, dependency.id)).toBe(false);
+    expect(await client.removeDependency(task.id, dependency.id)).toBe(true);
+
+    const child = await client.createTask({ projectId: project.id, title: 'Child', parentId: other.id });
+    expect(await client.deleteTask(other.id, { subtasks: 'detach' })).toBe(true);
+    expect((await client.getTask(child.id)).parentId).toBeUndefined();
 
     await client.addTodo(task.id, 'Write tests');
     const toggled = await client.toggleTodo(task.id, 'Write tests', true);

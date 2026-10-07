@@ -61,6 +61,7 @@ import {
   ProjectCreatedEvent,
   ProjectUpdatedEvent,
   ProjectDeletedEvent,
+  TaskDependencyRemovedEvent,
   WorkflowCreatedEvent,
   WorkflowUpdatedEvent,
   WorkflowDeletedEvent,
@@ -523,12 +524,18 @@ export class CriticalPathEngine {
     const cascade = this.elevated();
 
     const tasks = await this.store.getTasks(id);
-    const deletedTaskIds: string[] = [];
     for (const task of tasks) {
-      if (await cascade.deleteTask(task.id)) {
-        deletedTaskIds.push(task.id);
-      }
+      // Subtasks may already be gone with their parent; deleteTask then returns false.
+      await cascade.deleteTask(task.id);
     }
+    const deletedTaskIds = (
+      await Promise.all(tasks.map(async (t) => ((await this.store.getTask(t.id)) ? null : t.id)))
+    ).filter((taskId): taskId is string => taskId !== null);
+
+    for (const container of await this.store.getContainers(id)) await this.store.deleteContainer(container.id);
+    for (const iteration of await this.store.getIterations(id)) await this.store.deleteIteration(iteration.id);
+    for (const deliverable of await this.store.getDeliverables(id)) await cascade.deleteDeliverable(deliverable.id);
+    for (const attachment of await this.store.getAttachments({ projectId: id })) await cascade.deleteAttachment(attachment.id);
 
     const deleted = await this.store.deleteProject(id);
     if (deleted) {
@@ -1066,12 +1073,18 @@ export class CriticalPathEngine {
     }
   }
 
-  async deleteTask(id: string): Promise<boolean> {
+  /**
+   * Deletes a task and everything that belongs to it: subtasks (or, with `subtasks: 'detach'`,
+   * their parent link), dependencies, comments, attachments (including stored files) and time
+   * entries. The activity log is kept as an audit trail.
+   */
+  async deleteTask(id: string, options: { subtasks?: 'delete' | 'detach' } = {}): Promise<boolean> {
     const existing = await this.getTask(id);
     if (!existing) return false;
     await this.requireProjectAccess('task.delete', existing.projectId);
 
     await this.plugins.runBeforeTaskDelete(id, existing);
+    await this.deleteTaskChildren(existing, options.subtasks ?? 'delete');
     const deleted = await this.store.deleteTask(id);
 
     if (deleted) {
@@ -1101,6 +1114,65 @@ export class CriticalPathEngine {
       });
     }
     return deleted;
+  }
+
+  /** Removes records owned by a task; the task's deletion was already authorized. */
+  private async deleteTaskChildren(task: Task, subtasks: 'delete' | 'detach'): Promise<void> {
+    const cascade = this.elevated();
+
+    const children = (await this.store.getTasks(task.projectId)).filter((t) => t.parentId === task.id);
+    for (const child of children) {
+      if (subtasks === 'delete') {
+        await cascade.deleteTask(child.id, { subtasks });
+      } else {
+        await this.store.updateTask(child.id, { parentId: undefined });
+      }
+    }
+
+    for (const dependency of await this.store.getDependencies(task.id)) {
+      await cascade.removeDependency(dependency.id);
+    }
+
+    const comments = await this.store.getComments(task.id);
+    const attachments = [
+      ...(await this.store.getAttachments({ taskId: task.id })),
+      ...(await Promise.all(comments.map((c) => this.store.getAttachments({ commentId: c.id })))).flat()
+    ];
+    for (const attachmentId of new Set(attachments.map((a) => a.id))) {
+      await cascade.deleteAttachment(attachmentId);
+    }
+    for (const comment of comments) {
+      await cascade.deleteComment(comment.id);
+    }
+
+    for (const entry of await this.store.getTimeEntries(task.id)) {
+      await this.store.deleteTimeEntry(entry.id);
+    }
+  }
+
+  /** Removes a dependency between two tasks. Requires `task.update` on the dependent task's project. */
+  async removeDependency(id: string): Promise<boolean> {
+    const dependency = await this.store.getDependency(id);
+    if (!dependency) return false;
+    if (this.enforcing) {
+      const task = await this.getTask(dependency.taskId);
+      if (!task) return false;
+      await this.requireProjectAccess('task.update', task.projectId);
+    }
+
+    const removed = await this.store.removeDependency(id);
+    if (removed) {
+      const event: TaskDependencyRemovedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'dependency.removed',
+        aggregateId: id,
+        aggregateType: 'Dependency',
+        occurredAt: new Date().toISOString(),
+        payload: { dependency }
+      };
+      await this.events.publish(event);
+    }
+    return removed;
   }
 
   // --- Task Dependencies & Graph ---
@@ -1701,11 +1773,27 @@ export class CriticalPathEngine {
     return this.store.updateContainer(id, updates);
   }
 
+  /** Deletes a container. Its tasks and nested containers are kept but no longer reference it. */
   async deleteContainer(id: string): Promise<boolean> {
     const existing = await this.getContainer(id);
     if (!existing) return false;
     await this.requireProjectAccess('plan.manage', existing.projectId);
+    await this.clearTaskReferences(existing.projectId, 'containerId', id);
+    for (const child of (await this.store.getContainers(existing.projectId)).filter((c) => c.parentId === id)) {
+      await this.store.updateContainer(child.id, { parentId: undefined });
+    }
     return this.store.deleteContainer(id);
+  }
+
+  /** Unsets a reference (e.g. `iterationId`) on every task in the project that points at `id`. */
+  private async clearTaskReferences(
+    projectId: string,
+    field: 'containerId' | 'iterationId' | 'deliverableId',
+    id: string
+  ): Promise<void> {
+    for (const task of await this.store.getTasks(projectId)) {
+      if (task[field] === id) await this.store.updateTask(task.id, { [field]: undefined });
+    }
   }
 
   // --- Deliverables ---
@@ -1807,6 +1895,7 @@ export class CriticalPathEngine {
     const existing = await this.getDeliverable(id);
     if (!existing) return false;
     await this.requireProjectAccess('plan.manage', existing.projectId);
+    await this.clearTaskReferences(existing.projectId, 'deliverableId', id);
 
     const deleted = await this.store.deleteDeliverable(id);
     if (deleted) {
@@ -1941,10 +2030,12 @@ export class CriticalPathEngine {
     return updated;
   }
 
+  /** Deletes an iteration. Its tasks are kept and moved back to the backlog (no iteration). */
   async deleteIteration(id: string): Promise<boolean> {
     const existing = await this.getIteration(id);
     if (!existing) return false;
     await this.requireProjectAccess('plan.manage', existing.projectId);
+    await this.clearTaskReferences(existing.projectId, 'iterationId', id);
     return this.store.deleteIteration(id);
   }
 
