@@ -172,6 +172,7 @@ export function buildOpenApiDocument(options: OpenApiOptions = {}): Record<strin
         '403': errorResponse,
         '404': errorResponse,
         ...(route.path.endsWith('/dependencies') && route.method === 'post' ? { '409': errorResponse } : {}),
+        ...(route.body ? { '413': errorResponse } : {}),
         '500': errorResponse
       }
     };

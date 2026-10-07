@@ -60,6 +60,7 @@ Router options are the second argument to `createNextHandler`, `createSvelteKitH
 | :--- | :--- | :--- |
 | `getContext(request)` | none | Resolve the caller (`{ userId, userName?, actorType?, tenantId?, roles? }`). `tenantId` and `roles` feed the engine's tenant isolation and `authorize` policy. Every mutation is attributed to that user, or to `anonymous` (`ANONYMOUS_ACTOR`) when no user is resolved. Request bodies never carry identity. For SvelteKit it receives the `RequestEvent`, so `event.locals` is available. |
 | `requireAuth` | `false` | Return `401` unless `getContext` yields a `userId`. `OPTIONS` preflight is always allowed. |
+| `maxBodyBytes` | 10 MiB | Largest accepted request body; larger bodies get `413` (enforced while streaming, not just via `Content-Length`). |
 | `basePath` | strip up to first `/critical-path` | Exact mount path, e.g. `/api/pm`. Requests outside it return `404`. |
 | `cors` | `false` (no CORS headers) | `{ origins: string[] \| '*', credentials?, allowHeaders?, maxAge? }`, or `false` for no CORS headers. `credentials` cannot be combined with `'*'`. |
 | `onError`, `exposeErrors` | see below | Unexpected error reporting. |
@@ -111,6 +112,7 @@ const doc = buildOpenApiDocument({ serverUrl: 'https://app.example.com/api/criti
 | `403` | The engine's `authorize` policy denies the action (`ForbiddenError`) |
 | `404` | Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ "success": true }`) |
 | `409` | `CircularDependencyError` (body includes `cyclePath`) |
+| `413` | Request body larger than `maxBodyBytes` |
 | `500` | Unexpected errors. The body is always `{ "error": "Internal Server Error" }`; the real error is logged with `console.error`. |
 
 `OPTIONS` preflight requests return `204` with CORS headers.

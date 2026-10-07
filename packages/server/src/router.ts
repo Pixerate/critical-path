@@ -39,6 +39,13 @@ export interface CorsOptions {
   maxAge?: number;
 }
 
+class PayloadTooLargeError extends Error {
+  constructor(limit: number) {
+    super(`Request body exceeds ${limit} bytes.`);
+    this.name = 'PayloadTooLargeError';
+  }
+}
+
 class BadRequestError extends Error {
   constructor(message: string) {
     super(message);
@@ -64,6 +71,12 @@ export interface CriticalPathRouterOptions {
    * otherwise they are attributed to `ANONYMOUS_ACTOR`. Request bodies never carry identity.
    */
   getContext?: (request: Request) => RequestContext | null | undefined | Promise<RequestContext | null | undefined>;
+  /**
+   * Largest accepted request body in bytes; larger bodies get `413`. Defaults to 10 MiB, which
+   * leaves room for base64 uploads to `/attachments/upload`. Use the engine's `uploads.maxBytes`
+   * to limit file sizes themselves.
+   */
+  maxBodyBytes?: number;
   /** Reject requests with `401` unless `getContext` returns a `userId`. Defaults to `false`. */
   requireAuth?: boolean;
   /**
@@ -88,6 +101,7 @@ export class CriticalPathRouter {
   private readonly exposeErrors: boolean;
   private readonly getContext?: CriticalPathRouterOptions['getContext'];
   private readonly requireAuth: boolean;
+  private readonly maxBodyBytes: number;
   private readonly basePath?: string;
   private readonly cors: CorsOptions | false;
 
@@ -101,6 +115,7 @@ export class CriticalPathRouter {
     this.exposeErrors = options.exposeErrors ?? isDevelopment();
     this.getContext = options.getContext;
     this.requireAuth = options.requireAuth ?? false;
+    this.maxBodyBytes = options.maxBodyBytes ?? 10 * 1024 * 1024;
     this.basePath = options.basePath ? '/' + options.basePath.replace(/^\/+|\/+$/g, '') : undefined;
     this.cors = options.cors ?? false;
     if (this.cors && this.cors.origins === '*' && this.cors.credentials) {
@@ -837,9 +852,30 @@ export class CriticalPathRouter {
     return `${url.origin}${root}`;
   }
 
+  /** Reads a JSON body, stopping as soon as it exceeds `maxBodyBytes`. */
   private async readJson(request: Request): Promise<any> {
+    const declared = Number(request.headers.get('Content-Length'));
+    if (Number.isFinite(declared) && declared > this.maxBodyBytes) throw new PayloadTooLargeError(this.maxBodyBytes);
+
+    let text = '';
+    if (request.body) {
+      const reader = request.body.getReader();
+      const decoder = new TextDecoder();
+      let received = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.byteLength;
+        if (received > this.maxBodyBytes) {
+          await reader.cancel();
+          throw new PayloadTooLargeError(this.maxBodyBytes);
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+      text += decoder.decode();
+    }
     try {
-      return await request.json();
+      return JSON.parse(text);
     } catch {
       throw new BadRequestError('Request body must be valid JSON.');
     }
@@ -863,6 +899,8 @@ export class CriticalPathRouter {
         return this.jsonResponse({ error: e.message, cyclePath: e.cyclePath }, 409);
       case 'NotFoundError':
         return this.jsonResponse({ error: e.message }, 404);
+      case 'PayloadTooLargeError':
+        return this.jsonResponse({ error: e.message }, 413);
       case 'ForbiddenError':
         return this.jsonResponse({ error: e.message }, 403);
     }

@@ -378,6 +378,16 @@ export interface UploadFileInput {
   encoding?: 'base64' | 'utf-8' | 'binary';
 }
 
+export interface UploadLimits {
+  /** Largest accepted upload in bytes. Applies to direct uploads and declared `sizeBytes`. */
+  maxBytes?: number;
+  /**
+   * Accepted MIME types; entries may end in `/*` (e.g. `image/*`). Applies to uploads, presigned
+   * uploads and registered attachments. Default: any type.
+   */
+  allowedMimeTypes?: string[];
+}
+
 export interface UploadFileResult {
   storageKey: string;
   url: string;
@@ -542,6 +552,8 @@ export interface CriticalPathConfig {
   plugins?: CriticalPathPlugin[];
   /** Static webhooks (not stored or editable through the API). */
   webhooks?: Omit<Webhook, 'id' | 'createdAt'>[];
+  /** Limits applied to attachment uploads, presigned uploads and attachment registration. */
+  uploads?: UploadLimits;
   /** Delivery behaviour: queue, timeouts, retries, private URL policy, failure callbacks. */
   webhookDelivery?: import('../webhooks/dispatcher.js').WebhookDeliveryOptions;
   defaultSchedule?: WorkSchedule;
