@@ -2,6 +2,9 @@ import { CriticalPathEngine, type AuthorType, type CriticalPathConfig } from '@c
 import * as schemas from '@critical-path/core/schemas';
 import { buildOpenApiDocument } from './openapi.js';
 
+/** Actor for requests when no `getContext` is configured or it resolves no user. */
+export const ANONYMOUS_ACTOR = Object.freeze({ userId: 'anonymous', username: 'Anonymous', actorType: 'user' as const });
+
 const CORS_ALLOW_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
 const DEFAULT_CORS_ALLOW_HEADERS = ['Content-Type', 'Authorization'];
 
@@ -53,8 +56,8 @@ export interface CriticalPathRouterOptions {
   exposeErrors?: boolean;
   /**
    * Resolves the caller's identity from the request (session cookie, bearer token, etc.).
-   * When it returns a `userId`, all mutations in the request are attributed to that user and
-   * identity fields in request bodies (`actorId`, `authorId`, `userId`, ...) are ignored.
+   * When it returns a `userId`, all mutations in the request are attributed to that user;
+   * otherwise they are attributed to `ANONYMOUS_ACTOR`. Request bodies never carry identity.
    */
   getContext?: (request: Request) => RequestContext | null | undefined | Promise<RequestContext | null | undefined>;
   /** Reject requests with `401` unless `getContext` returns a `userId`. Defaults to `false`. */
@@ -64,7 +67,10 @@ export interface CriticalPathRouterOptions {
    * When omitted, everything up to the first `/critical-path` segment is stripped.
    */
   basePath?: string;
-  /** CORS policy. Defaults to `{ origins: '*' }`; pass `false` to send no CORS headers. */
+  /**
+   * CORS policy. Defaults to `false` (no CORS headers, so only same-origin browsers can call the
+   * API). Set `{ origins: [...] }` to allow specific sites, or `{ origins: '*' }` for any site.
+   */
   cors?: CorsOptions | false;
 }
 
@@ -92,7 +98,7 @@ export class CriticalPathRouter {
     this.getContext = options.getContext;
     this.requireAuth = options.requireAuth ?? false;
     this.basePath = options.basePath ? '/' + options.basePath.replace(/^\/+|\/+$/g, '') : undefined;
-    this.cors = options.cors === undefined ? { origins: '*' } : options.cors;
+    this.cors = options.cors ?? false;
     if (this.cors && this.cors.origins === '*' && this.cors.credentials) {
       throw new Error('CORS credentials cannot be combined with origins "*"; list the allowed origins instead.');
     }
@@ -170,9 +176,12 @@ export class CriticalPathRouter {
     if (this.requireAuth && !context?.userId) {
       return this.jsonResponse({ error: 'Authentication required' }, 401);
     }
-    const engine = context?.userId
-      ? this.engine.withActor({ userId: context.userId, username: context.userName, actorType: context.actorType })
-      : this.engine;
+    // Every request runs as an actor, so authorship never comes from request bodies.
+    const engine = this.engine.withActor(
+      context?.userId
+        ? { userId: context.userId, username: context.userName, actorType: context.actorType }
+        : ANONYMOUS_ACTOR
+    );
 
     try {
       // OpenAPI contract (behind the same auth as every other route)
@@ -304,7 +313,7 @@ export class CriticalPathRouter {
           }
           if (method === 'POST') {
             const body = await this.readBody(request, schemas.CreateCommentSchema, { taskId });
-            const comment = await engine.addComment({ ...body, authorId: this.requireIdentity(context, body.authorId, 'authorId') });
+            const comment = await engine.addComment(body);
             return this.jsonResponse({ comment }, 201);
           }
         } else if (subResource === 'attachments') {
@@ -314,7 +323,7 @@ export class CriticalPathRouter {
           }
           if (method === 'POST') {
             const body = await this.readBody(request, schemas.CreateAttachmentSchema, { taskId });
-            const attachment = await engine.createAttachment({ ...body, uploaderId: this.requireIdentity(context, body.uploaderId, 'uploaderId') });
+            const attachment = await engine.createAttachment(body);
             return this.jsonResponse({ attachment }, 201);
           }
         } else if (subResource === 'dependencies') {
@@ -542,24 +551,16 @@ export class CriticalPathRouter {
         if (commentId && subResource === 'reactions') {
           if (method === 'POST') {
             const body = await this.readBody(request, schemas.CommentReactionSchema);
-            const userId = this.requireIdentity(context, body.userId, 'userId');
-            const comment = await engine.addCommentReaction(commentId, { emoji: body.emoji, userId });
+            const comment = await engine.addCommentReaction(commentId, body);
             if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
             return this.jsonResponse({ comment }, 200);
           }
           if (method === 'DELETE') {
-            let body: any = {};
-            try {
-              body = await this.readJson(request);
-            } catch {
-              // Body may be empty on DELETE, fallback to searchParams
+            const emoji = url.searchParams.get('emoji');
+            if (!emoji) {
+              return this.jsonResponse({ error: 'emoji query parameter is required' }, 400);
             }
-            const emoji = body.emoji || url.searchParams.get('emoji');
-            const userId = context?.userId ?? (body.userId || url.searchParams.get('userId'));
-            if (!emoji || !userId) {
-              return this.jsonResponse({ error: 'emoji and userId are required' }, 400);
-            }
-            const comment = await engine.removeCommentReaction(commentId, { emoji, userId });
+            const comment = await engine.removeCommentReaction(commentId, { emoji });
             if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
             return this.jsonResponse({ comment }, 200);
           }
@@ -572,7 +573,7 @@ export class CriticalPathRouter {
           }
           if (method === 'POST') {
             const body = await this.readBody(request, schemas.CreateCommentSchema);
-            const comment = await engine.addComment({ ...body, authorId: this.requireIdentity(context, body.authorId, 'authorId') });
+            const comment = await engine.addComment(body);
             return this.jsonResponse({ comment }, 201);
           }
         } else {
@@ -607,7 +608,7 @@ export class CriticalPathRouter {
         } else if (attachmentId === 'upload') {
           if (method === 'POST') {
             const body = await this.readBody(request, schemas.UploadAttachmentSchema);
-            const attachment = await engine.uploadAttachmentFile({ ...body, uploaderId: this.requireIdentity(context, body.uploaderId, 'uploaderId') });
+            const attachment = await engine.uploadAttachmentFile(body);
             return this.jsonResponse({ attachment }, 201);
           }
         } else if (!attachmentId) {
@@ -620,7 +621,7 @@ export class CriticalPathRouter {
           }
           if (method === 'POST') {
             const body = await this.readBody(request, schemas.CreateAttachmentSchema);
-            const attachment = await engine.createAttachment({ ...body, uploaderId: this.requireIdentity(context, body.uploaderId, 'uploaderId') });
+            const attachment = await engine.createAttachment(body);
             return this.jsonResponse({ attachment }, 201);
           }
         } else {
@@ -722,16 +723,6 @@ export class CriticalPathRouter {
     const raw = await this.readJson(request);
     const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     return schemas.parsePayload(schema as any, { ...body, ...overrides });
-  }
-
-  /**
-   * Returns the identity to record for a write: the resolved caller when there is one, otherwise
-   * the value supplied in the body. Throws a 400 when neither is present.
-   */
-  private requireIdentity(context: RequestContext | null | undefined, claimed: string | undefined, field: string): string {
-    const identity = context?.userId ?? claimed;
-    if (!identity) throw new BadRequestError(`${field} is required`);
-    return identity;
   }
 
   /** The API root as seen by this request, e.g. `https://host/api/critical-path`. */

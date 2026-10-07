@@ -485,11 +485,7 @@ describe('CriticalPathEngine Core Tests', () => {
     });
 
     // Update with explicit actor (e.g. human user updating an assigned agent task)
-    await engine.updateTask(task.id, {
-      status: 'in_progress',
-      actorId: 'user_human_42',
-      actorName: 'Jack James'
-    });
+    await engine.updateTask(task.id, { status: 'in_progress' }, { actorId: 'user_human_42', actorName: 'Jack James' });
 
     const activities = await engine.store.getActivities({ taskId: task.id });
     const statusActivity = activities.find((a) => a.action === 'task.status_changed');

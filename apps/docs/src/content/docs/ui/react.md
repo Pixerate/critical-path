@@ -99,7 +99,7 @@ function TaskActivity({ taskId }: { taskId: string }) {
       {threads.map(thread => (
         <div key={thread.id}>
           <p>{thread.content}</p>
-          <button onClick={() => addReaction(thread.id, '👍', 'user_1')}>👍</button>
+          <button onClick={() => addReaction(thread.id, '👍')}>👍</button>
         </div>
       ))}
     </div>

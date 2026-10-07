@@ -47,11 +47,13 @@ type SameKeys<Schema, Expected> = [Exclude<keyof Schema, keyof Expected>, Exclud
 
 type Infer<S extends z.ZodTypeAny> = z.infer<S>;
 type ServerAssigned = 'id' | 'createdAt' | 'updatedAt';
-type ActorClaims = 'actorId' | 'actorName' | 'actorType' | 'actor';
+// Identity is resolved by the server (withActor), never accepted in payloads.
+type CommentIdentity = 'authorId' | 'authorType';
+type UploaderIdentity = 'uploaderId' | 'uploaderType';
 
 const keyChecks: true[] = [
   true as SameKeys<Infer<typeof CreateTaskSchema>, Omit<CreateTaskInput, 'key'>>,
-  true as SameKeys<Omit<Infer<typeof UpdateTaskSchema>, ActorClaims>, Omit<Task, ServerAssigned | 'key' | 'projectId'>>,
+  true as SameKeys<Infer<typeof UpdateTaskSchema>, Omit<Task, ServerAssigned | 'key' | 'projectId'>>,
   // `workflow` is a denormalised copy resolved from `workflowId`, so it is not writable.
   true as SameKeys<Infer<typeof CreateProjectSchema>, Omit<CreateProjectInput, 'workflow'>>,
   true as SameKeys<Infer<typeof UpdateProjectSchema>, Omit<Project, ServerAssigned | 'workflow'>>,
@@ -63,10 +65,10 @@ const keyChecks: true[] = [
   true as SameKeys<Infer<typeof UpdateContainerSchema>, Omit<TaskContainer, ServerAssigned | 'projectId'>>,
   true as SameKeys<Infer<typeof CreateIterationSchema>, Omit<Iteration, 'id' | 'createdAt'>>,
   // Reactions are managed through the reactions endpoints.
-  true as SameKeys<Infer<typeof CreateCommentSchema>, Omit<Comment, ServerAssigned | 'reactions'>>,
+  true as SameKeys<Infer<typeof CreateCommentSchema>, Omit<Comment, ServerAssigned | 'reactions' | CommentIdentity>>,
   true as SameKeys<Infer<typeof UpdateCommentSchema>, Pick<Comment, 'content' | 'mentions' | 'metadata'>>,
-  true as SameKeys<Infer<typeof CreateAttachmentSchema>, CreateAttachmentInput>,
-  true as SameKeys<Infer<typeof LogTimeSchema>, Omit<TimeEntry, 'id'>>
+  true as SameKeys<Infer<typeof CreateAttachmentSchema>, Omit<CreateAttachmentInput, UploaderIdentity>>,
+  true as SameKeys<Infer<typeof LogTimeSchema>, Omit<TimeEntry, 'id' | 'userId'>>
 ];
 
 describe('request schemas', () => {
@@ -74,16 +76,15 @@ describe('request schemas', () => {
     expect(keyChecks.every(Boolean)).toBe(true);
   });
 
-  it('strip server-assigned and unknown fields', () => {
-    const parsed = UpdateTaskSchema.parse({
-      title: 'ok',
-      id: 'hijack',
-      projectId: 'other',
-      createdAt: '1999-01-01',
-      key: 'X-1',
-      junk: true
-    });
-    expect(parsed).toEqual({ title: 'ok' });
+  it('reject server-assigned, identity and unknown fields', () => {
+    for (const extra of [{ id: 'x' }, { projectId: 'other' }, { createdAt: '1999-01-01' }, { key: 'X-1' }, { junk: true }, { actorId: 'ceo' }]) {
+      const result = UpdateTaskSchema.safeParse({ title: 'ok', ...extra });
+      expect(result.success, JSON.stringify(extra)).toBe(false);
+    }
+    expect(CreateCommentSchema.safeParse({ taskId: 't1', content: 'hi', authorId: 'ceo' }).success).toBe(false);
+    // Nested objects are strict too
+    expect(UpdateTaskSchema.safeParse({ todos: [{ id: '1', title: 'a', completed: false, extra: 1 }] }).success).toBe(false);
+    expect(UpdateTaskSchema.parse({ title: 'ok' })).toEqual({ title: 'ok' });
   });
 
   it('reject wrong types and out-of-range values', () => {

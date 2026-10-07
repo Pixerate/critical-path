@@ -103,7 +103,7 @@ Combines threaded comments with inline attachments and emoji reactions:
   {#each activity.threads as thread (thread.id)}
     <div class="thread">
       <p><strong>{thread.authorId}</strong>: {thread.content}</p>
-      <button on:click={() => activity.addReaction(thread.id, '👍', 'user_1')}>👍</button>
+      <button on:click={() => activity.addReaction(thread.id, '👍')}>👍</button>
       {#each thread.attachments as att}
         <a href={att.url} target="_blank">{att.filename}</a>
       {/each}

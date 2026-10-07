@@ -1,6 +1,8 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 implemented (`feat/request-context-auth`, `feat/request-validation`); remaining items are drafts that need review (AI-generated from a code audit on 2026-10-07; verify before acting).
+Status: **In progress** — items 1 and 2 shipped; strict API defaults on `feat/strict-api-defaults`.
+
+Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
 This plan covers features the README, docs site, or package READMEs present as working that are missing or only stubbed in code. Each item lists the claim, what exists today, the proposed design, and how to verify it. Bugs already fixed on `fix/audit-quick-fixes` are not repeated here.
 
@@ -53,7 +55,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 
 **Docs**: server README, `frameworks/nextjs.md` (already describes it), `frameworks/sveltekit.md`, DEVELOPER_GUIDE section 5, MCP CLI `--header`/`CRITICAL_PATH_API_TOKEN` so the MCP server can call an authenticated API.
 
-**Implemented**: `getContext`, `requireAuth`, `basePath` and `cors` router options; `engine.withActor(actor)` per-request views (chosen over adding an `options.actor` parameter to every mutation, which would have changed ~25 signatures); SvelteKit `getContext(event)`; `createUniversalHandler`; MCP CLI `--header` and `CRITICAL_PATH_API_TOKEN`. CORS still defaults to `*` without credentials for compatibility.
+**Implemented**: `getContext`, `requireAuth`, `basePath` and `cors` router options; `engine.withActor(actor)` per-request views (chosen over adding an `options.actor` parameter to every mutation, which would have changed ~25 signatures); SvelteKit `getContext(event)`; `createUniversalHandler`; MCP CLI `--header` and `CRITICAL_PATH_API_TOKEN`. CORS now defaults to off (no headers).
 
 ---
 
@@ -71,7 +73,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 
 **Tests**: mass-assignment attempts on tasks, comments, teams, containers, iterations; OpenAPI snapshot; MCP schemas still pass the parity test (then delete it, since parity becomes structural).
 
-**Implemented**: `@critical-path/core/schemas` with create/update schemas and `parsePayload`; all router bodies validated (400 with `issues`); server-assigned fields and unknown keys stripped. Lifecycle fields (`completedAt`, `actualStartDate`, ...) stay writable because the engine deliberately honours them for imports. MCP `inputSchema` is generated from zod via `defineTool`. `GET /openapi.json` and `buildOpenApiDocument()` generate an OpenAPI 3.1 document; response bodies are described only by their envelope key, since entities have no zod schemas yet.
+**Implemented**: `@critical-path/core/schemas` with create/update schemas and `parsePayload`; all router bodies validated (400 with `issues`); server-assigned fields, identity fields and unknown keys rejected with 400 (initially stripped; tightened once breaking changes were approved). Lifecycle fields (`completedAt`, `actualStartDate`, ...) stay writable because the engine deliberately honours them for imports. MCP `inputSchema` is generated from zod via `defineTool`. `GET /openapi.json` and `buildOpenApiDocument()` generate an OpenAPI 3.1 document; response bodies are described only by their envelope key, since entities have no zod schemas yet.
 
 ---
 
@@ -86,9 +88,9 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - Enforce in the engine (not just the router) so MCP, WebMCP and direct engine use share one policy. Reads filter lists (`getProjects`, `getTasks()` without projectId) to permitted projects instead of failing.
 - Throw `ForbiddenError` → router maps to `403`.
 
-**Open decisions**
-- Field-level permissions (`docs/mvp.md` mentions them): recommend deferring; project-level roles cover the README claim.
-- Tenancy (`tenantId` in the docs example): recommend scoping projects by `tenantId` in the same change, since unscoped `GET /tasks` is the largest data-exposure risk.
+**Decisions**
+- Field-level permissions: deferred; project-level roles cover the README claim.
+- Tenancy: projects are scoped by `tenantId` from the request context in the same change.
 
 **Tests**: per-role matrix across REST and MCP; list filtering; a plugin cannot bypass by calling `engine.store` (document that `store` is unchecked by design).
 

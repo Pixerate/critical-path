@@ -39,28 +39,23 @@ const newTask = await client.createTask({
   status: 'todo'
 });
 
+// Identity comes from your auth headers (resolved by the server's getContext), never from
+// request bodies. Without auth, writes are attributed to "anonymous".
+
 // Update task status
 await client.updateTask(newTask.id, { status: 'in_progress' });
 
 // Add threaded comment
 const comment = await client.addComment({
   taskId: newTask.id,
-  content: 'Initial implementation ready for review',
-  authorId: 'user_1',
-  authorType: 'user'
-});
+  content: 'Initial implementation ready for review'
+}); // authored by the caller the server resolves from your auth headers
 
 // Add emoji reaction
-await client.addCommentReaction(comment.id, {
-  emoji: '🚀',
-  userId: 'user_2'
-});
+await client.addCommentReaction(comment.id, { emoji: '🚀' });
 
 // Remove emoji reaction
-await client.removeCommentReaction(comment.id, {
-  emoji: '🚀',
-  userId: 'user_2'
-});
+await client.removeCommentReaction(comment.id, { emoji: '🚀' });
 
 // Upload file directly or register storage attachment
 const attachment = await client.uploadAttachmentFile({
@@ -68,9 +63,8 @@ const attachment = await client.uploadAttachmentFile({
   data: fileBuffer,
   mimeType: 'image/png',
   taskId: newTask.id,
-  commentId: comment.id,
-  uploaderId: 'user_1'
-});
+  commentId: comment.id
+}); // binary data is base64-encoded automatically
 
 // Calculate Critical Path Method (CPM) schedule & bottlenecks
 const cpmAnalysis = await client.calculateCriticalPath('proj_1');

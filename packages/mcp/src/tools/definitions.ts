@@ -38,11 +38,12 @@ export class ToolArgumentError extends Error {
 }
 
 /**
- * Validates raw tool arguments against the tool's zod schema. Unknown keys are stripped,
+ * Validates raw tool arguments against the tool's zod schema. Unknown keys are rejected,
  * so callers cannot pass fields the tool does not declare.
  */
 export function parseToolArgs<TParams>(tool: ToolDefinition<TParams>, args: unknown): TParams {
-  const result = tool.zodSchema.safeParse(args ?? {});
+  // Strict: unknown arguments are reported to the model instead of being silently dropped.
+  const result = tool.zodSchema.strict().safeParse(args ?? {});
   if (!result.success) {
     const details = result.error.issues
       .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
@@ -307,21 +308,16 @@ export const listCommentsTool = defineTool<{ taskId: string }>({
   }
 });
 
-export const addCommentTool = defineTool<{ taskId: string; content: string; authorId: string }>({
+export const addCommentTool = defineTool<{ taskId: string; content: string }>({
   name: 'add_comment',
   title: 'Add Comment',
-  description: 'Add a comment to a task.',
+  description: 'Add a comment to a task. The comment is attributed to the identity this MCP server runs as.',
   zodSchema: z.object({
     taskId: z.string().describe('The task ID'),
-    content: z.string().describe('Comment body/markdown'),
-    authorId: z.string().describe('Author user ID')
+    content: z.string().describe('Comment body/markdown')
   }),
   execute: async (args, target) => {
-    return (target as any).addComment({
-      taskId: args.taskId,
-      content: args.content,
-      authorId: args.authorId
-    });
+    return target.addComment({ taskId: args.taskId, content: args.content });
   }
 });
 

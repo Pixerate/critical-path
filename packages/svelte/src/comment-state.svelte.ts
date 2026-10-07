@@ -1,4 +1,5 @@
 /// <reference types="svelte" />
+import type { CreateCommentBody, UpdateCommentBody } from '@critical-path/core/schemas';
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Comment } from '@critical-path/core';
 
@@ -51,7 +52,7 @@ export class CommentState {
     }
   }
 
-  async addComment(input: Omit<Comment, 'id' | 'taskId' | 'createdAt' | 'updatedAt'>) {
+  async addComment(input: Omit<CreateCommentBody, 'taskId'>) {
     if (!this.taskId) {
       throw new Error('CommentState requires a taskId to add comments.');
     }
@@ -66,7 +67,7 @@ export class CommentState {
     }
   }
 
-  async updateComment(id: string, updates: Partial<Comment>) {
+  async updateComment(id: string, updates: UpdateCommentBody) {
     try {
       const updated = await this.client.updateComment(id, updates);
       this.data = this.data.map((c) => (c.id === id ? updated : c));
@@ -93,14 +94,10 @@ export class CommentState {
 
   async addReaction(
     commentId: string,
-    reactionOrEmoji: { emoji: string; userId: string } | string,
-    maybeUserId?: string
+    emoji: string
   ) {
     try {
-      const payload =
-        typeof reactionOrEmoji === 'string'
-          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
-          : reactionOrEmoji;
+      const payload = { emoji };
       const updated = await this.client.addCommentReaction(commentId, payload);
       this.data = this.data.map((c) => (c.id === commentId ? updated : c));
       return updated;
@@ -113,14 +110,10 @@ export class CommentState {
 
   async removeReaction(
     commentId: string,
-    reactionOrEmoji: { emoji: string; userId: string } | string,
-    maybeUserId?: string
+    emoji: string
   ) {
     try {
-      const payload =
-        typeof reactionOrEmoji === 'string'
-          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
-          : reactionOrEmoji;
+      const payload = { emoji };
       const updated = await this.client.removeCommentReaction(commentId, payload);
       this.data = this.data.map((c) => (c.id === commentId ? updated : c));
       return updated;

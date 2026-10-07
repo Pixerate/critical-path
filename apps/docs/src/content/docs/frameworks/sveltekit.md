@@ -47,4 +47,4 @@ export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createSvelteKitHandler
 );
 ```
 
-When a `userId` is resolved, all mutations in the request are attributed to that user and identity fields in request bodies are ignored. The other router options (`basePath`, `cors`, `onError`, `exposeErrors`) are accepted here too.
+All mutations in the request are attributed to the resolved `userId`, or to `anonymous`. Request bodies cannot carry identity. The other router options (`basePath`, `cors`, `onError`, `exposeErrors`) are accepted here too.

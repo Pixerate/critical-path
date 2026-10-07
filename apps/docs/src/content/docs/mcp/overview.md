@@ -66,7 +66,7 @@ graph TD
 | `list_deliverables` | List deliverables for a project with format and container specs | `projectId` |
 | `create_deliverable`| Create a high-level creative deliverable | `projectId`, `title`, `format` |
 | `list_comments` | Retrieve threaded discussion comments for a task | `taskId` |
-| `add_comment` | Post a discussion comment or agent reply | `taskId`, `content`, `authorId` |
+| `add_comment` | Post a discussion comment or agent reply (authored by the server's actor) | `taskId`, `content` |
 
 ---
 

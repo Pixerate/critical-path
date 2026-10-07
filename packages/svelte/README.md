@@ -102,8 +102,8 @@ Combines threaded comments with inline attachments (`attachment.commentId === co
 
   async function handleSend(text: string, fileUrl?: string) {
     await activityState.addComment(
-      { content: text, authorId: 'user_1', authorType: 'user' },
-      fileUrl ? [{ filename: 'upload.png', url: fileUrl, uploaderId: 'user_1', mimeType: 'image/png', sizeBytes: 1024 }] : []
+      { content: text },
+      fileUrl ? [{ filename: 'upload.png', url: fileUrl, mimeType: 'image/png', sizeBytes: 1024 }] : []
     );
   }
 </script>
@@ -123,8 +123,8 @@ Combines threaded comments with inline attachments (`attachment.commentId === co
 
     <!-- Emoji Reactions -->
     <div class="reactions">
-      <button on:click={() => activityState.addReaction(thread.id, '👍', 'user_1')}>👍</button>
-      <button on:click={() => activityState.addReaction(thread.id, '🚀', 'user_1')}>🚀</button>
+      <button on:click={() => activityState.addReaction(thread.id, '👍')}>👍</button>
+      <button on:click={() => activityState.addReaction(thread.id, '🚀')}>🚀</button>
       <span>{thread.reactions?.length || 0} reactions</span>
     </div>
 

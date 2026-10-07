@@ -10,7 +10,7 @@ import {
   ErrorCode,
   McpError
 } from '@modelcontextprotocol/sdk/types.js';
-import type { CriticalPathEngine } from '@critical-path/core';
+import type { Actor, CriticalPathEngine } from '@critical-path/core';
 import type { CriticalPathClient } from '@critical-path/client';
 import { ALL_TOOLS, parseToolArgs, type BackendContext } from '../tools/definitions.js';
 
@@ -20,10 +20,20 @@ export interface CriticalPathMcpServerOptions {
   name?: string;
   version?: string;
   tools?: string[];
+  /**
+   * Identity that changes made through an `engine` are attributed to (activity log, comment
+   * authors, ...). Defaults to `DEFAULT_MCP_ACTOR`. With a `client`, identity comes from the API's
+   * authentication (e.g. the `Authorization` header passed to the client) instead.
+   */
+  actor?: Actor;
 }
 
+export const DEFAULT_MCP_ACTOR: Actor = Object.freeze({ userId: 'mcp-agent', username: 'MCP Agent', actorType: 'agent' });
+
 export function createCriticalPathMcpServer(options: CriticalPathMcpServerOptions): Server {
-  const target: BackendContext | undefined = options.engine || options.client;
+  const target: BackendContext | undefined = options.engine
+    ? options.engine.withActor(options.actor ?? DEFAULT_MCP_ACTOR)
+    : options.client;
   if (!target) {
     throw new Error('Either engine or client must be provided to createCriticalPathMcpServer.');
   }

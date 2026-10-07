@@ -72,7 +72,7 @@ describe('@critical-path/client Tests', () => {
         const body = JSON.parse(init?.body as string);
         return new Response(JSON.stringify({ comment: { id: 'c1', reactions: [body] } }), { status: 200 });
       }
-      if (urlStr.endsWith('/comments/c1/reactions') && method === 'DELETE') {
+      if (urlStr.split('?')[0].endsWith('/comments/c1/reactions') && method === 'DELETE') {
         return new Response(JSON.stringify({ comment: { id: 'c1', reactions: [] } }), { status: 200 });
       }
       if (urlStr.endsWith('/comments/c1') && method === 'DELETE') {
@@ -104,17 +104,17 @@ describe('@critical-path/client Tests', () => {
     expect(comments).toHaveLength(1);
     expect(comments[0].content).toBe('SDK Comment');
 
-    const createdComment = await client.addComment({ taskId: 't1', content: 'New comment', authorId: 'u2', authorType: 'user' });
+    const createdComment = await client.addComment({ taskId: 't1', content: 'New comment' });
     expect(createdComment.id).toBe('c2');
 
     const updatedComment = await client.updateComment('c1', { content: 'Updated' });
     expect(updatedComment.content).toBe('Updated');
 
-    const reacted = await client.addCommentReaction('c1', { emoji: '🙌', userId: 'u2' });
+    const reacted = await client.addCommentReaction('c1', { emoji: '🙌' });
     expect(reacted.reactions).toHaveLength(1);
     expect(reacted.reactions?.[0].emoji).toBe('🙌');
 
-    const unreacted = await client.removeCommentReaction('c1', { emoji: '🙌', userId: 'u2' });
+    const unreacted = await client.removeCommentReaction('c1', { emoji: '🙌' });
     expect(unreacted.reactions).toHaveLength(0);
 
     const deletedComment = await client.deleteComment('c1');
@@ -124,10 +124,10 @@ describe('@critical-path/client Tests', () => {
     expect(attachments).toHaveLength(1);
     expect(attachments[0].filename).toBe('SDK Doc');
 
-    const createdAtt = await client.createAttachment({ filename: 'file.txt', mimeType: 'text/plain', sizeBytes: 12, url: 'https://example.com/file.txt', uploaderId: 'u1' });
+    const createdAtt = await client.createAttachment({ filename: 'file.txt', mimeType: 'text/plain', sizeBytes: 12, url: 'https://example.com/file.txt' });
     expect(createdAtt.id).toBe('a2');
 
-    const uploadedAtt = await client.uploadAttachmentFile({ filename: 'uploaded.png', data: 'base64data', uploaderId: 'u1' });
+    const uploadedAtt = await client.uploadAttachmentFile({ filename: 'uploaded.png', data: 'base64data' });
     expect(uploadedAtt.id).toBe('a_up');
     expect(uploadedAtt.url).toBe('https://cdn.example.com/uploaded.png');
 

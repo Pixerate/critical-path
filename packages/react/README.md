@@ -76,8 +76,8 @@ export function TaskDiscussion({ taskId }: { taskId: string }) {
         <div key={comment.id} className="comment">
           <p>{comment.content}</p>
           <div className="reactions flex gap-2">
-            <button onClick={() => addReaction(comment.id, '👍', 'user_1')}>👍</button>
-            <button onClick={() => addReaction(comment.id, '🚀', 'user_1')}>🚀</button>
+            <button onClick={() => addReaction(comment.id, '👍')}>👍</button>
+            <button onClick={() => addReaction(comment.id, '🚀')}>🚀</button>
             <span>{comment.reactions?.length || 0} reactions</span>
           </div>
         </div>
