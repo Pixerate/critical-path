@@ -243,3 +243,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Deleting an attachment deletes its file, so a caller who could choose any key could overwrite or delete other projects' files.
 - **Solution / Workaround**: Send `{ projectId, filename, contentType }` to `/attachments/presign`, upload to the returned URL with the returned headers, then `POST /attachments` with the returned `storageKey` and the same `projectId`. Uploads through `/attachments/upload` are always stored under `projects/<projectId>/`.
 
+### Users Come from Your App, Not the Store
+- **Area / Package**: `@critical-path/core` (`users` config, `getUsers`, workload)
+- **Symptom / Behavior**: Workload charts show raw user ids and a 40h default capacity.
+- **Root Cause**: Critical Path has no user table. Names, `weeklyCapacityHours` and per-user `schedule` come from the `users` engine option (plus `initialData.users`). Before this option existed, `initialData.users` was ignored.
+- **Solution / Workaround**: Pass `users: User[]` or `users: (actor) => Promise<User[]>` to load them from your auth system, per tenant if needed. Critical-path (CPM) date projections still use one project-wide calendar, not per-assignee schedules.
+

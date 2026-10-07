@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) shipped; phase 4 item 8 (client SDK) on `feat/client-sdk`, item 9 (S3) on `feat/s3-presign`.
+Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) shipped; phase 4 item 8 (client SDK) on `feat/client-sdk`, item 9 (S3) on `feat/s3-presign`, item 10 (config) on `feat/engine-config`.
 
 Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
@@ -243,6 +243,11 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 
 - `config.store: 'sqlite'` is accepted by the type and silently falls back to `InMemoryStore`. Either construct `SQLiteStore` (with `config.sqlite?.filename`) or remove `'sqlite'` from the type.
 - `initialData.users` is ignored and user schedules are never passed to workload calculations. Seed users and pass them to `getWorkloadDistribution`.
+
+**Implemented**:
+- **`store`:** must be an adapter instance. Strings now throw with guidance instead of silently falling back to memory. We chose not to construct `SQLiteStore` from a string, so browser bundles don't depend on it.
+- **New `users` engine option:** an array, or `(actor) => users`, acting as an app-owned user directory merged with `initialData.users`. `getUsers()` is exposed, and `getWorkloadDistribution` now uses user names, capacity and schedules.
+- **Phase 5 README fix:** the README says schedules resolve per assignee for CPM. Only workload capacity does; CPM uses one project-wide calendar, and real multi-calendar CPM would need an algorithm change.
 
 ---
 
