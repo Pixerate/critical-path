@@ -29,8 +29,8 @@ describe('partial allocation', () => {
     // A 16h@100% (Mon-Tue), B 4h@50% (Mon), C 8h@50% (Mon-Tue): 200% on Monday, 150% on Tuesday
     const analysis = run([task('A', 16, 1), task('B', 4, 0.5), task('C', 8, 0.5), task('Other', 8, 1, 'alice')]);
     expect(analysis.overallocations).toEqual([
-      { assigneeId: 'bob', start: '2026-10-05T09:00:00.000Z', end: '2026-10-05T17:00:00.000Z', allocation: 2, taskIds: ['A', 'B', 'C'] },
-      { assigneeId: 'bob', start: '2026-10-05T17:00:00.000Z', end: '2026-10-06T17:00:00.000Z', allocation: 1.5, taskIds: ['A', 'C'] }
+      { assigneeId: 'bob', start: '2026-10-05T09:00:00.000Z', end: '2026-10-05T17:00:00.000Z', allocation: 2, capacity: 1, taskIds: ['A', 'B', 'C'] },
+      { assigneeId: 'bob', start: '2026-10-05T17:00:00.000Z', end: '2026-10-06T17:00:00.000Z', allocation: 1.5, capacity: 1, taskIds: ['A', 'C'] }
     ]);
     expect(run([task('X', 8, 0.5), task('Y', 8, 0.5)]).overallocations).toEqual([]);
   });

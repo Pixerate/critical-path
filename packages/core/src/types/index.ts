@@ -80,6 +80,11 @@ export interface Team {
   description?: string;
   leaderId?: string;
   memberIds: string[];
+  /**
+   * How many people the team can put on tasks at once when levelling (team-only tasks plus members'
+   * own tasks). Default: the number of members.
+   */
+  headcount?: number;
   weeklyCapacityHours?: number;
   schedule?: WorkSchedule;
   /** Tenant that owns the team. Set by the engine from the creating actor. */
@@ -663,9 +668,14 @@ export interface TaskCriticalPathSchedule {
   allocation?: number;
 }
 
-/** A period in which an assignee's tasks together need more than 100% of them. */
+/** A period in which a person or team pool is booked above its capacity. */
 export interface Overallocation {
-  assigneeId: string;
+  /** Set for a person. */
+  assigneeId?: string;
+  /** Set for a team pool (team tasks plus its members' own tasks). */
+  teamId?: string;
+  /** What the person or pool can take at once: 1 for a person, the team's headcount for a pool. */
+  capacity: number;
   start: string;
   end: string;
   /** Total allocation in the period, e.g. 1.5 for 150%. */

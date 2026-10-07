@@ -223,7 +223,7 @@ Tasks are placed one at a time, in priority order, at the earliest moment their 
   Remaining ties break by creation order, so results are deterministic.
 - **Slack after levelling:** any two tasks of one assignee that cannot run side by side are linked in the order they were scheduled. Slack and `isCritical` therefore reflect both dependencies and people: a task with plenty of dependency slack is critical if delaying it would push back the same person's next task.
 - **Per task:** `levelingDelayHours` (working hours on the task's calendar) and `waitingOn` (the task it last waited for).
-- **Not constrained:** unassigned tasks (including team-only tasks) and zero-duration milestones.
+- **Not constrained:** tasks with neither an assignee nor a team pool (see [team capacity](#team-capacity)), and zero-duration milestones.
 - **Not done:** tasks are never split or reassigned, and only tasks in this project are considered, so other projects' work for the same person is ignored. The result is a good, deterministic heuristic schedule, not a guaranteed optimum.
 
 Enable it by default with `criticalPathLevelResources: true` (together with `criticalPathCalendars: 'assignee'`). Over HTTP: `?calendars=assignee&levelResources=true&levelingPriority=priority`.
@@ -245,6 +245,22 @@ await engine.createTask({ projectId, title: 'API review', estimatedHours: 16, al
   ```
 - **Capacity per person is fixed at 100%.** Model part-time people with their work schedule (fewer hours), not a lower capacity.
 - **Workload charts** still spread estimated effort over the task's planned dates and do not use `allocation`.
+
+### Team capacity
+
+When levelling, a team is a **pool**: at any moment its work can use at most `headcount` people (default: the number of `memberIds`).
+
+```ts
+await engine.createTeam({ name: 'Frontend', memberIds: ['ana', 'ben', 'cai'] }); // 3 at once
+await engine.createTeam({ name: 'Agency', memberIds: [], headcount: 2 });       // 2 people not listed as members
+```
+
+- **Team-only tasks** (a `teamId` but no assignee) use one slot of their team, or part of one with `allocation`. Five 8-hour team tasks on a three-person team run three on Monday and two on Tuesday.
+- **Members' own tasks count too.** A task assigned to a member also uses a slot in every team that person belongs to. If two of three members are busy, team-only tasks get one slot. Someone in two teams is counted in both, which is conservative but never over-books.
+- **Not decided for you:** the analysis does not pick which member does a team task, and pools use the team's calendar rather than each member's.
+- **Teams with no members and no `headcount`** stay unconstrained. Only teams in the project's tenant are considered.
+- **Slack:** a delayed task is linked to the task whose finish freed its slot, as are tasks whose combined allocation exceeds the pool. Slack is exact along those chains but can be generous elsewhere in a busy pool.
+- **Over-allocation report:** entries have `teamId` (instead of `assigneeId`) and `capacity` when a pool is booked above its headcount, counting team tasks and members' own tasks.
 
 ---
 

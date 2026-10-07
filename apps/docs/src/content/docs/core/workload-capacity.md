@@ -102,6 +102,7 @@ interface Team {
   name: string;
   memberIds: string[];
   weeklyCapacityHours?: number; // e.g. 160 for a 4-person team
+  headcount?: number;           // people at once for critical path levelling (default: memberIds.length)
 }
 ```
 
