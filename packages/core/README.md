@@ -188,7 +188,7 @@ const asVic = engine.withActor({ userId: 'vic', tenantId: 'acme' });
 await asVic.createTask({ projectId, title: 'x' }); // ForbiddenError if vic is only a viewer
 ```
 
-Checks run on `withActor` views (the base engine is trusted). Roles come from `project.members` (`{ userId, role }`, roles `viewer` < `contributor` < `project_manager` < `admin`), and project creators become `admin`. Actors with `roles: ['admin']` are superusers. Projects the actor cannot read, or that belong to another tenant, behave as if they do not exist (`NotFoundError`). Lists are filtered. Records created through a view are stamped with the actor's `tenantId`. See the docs site's Authorization page for the full permission matrix and custom policies.
+Checks run on `withActor` views (the base engine is trusted). Roles come from `project.members`: users (`{ userId, role }`) or whole teams (`{ teamId, role }`), with roles `viewer` < `contributor` < `project_manager` < `admin`. Project creators become `admin`. Actors with `roles: ['admin']` are superusers. Projects the actor cannot read, or that belong to another tenant, behave as if they do not exist (`NotFoundError`). Lists are filtered. Records created through a view are stamped with the actor's `tenantId`. See the docs site's Authorization page for the full permission matrix and custom policies.
 
 #### Webhooks
 

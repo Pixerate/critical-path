@@ -111,6 +111,17 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
       expect(await store.getProjects()).toHaveLength(1);
     });
 
+    it('filters projects by tenant', async () => {
+      const store = await createStore();
+      await store.createProject({ name: 'Acme 1', tenantId: 'acme' });
+      await store.createProject({ name: 'Acme 2', tenantId: 'acme' });
+      await store.createProject({ name: 'Globex', tenantId: 'globex' });
+      await store.createProject({ name: 'Untenanted' });
+
+      expect((await store.getProjects({ tenantId: 'acme' })).map((p) => p.name).sort()).toEqual(['Acme 1', 'Acme 2']);
+      expect(await store.getProjects()).toHaveLength(4);
+    });
+
     it('round-trips every task field', async () => {
       const store = await createStore();
       const project = await store.createProject({ name: 'P' });

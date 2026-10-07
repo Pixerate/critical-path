@@ -60,22 +60,25 @@ export function createRolePolicy(options: RolePolicyOptions = {}): Authorization
   const canCreateProjects = options.canCreateProjects ?? ((actor: Actor) => actor.userId !== 'anonymous');
   const canManageWorkspace = options.canManageWorkspace ?? isSuperuser;
 
-  return ({ actor, action, project, resource }: AuthorizationRequest): boolean => {
+  return ({ actor, action, project, resource, teamIds }: AuthorizationRequest): boolean => {
     if (isSuperuser(actor)) return true;
     if (action === 'project.create') return canCreateProjects(actor);
     if (action === 'workspace.manage') return canManageWorkspace(actor);
     if (!project) return false;
 
-    const role = project.members?.find((m) => m.userId === actor.userId)?.role;
-    if (!role) return false;
+    // Roles granted directly and through any of the actor's teams
+    const roles = (project.members ?? [])
+      .filter((m) => (m.userId !== undefined ? m.userId === actor.userId : teamIds.includes(m.teamId)))
+      .map((m) => m.role);
+    if (roles.length === 0) return false;
 
-    const granted = permissions[role] ?? [];
-    if (granted.includes(action)) return true;
+    const granted = new Set(roles.flatMap((role) => permissions[role] ?? []));
+    if (granted.has(action)) return true;
 
     // Authors manage their own comments and attachments without moderator rights.
     const ownsResource = resource?.ownerId !== undefined && resource.ownerId === actor.userId;
-    if (action === 'comment.moderate' && ownsResource && granted.includes('comment.create')) return true;
-    if (action === 'attachment.delete' && ownsResource && granted.includes('attachment.create')) return true;
+    if (action === 'comment.moderate' && ownsResource && granted.has('comment.create')) return true;
+    if (action === 'attachment.delete' && ownsResource && granted.has('attachment.create')) return true;
 
     return false;
   };

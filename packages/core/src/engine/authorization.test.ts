@@ -140,6 +140,70 @@ describe('role-based authorization (createRolePolicy)', () => {
   });
 });
 
+describe('team-based membership', () => {
+  async function setup() {
+    const engine = new CriticalPathEngine({ authorize: createRolePolicy() });
+    const team = await engine.createTeam({ name: 'Design', memberIds: ['dana'] });
+    const project = await engine.createProject({
+      name: 'Teams',
+      members: [
+        { teamId: team.id, role: 'contributor' },
+        { userId: 'pat', role: 'viewer' },
+        { teamId: 'other-team', role: 'admin' }
+      ]
+    });
+    const task = await engine.createTask({ projectId: project.id, title: 'T' });
+    return { engine, team, project, task };
+  }
+
+  it('grants team members the team role', async () => {
+    const { engine, project, task } = await setup();
+    const dana = engine.withActor({ userId: 'dana' });
+    expect(await dana.getProject(project.id)).not.toBeNull();
+    await dana.updateTask(task.id, { title: 'Edited by team member' });
+    await expect(dana.deleteTask(task.id)).rejects.toThrow(ForbiddenError);
+    expect(await engine.withActor({ userId: 'stranger' }).getProject(project.id)).toBeNull();
+  });
+
+  it('combines direct and team roles', async () => {
+    const { engine, team, project } = await setup();
+    await engine.updateTeam(team.id, { memberIds: ['dana', 'pat'] });
+    // pat is a direct viewer and, through the team, a contributor
+    await engine.withActor({ userId: 'pat' }).createTask({ projectId: project.id, title: 'By pat' });
+  });
+
+  it('revokes access when a user leaves the team', async () => {
+    const { engine, team, project } = await setup();
+    const dana = engine.withActor({ userId: 'dana' });
+    expect(await dana.getProject(project.id)).not.toBeNull();
+    await engine.updateTeam(team.id, { memberIds: [] });
+    expect(await dana.getProject(project.id)).toBeNull();
+  });
+
+  it('only counts teams from the actor tenant', async () => {
+    const engine = new CriticalPathEngine({ authorize: createRolePolicy() });
+    const globexTeam = await engine.withActor({ userId: 'root', tenantId: 'globex', roles: ['admin'] }).createTeam({ name: 'G', memberIds: ['dana'] });
+    const project = await engine.withActor({ userId: 'owner', tenantId: 'acme' }).createProject({
+      name: 'Acme',
+      members: [{ teamId: globexTeam.id, role: 'admin' }]
+    });
+    expect(await engine.withActor({ userId: 'dana', tenantId: 'acme' }).getProject(project.id)).toBeNull();
+  });
+
+  it('filters projects by tenant in the store', async () => {
+    const engine = new CriticalPathEngine();
+    const calls: unknown[] = [];
+    const original = engine.store.getProjects.bind(engine.store);
+    engine.store.getProjects = (filter) => {
+      calls.push(filter);
+      return original(filter);
+    };
+    await engine.withActor({ userId: 'a', tenantId: 'acme' }).getProjects();
+    await engine.getProjects();
+    expect(calls).toEqual([{ tenantId: 'acme' }, undefined]);
+  });
+});
+
 describe('tenant isolation', () => {
   it('scopes projects, workflows and teams to the actor tenant and stamps new records', async () => {
     const engine = new CriticalPathEngine();

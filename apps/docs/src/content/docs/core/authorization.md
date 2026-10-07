@@ -32,7 +32,19 @@ const engine = new CriticalPathEngine({
 });
 ```
 
-Roles come from `project.members` (`{ userId, role }[]`). The creator of a project automatically becomes its `admin`.
+Roles come from `project.members`. Entries are either users (`{ userId, role }`) or teams (`{ teamId, role }`), where every user in `team.memberIds` gets the role. A user matching several entries gets the permissions of all of them. The creator of a project automatically becomes its `admin`.
+
+```ts
+await engine.createProject({
+  name: 'Website',
+  members: [
+    { teamId: designTeam.id, role: 'contributor' },
+    { userId: 'lee', role: 'project_manager' }
+  ]
+});
+```
+
+Team memberships are cached per engine and refreshed whenever a team changes through the engine. Writes made directly with `engine.store` are not seen until the next team change.
 
 | Action | viewer | contributor | project_manager | admin |
 | :--- | :---: | :---: | :---: | :---: |

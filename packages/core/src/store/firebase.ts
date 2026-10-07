@@ -1,4 +1,4 @@
-import type { StorageAdapter } from './index.js';
+import type { ProjectFilter, StorageAdapter } from './index.js';
 import { matchesActivityQuery, matchesTaskQuery, paginate, type ActivityQuery, type Page, type TaskQuery } from './query.js';
 import type {
   Project,
@@ -138,8 +138,10 @@ export class FirebaseStore implements StorageAdapter {
   }
 
   // --- Projects ---
-  async getProjects(): Promise<Project[]> {
-    const snap = await this.db.collection('projects').get();
+  async getProjects(filter?: ProjectFilter): Promise<Project[]> {
+    const snap = filter?.tenantId
+      ? await this.db.collection('projects').where('tenantId', '==', filter.tenantId).get()
+      : await this.db.collection('projects').get();
     return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
   }
 
