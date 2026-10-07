@@ -271,7 +271,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `examples/sveltekit-demo`
 - **Symptom / Behavior**: `svelte.config.js is no longer used`, `$lib has been removed`, `tsconfig.json should extend $app/tsconfig`, or `ERR_INVALID_ARG_VALUE ... Received 'grey'` after a successful build.
 - **Root Cause**: SvelteKit 3 takes options via `sveltekit({ adapter, ... })` in `vite.config.ts`, replaced `$lib` with `#lib`, and ships its tsconfig as `$app/tsconfig`. Its CLI prints with `util.styleText('grey')`, which Node 25 rejects; Node 24 (used by CI) is fine. Vitest 3 cannot load the SvelteKit 3 plugin (it needs Vite 8), so the demo has a plugin-free `vitest.config.ts` for its API tests.
-- **Solution / Workaround**: Use Node 24 locally (`nvm use 24`), or preload a shim that maps `'grey'` to `'gray'` in `util.styleText` (`NODE_OPTIONS="--import ./grey-shim.mjs"`).
+- **Solution / Workaround**: Use Node 24 locally (`nvm use 24`), or preload a shim that maps `'grey'` to `'gray'` in `util.styleText` (`NODE_OPTIONS="--import ./grey-shim.mjs"`). The shim must call `syncBuiltinESMExports()` from `node:module` after patching, because SvelteKit uses a named `import { styleText } from 'node:util'`, which otherwise keeps the unpatched function.
 
 ### Published Packages Contain Only `dist` (Without Tests)
 - **Area / Package**: all `packages/*`
