@@ -1,10 +1,19 @@
 /**
  * Thrown when input fails a domain rule. Route handlers map it to HTTP 400.
  */
+export interface ValidationIssue {
+  /** Dot-separated path to the invalid field, e.g. `todos.0.title`. Empty for the whole payload. */
+  path: string;
+  message: string;
+}
+
 export class ValidationError extends Error {
-  constructor(message: string) {
+  public readonly issues?: ValidationIssue[];
+
+  constructor(message: string, issues?: ValidationIssue[]) {
     super(message);
     this.name = 'ValidationError';
+    this.issues = issues;
   }
 }
 

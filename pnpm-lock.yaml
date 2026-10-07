@@ -140,6 +140,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@1.21.7)(lightningcss@1.33.0)(yaml@2.9.0)
 
   packages/core:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

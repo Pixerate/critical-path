@@ -1,4 +1,5 @@
 import { CriticalPathEngine, type AuthorType, type CriticalPathConfig } from '@critical-path/core';
+import * as schemas from '@critical-path/core/schemas';
 
 const CORS_ALLOW_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
 const DEFAULT_CORS_ALLOW_HEADERS = ['Content-Type', 'Authorization'];
@@ -182,7 +183,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ workflows });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.CreateWorkflowSchema);
             const workflow = await engine.createWorkflow(body);
             return this.jsonResponse({ workflow }, 201);
           }
@@ -193,7 +194,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ workflow });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.UpdateWorkflowSchema);
             const updated = await engine.updateWorkflow(workflowId, body);
             if (!updated) return this.jsonResponse({ error: 'Workflow not found' }, 404);
             return this.jsonResponse({ workflow: updated });
@@ -216,7 +217,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ projects });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.CreateProjectSchema);
             const project = await engine.createProject(body);
             return this.jsonResponse({ project }, 201);
           }
@@ -261,7 +262,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ project });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...updates } = await this.readJson(request);
+            const updates = await this.readBody(request, schemas.UpdateProjectSchema);
             const project = await engine.updateProject(projectId, updates);
             if (!project) return this.jsonResponse({ error: 'Project not found' }, 404);
             return this.jsonResponse({ project });
@@ -286,7 +287,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ tasks });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.CreateTaskSchema);
             const task = await engine.createTask(body);
             return this.jsonResponse({ task }, 201);
           }
@@ -296,8 +297,8 @@ export class CriticalPathRouter {
             return this.jsonResponse({ comments });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
-            const comment = await engine.addComment({ ...body, taskId });
+            const body = await this.readBody(request, schemas.CreateCommentSchema, { taskId });
+            const comment = await engine.addComment({ ...body, authorId: this.requireIdentity(context, body.authorId, 'authorId') });
             return this.jsonResponse({ comment }, 201);
           }
         } else if (subResource === 'attachments') {
@@ -306,8 +307,8 @@ export class CriticalPathRouter {
             return this.jsonResponse({ attachments });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
-            const attachment = await engine.createAttachment({ ...body, taskId });
+            const body = await this.readBody(request, schemas.CreateAttachmentSchema, { taskId });
+            const attachment = await engine.createAttachment({ ...body, uploaderId: this.requireIdentity(context, body.uploaderId, 'uploaderId') });
             return this.jsonResponse({ attachment }, 201);
           }
         } else if (subResource === 'dependencies') {
@@ -316,10 +317,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ graph });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
-            if (typeof body.dependsOnTaskId !== 'string' || !body.dependsOnTaskId) {
-              return this.jsonResponse({ error: 'dependsOnTaskId is required' }, 400);
-            }
+            const body = await this.readBody(request, schemas.CreateDependencySchema);
             const dep = await engine.addDependency({
               taskId,
               dependsOnTaskId: body.dependsOnTaskId,
@@ -364,7 +362,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ task });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.UpdateTaskSchema);
             const updated = await engine.updateTask(taskId, body);
             if (!updated) return this.jsonResponse({ error: 'Task not found' }, 404);
             return this.jsonResponse({ task: updated });
@@ -386,7 +384,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ teams });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.CreateTeamSchema);
             const team = await engine.createTeam(body);
             return this.jsonResponse({ team }, 201);
           }
@@ -397,7 +395,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ team });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.UpdateTeamSchema);
             const updated = await engine.updateTeam(teamId, body);
             if (!updated) return this.jsonResponse({ error: 'Team not found' }, 404);
             return this.jsonResponse({ team: updated });
@@ -421,7 +419,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ containers });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.CreateContainerSchema);
             const container = await engine.createContainer(body);
             return this.jsonResponse({ container }, 201);
           }
@@ -432,7 +430,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ container });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.UpdateContainerSchema);
             const updated = await engine.updateContainer(containerId, body);
             if (!updated) return this.jsonResponse({ error: 'Container not found' }, 404);
             return this.jsonResponse({ container: updated });
@@ -456,7 +454,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ deliverables });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.CreateDeliverableSchema);
             const deliverable = await engine.createDeliverable(body);
             return this.jsonResponse({ deliverable }, 201);
           }
@@ -473,7 +471,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ deliverable });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.UpdateDeliverableSchema);
             const updated = await engine.updateDeliverable(deliverableId, body);
             if (!updated) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
             return this.jsonResponse({ deliverable: updated });
@@ -497,7 +495,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ iterations });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.CreateIterationSchema);
             const iteration = await engine.createIteration(body);
             return this.jsonResponse({ iteration }, 201);
           }
@@ -508,7 +506,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ iteration });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.UpdateIterationSchema);
             const updated = await engine.updateIteration(iterationId, body);
             if (!updated) return this.jsonResponse({ error: 'Iteration not found' }, 404);
             return this.jsonResponse({ iteration: updated });
@@ -537,11 +535,8 @@ export class CriticalPathRouter {
         const subResource = segments[2];
         if (commentId && subResource === 'reactions') {
           if (method === 'POST') {
-            const body = await this.readJson(request);
-            const userId = context?.userId ?? body.userId;
-            if (!body.emoji || !userId) {
-              return this.jsonResponse({ error: 'emoji and userId are required' }, 400);
-            }
+            const body = await this.readBody(request, schemas.CommentReactionSchema);
+            const userId = this.requireIdentity(context, body.userId, 'userId');
             const comment = await engine.addCommentReaction(commentId, { emoji: body.emoji, userId });
             if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
             return this.jsonResponse({ comment }, 200);
@@ -570,8 +565,8 @@ export class CriticalPathRouter {
             return this.jsonResponse({ comments });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
-            const comment = await engine.addComment(body);
+            const body = await this.readBody(request, schemas.CreateCommentSchema);
+            const comment = await engine.addComment({ ...body, authorId: this.requireIdentity(context, body.authorId, 'authorId') });
             return this.jsonResponse({ comment }, 201);
           }
         } else {
@@ -581,7 +576,7 @@ export class CriticalPathRouter {
             return this.jsonResponse({ comment });
           }
           if (method === 'PATCH' || method === 'PUT') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.UpdateCommentSchema);
             const updated = await engine.updateComment(commentId, body);
             if (!updated) return this.jsonResponse({ error: 'Comment not found' }, 404);
             return this.jsonResponse({ comment: updated });
@@ -599,14 +594,14 @@ export class CriticalPathRouter {
         const attachmentId = segments[1];
         if (attachmentId === 'presign') {
           if (method === 'POST') {
-            const body = await this.readJson(request);
+            const body = await this.readBody(request, schemas.PresignAttachmentSchema);
             const presigned = await engine.getPresignedAttachmentUploadUrl(body);
             return this.jsonResponse({ presigned });
           }
         } else if (attachmentId === 'upload') {
           if (method === 'POST') {
-            const body = await this.readJson(request);
-            const attachment = await engine.uploadAttachmentFile(body);
+            const body = await this.readBody(request, schemas.UploadAttachmentSchema);
+            const attachment = await engine.uploadAttachmentFile({ ...body, uploaderId: this.requireIdentity(context, body.uploaderId, 'uploaderId') });
             return this.jsonResponse({ attachment }, 201);
           }
         } else if (!attachmentId) {
@@ -618,8 +613,8 @@ export class CriticalPathRouter {
             return this.jsonResponse({ attachments });
           }
           if (method === 'POST') {
-            const body = await this.readJson(request);
-            const attachment = await engine.createAttachment(body);
+            const body = await this.readBody(request, schemas.CreateAttachmentSchema);
+            const attachment = await engine.createAttachment({ ...body, uploaderId: this.requireIdentity(context, body.uploaderId, 'uploaderId') });
             return this.jsonResponse({ attachment }, 201);
           }
         } else {
@@ -645,7 +640,7 @@ export class CriticalPathRouter {
           return this.jsonResponse({ timeEntries: entries });
         }
         if (method === 'POST') {
-          const body = await this.readJson(request);
+          const body = await this.readBody(request, schemas.LogTimeSchema);
           const entry = await engine.logTime(body);
           return this.jsonResponse({ timeEntry: entry }, 201);
         }
@@ -709,6 +704,30 @@ export class CriticalPathRouter {
     }
   }
 
+  /**
+   * Reads and validates a JSON body. `overrides` (e.g. a `taskId` from the URL) are applied before
+   * validation so path parameters always win over body fields.
+   */
+  private async readBody<S extends { safeParse(data: unknown): unknown }>(
+    request: Request,
+    schema: S,
+    overrides: Record<string, unknown> = {}
+  ): Promise<S extends { _output: infer O } ? O : never> {
+    const raw = await this.readJson(request);
+    const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    return schemas.parsePayload(schema as any, { ...body, ...overrides });
+  }
+
+  /**
+   * Returns the identity to record for a write: the resolved caller when there is one, otherwise
+   * the value supplied in the body. Throws a 400 when neither is present.
+   */
+  private requireIdentity(context: RequestContext | null | undefined, claimed: string | undefined, field: string): string {
+    const identity = context?.userId ?? claimed;
+    if (!identity) throw new BadRequestError(`${field} is required`);
+    return identity;
+  }
+
   private async readJson(request: Request): Promise<any> {
     try {
       return await request.json();
@@ -723,9 +742,10 @@ export class CriticalPathRouter {
 
     switch (name) {
       case 'BadRequestError':
-      case 'ValidationError':
       case 'AttachmentValidationError':
         return this.jsonResponse({ error: e.message }, 400);
+      case 'ValidationError':
+        return this.jsonResponse(e.issues ? { error: e.message, issues: e.issues } : { error: e.message }, 400);
       case 'WorkflowValidationError':
         return this.jsonResponse({ error: e.message, fromStatus: e.fromStatus, toStatus: e.toStatus }, 400);
       case 'CustomFieldValidationError':
