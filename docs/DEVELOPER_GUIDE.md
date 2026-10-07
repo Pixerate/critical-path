@@ -851,6 +851,7 @@ Given a set of tasks with estimated durations and dependencies:
 ### REST API Endpoints
 
 - `GET /api/critical-path/projects/:id/critical-path`: Returns CPM schedule analysis, total duration, and bottleneck task IDs. `?calendars=assignee` schedules each task on its assignee's or team's calendar.
+- `GET /api/critical-path/portfolio/critical-path?projectIds=a,b`: Critical path across projects (default: all readable), sharing people, teams and cross-project dependencies; `levelResources`, `projectOrder`, `calendars`, `levelingPriority`.
 - `GET /api/critical-path/projects/:id/ladder?level={all|macro|standard|concrete}`: Returns multi-scale ladder view filtered to requested rungs.
 - `GET /api/critical-path/tasks/:id/ladder`: Returns contextual 3-rung ladder slice for an individual task.
 
@@ -1017,7 +1018,9 @@ const leveled = await engine.calculateCriticalPath('proj_123', { calendars: 'ass
 
 In assignee mode the passes run on real dates, slack is counted in each task's own calendar, numeric offsets are project-calendar hours from the start, and a project without a start date starts today. Each calendar is evaluated in its own `timezone`.
 
-With `levelResources: true`, tasks are placed in priority order (`levelingPriority`: `'slack'` by default, or `'priority'`, `'dueDate'`, `'order'`) at the earliest time their predecessors are done and their assignee, and any team pool they draw on, has capacity. Teams are pools of `headcount` people (default: member count); team-only tasks and members' own tasks both use them. Tasks that could not run together, and each delayed task and the task it waited for, are linked so slack reflects people as well as dependencies. Tasks report `levelingDelayHours` and `waitingOn`; the analysis reports `leveled` and `unleveledProjectEndDate`. Tasks are not split or reassigned, tasks with neither an assignee nor a team pool are unconstrained, and other projects are not considered. The engine default is `criticalPathLevelResources`.
+With `levelResources: true`, tasks are placed in priority order (`levelingPriority`: `'slack'` by default, or `'priority'`, `'dueDate'`, `'order'`) at the earliest time their predecessors are done and their assignee, and any team pool they draw on, has capacity. Teams are pools of `headcount` people (default: member count); team-only tasks and members' own tasks both use them. Tasks that could not run together, and each delayed task and the task it waited for, are linked so slack reflects people as well as dependencies. Tasks report `levelingDelayHours` and `waitingOn`; the analysis reports `leveled` and `unleveledProjectEndDate`. Tasks are not split or reassigned, and tasks with neither an assignee nor a team pool are unconstrained. The engine default is `criticalPathLevelResources`. Completed and canceled tasks take no time and occupy nobody.
+
+`engine.calculatePortfolioCriticalPath({ projectIds?, projectOrder?, ...options })` analyses several projects together: people and team pools are shared, dependencies between them are honoured, and each project keeps its own start and calendar. Only readable projects are included (unreadable ids are rejected), and runs above `portfolioTaskLimit` (default 5000 tasks) fail.
 
 Tasks can take part of their assignee's time with `allocation` (0–1, default 1). Estimates are effort, so a 16h task at 0.5 spans 32 working hours in every critical path calculation. Levelling then lets an assignee run tasks side by side while the total stays at 100%, and assignee-mode results list `overallocations` (who is above 100%, when, and through which tasks).
 

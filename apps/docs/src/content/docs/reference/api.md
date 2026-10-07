@@ -125,6 +125,18 @@ Invalid values, or `levelResources=true` without assignee calendars, return `400
 }
 ```
 
+### `GET /portfolio/critical-path`
+Critical path analysis across several projects. People, team pools and dependencies are shared across them.
+
+**Query**:
+- `projectIds=a,b`: projects to include. Default: every project the caller can read; unreadable projects are left out. An unreadable or unknown id returns `403` / `404`.
+- `projectOrder=b,a`: project priority for levelling.
+- `calendars`, `levelResources`, `levelingPriority`: as for the single-project route.
+
+Runs above the engine's `portfolioTaskLimit` (default 5000 tasks) return `400`.
+
+**Response**: `{ "portfolio": { "calculatedAt", "projects": [ /* one analysis per project */ ], "projectEndDate", "leveled", "overallocations": [] } }`
+
 ### `POST /tasks/:taskId/dependencies`
 Declare that `:taskId` depends on another task. Returns `409` if the dependency would create a cycle (including indirect cycles such as A → B → C → A).
 ```json

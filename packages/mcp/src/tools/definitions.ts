@@ -341,6 +341,31 @@ export const addCommentTool = defineTool<{ taskId: string; content: string }>({
   }
 });
 
+export const calculatePortfolioCriticalPathTool = defineTool<{
+  projectIds?: string[];
+  projectOrder?: string[];
+  calendars?: 'project' | 'assignee';
+  levelResources?: boolean;
+  levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
+}>({
+  name: 'calculate_portfolio_critical_path',
+  title: 'Calculate Portfolio Critical Path',
+  description:
+    'Critical path analysis across several projects at once (or every readable project). With calendars "assignee" and levelResources, people and teams are shared across projects, so nobody is double-booked between them.',
+  zodSchema: z.object({
+    projectIds: z.array(z.string()).optional().describe('Projects to include (default: every project you can read)'),
+    projectOrder: z.array(z.string()).optional().describe('Project ids in priority order for levelling; unlisted projects come last'),
+    calendars: z.enum(['project', 'assignee']).optional().describe("'assignee' schedules each task on its assignee's or team's calendar"),
+    levelResources: z.boolean().optional().describe("With calendars 'assignee': share people and team pools across the projects"),
+    levelingPriority: z
+      .enum(['slack', 'priority', 'dueDate', 'order'])
+      .optional()
+      .describe('Which ready task gets an assignee first when levelling (default: least slack, then task priority)')
+  }),
+  annotations: { readOnlyHint: true },
+  execute: async (args, target) => (target as any).calculatePortfolioCriticalPath(args)
+});
+
 export const calculateCriticalPathTool = defineTool<{
   projectId?: string;
   calendars?: 'project' | 'assignee';
@@ -493,6 +518,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   listCommentsTool,
   addCommentTool,
   calculateCriticalPathTool,
+  calculatePortfolioCriticalPathTool,
   getTimelineLadderTool,
   getTaskLadderTool,
   getTaskMetricsTool,

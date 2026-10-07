@@ -329,7 +329,8 @@ describe('@critical-path/server Router Tests', () => {
     const cpmRes = await router.handleRequest(cpmReq);
     expect(cpmRes.status).toBe(200);
     const cpmData = await cpmRes.json();
-    expect(cpmData.analysis.totalDurationHours).toBe(24);
+    // The done 8h task takes no time; only the 16h in-progress task remains
+    expect(cpmData.analysis.totalDurationHours).toBe(16);
     expect(cpmData.analysis.criticalTaskIds).toEqual([t1.id, t2.id]);
 
     // 2. GET /projects/:id/ladder
@@ -338,7 +339,7 @@ describe('@critical-path/server Router Tests', () => {
     expect(ladderRes.status).toBe(200);
     const ladderData = await ladderRes.json();
     expect(ladderData.ladder.macro).toBeDefined();
-    expect(ladderData.ladder.macro.criticalPathDurationHours).toBe(24);
+    expect(ladderData.ladder.macro.criticalPathDurationHours).toBe(16);
     expect(ladderData.ladder.standard.tasks).toHaveLength(2);
     expect(ladderData.ladder.concrete[t2.id]).toBeDefined();
 
@@ -349,7 +350,7 @@ describe('@critical-path/server Router Tests', () => {
     const taskLadderData = await taskLadderRes.json();
     expect(taskLadderData.taskLadder.taskId).toBe(t2.id);
     expect(taskLadderData.taskLadder.standard.title).toBe('UI Implementation');
-    expect(taskLadderData.taskLadder.standard.cpm.earlyStart).toBe(8);
+    expect(taskLadderData.taskLadder.standard.cpm.earlyStart).toBe(0); // its done predecessor takes no time
     expect(taskLadderData.taskLadder.metrics).toBeDefined();
 
     // 4. GET /tasks/:id/metrics
@@ -439,6 +440,18 @@ describe('@critical-path/server Router Tests', () => {
       expect(leveled.projectEndDate).toBe('2026-10-13T17:00:00.000Z'); // Thu, (no Fri), Mon, then Tue for B
       expect((await get('?calendars=assignee&levelResources=yes')).status).toBe(400);
       expect((await get('?levelResources=true')).status).toBe(400);
+
+      // Portfolio: Alice's work in a second project pushes this one out
+      const other = await router.engine.createProject({ name: 'Other', startDate: '2026-10-08T09:00:00.000Z' });
+      await router.engine.createTask({ projectId: other.id, title: 'C', estimatedHours: 8, assigneeId: 'alice' });
+      const portfolioUrl = (query: string) => router.handleRequest(new Request(`${base}/portfolio/critical-path${query}`));
+      const portfolio = (await (await portfolioUrl(`?projectIds=${proj.id},${other.id}&calendars=assignee&levelResources=true&projectOrder=${proj.id}`)).json()).portfolio;
+      expect(portfolio.projects.map((p: { projectId: string }) => p.projectId)).toEqual([proj.id, other.id]);
+      expect(portfolio.leveled).toBe(true);
+      expect(portfolio.projects[1].projectEndDate).toBe('2026-10-14T17:00:00.000Z'); // after A (Thu-Mon) and B (Tue)
+      expect((await (await portfolioUrl('')).json()).portfolio.projects).toHaveLength(2);
+      expect((await portfolioUrl('?projectIds=missing')).status).toBe(404);
+      expect((await portfolioUrl('?levelResources=true')).status).toBe(400);
     });
 
     it('rejects dependency cycles created over HTTP with 409', async () => {

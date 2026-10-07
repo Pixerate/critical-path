@@ -349,17 +349,7 @@ export class CriticalPathRouter {
         }
       } else if (subResource === 'critical-path') {
         if (method === 'GET') {
-          const calendars = (url.searchParams.get('calendars') || undefined) as 'project' | 'assignee' | undefined;
-          const level = url.searchParams.get('levelResources');
-          if (level !== null && level !== 'true' && level !== 'false') {
-            throw new ValidationError('levelResources must be "true" or "false".');
-          }
-          const levelingPriority = (url.searchParams.get('levelingPriority') || undefined) as LevelingPriority | undefined;
-          const analysis = await engine.calculateCriticalPath(projectId, {
-            calendars,
-            ...(level !== null ? { levelResources: level === 'true' } : {}),
-            levelingPriority
-          });
+          const analysis = await engine.calculateCriticalPath(projectId, criticalPathQuery(url));
           return this.jsonResponse({ analysis });
         }
       } else if (subResource === 'ladder' || subResource === 'timeline-ladder') {
@@ -787,6 +777,17 @@ export class CriticalPathRouter {
       }
     }
 
+    // Critical path across projects
+    if (segments[0] === 'portfolio' && segments[1] === 'critical-path' && segments.length === 2 && method === 'GET') {
+      const list = (name: string) => url.searchParams.get(name)?.split(',').map((v) => v.trim()).filter(Boolean);
+      const portfolio = await engine.calculatePortfolioCriticalPath({
+        ...criticalPathQuery(url),
+        projectIds: list('projectIds'),
+        projectOrder: list('projectOrder')
+      });
+      return this.jsonResponse({ portfolio });
+    }
+
     // Workload & Capacity API
     if (segments[0] === 'workload') {
       if (method === 'GET') {
@@ -940,4 +941,15 @@ export class CriticalPathRouter {
       }
     });
   }
+}
+
+/** `calendars`, `levelResources` and `levelingPriority` query parameters for critical path routes. */
+function criticalPathQuery(url: URL) {
+  const calendars = (url.searchParams.get('calendars') || undefined) as 'project' | 'assignee' | undefined;
+  const level = url.searchParams.get('levelResources');
+  if (level !== null && level !== 'true' && level !== 'false') {
+    throw new ValidationError('levelResources must be "true" or "false".');
+  }
+  const levelingPriority = (url.searchParams.get('levelingPriority') || undefined) as LevelingPriority | undefined;
+  return { calendars, ...(level !== null ? { levelResources: level === 'true' } : {}), levelingPriority };
 }

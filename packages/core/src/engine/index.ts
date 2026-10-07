@@ -28,6 +28,7 @@ import type {
   CreateDeliverableInput,
   TaskLifecycleState,
   CriticalPathAnalysis,
+  PortfolioCriticalPathAnalysis,
   TimelineLadder,
   TimelineLadderOptions,
   TaskLadderView,
@@ -100,7 +101,15 @@ import { WebhookDispatcher, assertWebhookUrl } from '../webhooks/dispatcher.js';
 import { buildStorageKey, normalizeUploadData } from '../storage/file-storage.js';
 import { generateWebhookSecret } from '../webhooks/signature.js';
 import type { DomainEvent } from '../domain/events.js';
-import { calculateCPM, type CPMOptions } from '../domain/cpm.js';
+import { calculateCPM, calculatePortfolioCPM, type CPMOptions } from '../domain/cpm.js';
+
+/** Options for `calculatePortfolioCriticalPath`. */
+export interface PortfolioCriticalPathOptions extends CPMOptions {
+  /** Projects to include. Default: every project the caller can read. */
+  projectIds?: string[];
+  /** Project ids in priority order for levelling; unlisted projects come last. */
+  projectOrder?: string[];
+}
 import { CreateTaskSchema } from '../schemas/index.js';
 import { buildTimelineLadder, aggregateConcreteEvidenceForTask } from '../domain/ladder.js';
 import {
@@ -2286,24 +2295,79 @@ export class CriticalPathEngine {
     await this.requireProjectAccess('project.read', projectId);
     const project = await this.store.getProject(projectId);
     const tasks = await this.store.getTasks(projectId);
-    const allDepArrays = await Promise.all(tasks.map((t) => this.store.getDependencies(t.id)));
-    const seenDepIds = new Set<string>();
-    const dependencies: TaskDependency[] = [];
-    for (const deps of allDepArrays) {
-      for (const d of deps) {
-        if (!seenDepIds.has(d.id)) {
-          seenDepIds.add(d.id);
-          dependencies.push(d);
-        }
-      }
-    }
+    const dependencies = await this.loadDependencies(tasks);
     const schedule = options.schedule || project?.schedule || this.config.defaultSchedule;
     const projectStartDate = options.projectStartDate || project?.startDate;
+    const { calendars, levelResources, levelingPriority } = this.resolveCpmModes(options);
+    if (calendars === 'project') return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate });
+    const { users, teams } = await this.loadPeople(options, [project?.tenantId]);
+    return calculateCPM(projectId, tasks, dependencies, {
+      schedule,
+      projectStartDate,
+      calendars,
+      users,
+      teams,
+      levelResources,
+      levelingPriority
+    });
+  }
+
+  /**
+   * Critical path analysis across several projects at once: `projectIds`, or every project the
+   * caller can read. Projects the caller cannot read are left out entirely. Dependencies between the
+   * included projects are honoured and, with `levelResources`, people and team pools are shared, so
+   * nobody is booked above capacity across projects. `projectOrder` ranks projects for levelling.
+   * Each project uses its own start and calendar (`projectStartDate` / `schedule` are fallbacks).
+   * Rejects runs above `portfolioTaskLimit` tasks (default 5000).
+   */
+  async calculatePortfolioCriticalPath(options: PortfolioCriticalPathOptions = {}): Promise<PortfolioCriticalPathAnalysis> {
+    const { calendars, levelResources, levelingPriority } = this.resolveCpmModes(options);
+    let projects: Project[];
+    if (options.projectIds) {
+      const ids = [...new Set(options.projectIds)];
+      if (ids.length === 0) throw new ValidationError('projectIds must not be empty.');
+      projects = [];
+      for (const id of ids) {
+        await this.requireProjectAccess('project.read', id);
+        const project = await this.store.getProject(id);
+        if (!project) throw new NotFoundError(`Project "${id}" not found.`);
+        projects.push(project);
+      }
+    } else {
+      projects = await this.getProjects();
+    }
+
+    const tasksByProject = await Promise.all(projects.map((p) => this.store.getTasks(p.id)));
+    const total = tasksByProject.reduce((sum, tasks) => sum + tasks.length, 0);
+    const limit = this.config.portfolioTaskLimit ?? 5000;
+    if (total > limit) {
+      throw new ValidationError(`Portfolio analysis covers ${total} tasks, above the limit of ${limit}; pass fewer projectIds or raise portfolioTaskLimit.`);
+    }
+    const allTasks = tasksByProject.flat();
+    const included = new Set(allTasks.map((t) => t.id));
+    // Dependencies on tasks outside the included projects are dropped, like those projects.
+    const dependencies = (await this.loadDependencies(allTasks)).filter((d) => included.has(d.taskId) && included.has(d.dependsOnTaskId));
+
+    const { users, teams } = calendars === 'assignee' ? await this.loadPeople(options, projects.map((p) => p.tenantId)) : { users: [], teams: [] };
+    return calculatePortfolioCPM(
+      projects.map((p, i) => ({
+        projectId: p.id,
+        tasks: tasksByProject[i],
+        projectStartDate: p.startDate || options.projectStartDate,
+        schedule: p.schedule || options.schedule || this.config.defaultSchedule
+      })),
+      dependencies,
+      { calendars, users, teams, levelResources, levelingPriority, projectOrder: options.projectOrder }
+    );
+  }
+
+  /** Validated calendar and levelling modes, with engine defaults applied. */
+  private resolveCpmModes(options: CPMOptions) {
     const calendars = options.calendars ?? this.config.criticalPathCalendars ?? 'project';
     if (calendars !== 'project' && calendars !== 'assignee') {
       throw new ValidationError(`Unknown calendars mode "${calendars}"; use "project" or "assignee".`);
     }
-    const levelResources = options.levelResources ?? (this.config.criticalPathLevelResources && calendars === 'assignee');
+    const levelResources = options.levelResources ?? (!!this.config.criticalPathLevelResources && calendars === 'assignee');
     if (levelResources && calendars !== 'assignee') {
       throw new ValidationError("levelResources requires calendars: 'assignee'.");
     }
@@ -2311,19 +2375,24 @@ export class CriticalPathEngine {
     if (levelingPriority && !['slack', 'priority', 'dueDate', 'order'].includes(levelingPriority)) {
       throw new ValidationError(`Unknown levelingPriority "${levelingPriority}"; use "slack", "priority", "dueDate" or "order".`);
     }
-    if (calendars === 'project') return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate });
+    return { calendars, levelResources, levelingPriority };
+  }
+
+  /** Every dependency touching `tasks`, once each. */
+  private async loadDependencies(tasks: Task[]): Promise<TaskDependency[]> {
+    const byId = new Map<string, TaskDependency>();
+    for (const deps of await Promise.all(tasks.map((t) => this.store.getDependencies(t.id)))) {
+      for (const d of deps) byId.set(d.id, d);
+    }
+    return [...byId.values()];
+  }
+
+  /** Users and the teams of the given tenants (team pools match members by user id). */
+  private async loadPeople(options: CPMOptions, tenantIds: Array<string | undefined>) {
     const [users, allTeams] = await Promise.all([options.users ?? this.getUsers(), options.teams ?? this.store.getTeams()]);
-    // Only the project's tenant: team pools match members by user id.
-    const teams = options.teams ? allTeams : allTeams.filter((t) => (t.tenantId ?? undefined) === (project?.tenantId ?? undefined));
-    return calculateCPM(projectId, tasks, dependencies, {
-      schedule,
-      projectStartDate,
-      calendars,
-      users,
-      teams,
-      levelResources: !!levelResources,
-      levelingPriority
-    });
+    const tenants = new Set(tenantIds.map((t) => t ?? undefined));
+    const teams = options.teams ? allTeams : allTeams.filter((t) => tenants.has(t.tenantId ?? undefined));
+    return { users, teams };
   }
 
   async getTimelineLadder(

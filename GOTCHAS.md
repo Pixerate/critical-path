@@ -327,3 +327,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: Team-only tasks wait even though the team has free members in another project. A person in two teams makes both look busier. An over-allocation entry names a `teamId` rather than an `assigneeId`.
 - **Root Cause**: A team is a pool of `headcount` people (default: `memberIds.length`). Team-only tasks and every task assigned to a member use it, and only tasks in the analysed project are seen. A member's own task is counted against each team they belong to. Pools use the team's calendar.
 - **Solution / Workaround**: Set `headcount` to the number of people actually available for the team's work in this project, or remove members who are not. `Overallocation.assigneeId` is optional now; check `teamId` as well.
+
+### Finished Tasks Take No Time in Critical Path Analysis
+- **Area / Package**: `@critical-path/core` (`calculateCPM`, `calculatePortfolioCPM`, `getTaskScheduledHours`)
+- **Symptom / Behavior**: `totalDurationHours` dropped after upgrading, and a task after a `done` predecessor now starts at the project start. Ladder `criticalPathDurationHours` changed the same way.
+- **Root Cause**: Completed and canceled tasks (by `semanticStatus`, else the `done`/`canceled` status keys) are scheduled with zero duration and book no capacity. Before, they were scheduled as if still to do, which also blocked people when levelling across projects.
+- **Solution / Workaround**: This is intended: dates reflect remaining work. For a retrospective view of the full plan, compute it from `estimatedHours` directly. A custom status with `semanticStatus: 'in_progress'` still counts, whatever its key.
+
+### Portfolio Analysis Only Sees Projects the Caller Can Read
+- **Area / Package**: `@critical-path/core` (`calculatePortfolioCriticalPath`), `GET /portfolio/critical-path`
+- **Symptom / Behavior**: A levelled portfolio shows someone free even though they are busy on another project. Requesting that project by id fails with `403`/`404`. Large workspaces fail with "above the limit".
+- **Root Cause**: Without `projectIds`, unreadable projects are left out entirely, so their work is not counted and nothing about them leaks. Results can therefore be optimistic for people who work on projects you cannot see. Runs are capped at `portfolioTaskLimit` (default 5000 tasks).
+- **Solution / Workaround**: Run portfolio analysis as an actor who can read every relevant project (for example, a service account with viewer access), or accept the optimistic result. Pass `projectIds` to stay under the limit, or raise `portfolioTaskLimit` if the server can afford it.

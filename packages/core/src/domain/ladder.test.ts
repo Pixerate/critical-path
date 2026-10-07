@@ -210,22 +210,24 @@ describe('Ladder of Abstraction Domain Logic', () => {
 
     // 1. Calculate CPM
     const cpmAnalysis = await engine.calculateCriticalPath(project.id);
-    expect(cpmAnalysis.totalDurationHours).toBe(20);
+    // Wireframes is done, so only Visual Assets' 15h remain on the critical path
+    expect(cpmAnalysis.totalDurationHours).toBe(15);
     expect(cpmAnalysis.criticalTaskIds).toEqual([t1.id, t2.id]);
 
     // 2. Query full Timeline Ladder
     const ladder = await engine.getTimelineLadder(project.id);
     expect(ladder.macro).toBeDefined();
     expect(ladder.macro?.projectName).toBe('Timeline Ladder Project');
-    expect(ladder.macro?.criticalPathDurationHours).toBe(20);
+    expect(ladder.macro?.criticalPathDurationHours).toBe(15);
     expect(ladder.macro?.phases).toHaveLength(1);
     expect(ladder.macro?.phases[0].name).toBe('Phase 1: Design');
 
     expect(ladder.standard).toBeDefined();
     expect(ladder.standard?.tasks).toHaveLength(2);
     const standardT2 = ladder.standard?.tasks.find((t) => t.id === t2.id)!;
-    expect(standardT2.cpm?.earlyStart).toBe(5);
-    expect(standardT2.cpm?.earlyFinish).toBe(20);
+    // The finished predecessor takes no time, so Visual Assets starts at hour 0
+    expect(standardT2.cpm?.earlyStart).toBe(0);
+    expect(standardT2.cpm?.earlyFinish).toBe(15);
     expect(standardT2.blockingTaskIds).toEqual([t1.id]);
     expect(standardT2.concreteEvidenceSummary.timeEntryCount).toBe(1);
 

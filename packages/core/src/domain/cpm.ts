@@ -6,7 +6,8 @@ import type {
   WorkSchedule,
   User,
   Team,
-  Overallocation
+  Overallocation,
+  PortfolioCriticalPathAnalysis
 } from '../types/index.js';
 import {
   DEFAULT_WORK_SCHEDULE,
@@ -41,6 +42,20 @@ export function getTaskAllocation(task: Task): number {
 /** Working hours a task spans: its effort divided by its allocation. */
 export function getTaskElapsedHours(task: Task): number {
   return getTaskDurationHours(task) / getTaskAllocation(task);
+}
+
+/** True for completed or canceled tasks (by `semanticStatus`, else the default `done`/`canceled` statuses). */
+export function isTaskFinished(task: Task): boolean {
+  if (task.semanticStatus) return task.semanticStatus === 'completed' || task.semanticStatus === 'canceled';
+  return task.status === 'done' || task.status === 'canceled';
+}
+
+/**
+ * Working hours critical path analysis schedules for a task: 0 when it is finished (it needs no
+ * more time and occupies nobody), otherwise its elapsed hours.
+ */
+export function getTaskScheduledHours(task: Task): number {
+  return isTaskFinished(task) ? 0 : getTaskElapsedHours(task);
 }
 
 export interface CPMOptions {
@@ -192,50 +207,110 @@ function calculateCalendarCPM(
   graph: TaskGraph,
   options: CPMOptions
 ): CriticalPathAnalysis {
-  const { taskMap, taskIds, prerequisites, successors, topoOrder } = graph;
-  const projectSchedule = options.schedule || DEFAULT_WORK_SCHEDULE;
+  const segment: ProjectSegment = {
+    projectId,
+    start: startOrToday(options.projectStartDate),
+    schedule: options.schedule || DEFAULT_WORK_SCHEDULE,
+    taskIds: graph.taskIds
+  };
+  const result = scheduleOnDates(graph, [segment], options, calculatedAt);
+  return result.projects[0];
+}
+
+/** One project in a date-based run: its start, its calendar and its tasks. */
+interface ProjectSegment {
+  projectId: string;
+  start: Date;
+  schedule: WorkSchedule;
+  taskIds: string[];
+}
+
+function startOrToday(input?: string | Date): Date {
+  if (input) return parseDate(input);
   const today = new Date();
-  const projectStart = options.projectStartDate
-    ? parseDate(options.projectStartDate)
-    : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const calendarOf = new Map(taskIds.map((id) => [id, resolveTaskSchedule(taskMap.get(id)!, options)]));
-  const durationOf = new Map(taskIds.map((id) => [id, getTaskElapsedHours(taskMap.get(id)!)]));
-  const ctx: PassContext = { taskMap, calendarOf, durationOf, projectStart };
+  return new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+}
+
+/**
+ * Date-based passes over one or more projects at once. Each task starts no earlier than its
+ * project's start and is due by its project's end; dependencies, assignees and team pools may span
+ * projects. Returns one analysis per project plus the combined over-allocation report.
+ */
+function scheduleOnDates(
+  graph: TaskGraph,
+  segments: ProjectSegment[],
+  options: CPMOptions & { projectOrder?: string[] },
+  calculatedAt: string
+): { projects: CriticalPathAnalysis[]; overallocations: Overallocation[] } {
+  const { taskMap, taskIds, prerequisites, successors, topoOrder } = graph;
+  const segmentOf = new Map(segments.flatMap((seg) => seg.taskIds.map((id) => [id, seg] as const)));
+  const calendarOf = new Map(
+    taskIds.map((id) => {
+      const seg = segmentOf.get(id)!;
+      const task = taskMap.get(id)!;
+      return [id, options.calendars === 'assignee' ? resolveTaskSchedule(task, { ...options, schedule: seg.schedule }) : seg.schedule];
+    })
+  );
+  const durationOf = new Map(taskIds.map((id) => [id, getTaskScheduledHours(taskMap.get(id)!)]));
+  const ctx: PassContext = { taskMap, calendarOf, durationOf, startOf: (id) => segmentOf.get(id)!.start };
+  const endOfProjects = (dates: Dates) => {
+    const ends = new Map(segments.map((seg) => [seg.projectId, latest(seg.taskIds.map((id) => dates.finish.get(id)!), seg.start)]));
+    return (id: string) => ends.get(segmentOf.get(id)!.projectId)!;
+  };
+  const resourcesOf = resourceModel(options.teams);
 
   const early = forwardPass(topoOrder, prerequisites, ctx);
-  const late = backwardPass([...topoOrder].reverse(), (id) => successors.get(id)!, latest(early.finish, projectStart), ctx);
-  const resourcesOf = resourceModel(options.teams);
+  const late = backwardPass([...topoOrder].reverse(), (id) => successors.get(id)!, endOfProjects(early), ctx);
+  const analyse = (seg: ProjectSegment, e: Dates, l: Dates, extra?: (id: string) => Partial<TaskCriticalPathSchedule>) =>
+    buildAnalysis(seg, calculatedAt, e, l, ctx, extra);
+
   if (!options.levelResources) {
-    const analysis = buildAnalysis(projectId, calculatedAt, taskIds, early, late, projectSchedule, ctx);
-    return { ...analysis, overallocations: findOverallocations(taskMap, early, resourcesOf) };
+    const overallocations = findOverallocations(taskMap, early, resourcesOf);
+    return {
+      projects: segments.map((seg) => ({ ...analyse(seg, early, late), overallocations: involving(overallocations, seg) })),
+      overallocations
+    };
   }
 
   const unleveledSlack = new Map(taskIds.map((id) => [id, slackHours(early.finish.get(id)!, late.finish.get(id)!, calendarOf.get(id)!)]));
-  const leveled = levelSchedule(graph, ctx, unleveledSlack, options.levelingPriority ?? 'slack', resourcesOf);
+  const projectRank = new Map((options.projectOrder ?? []).map((pid, i) => [pid, i]));
+  const rankOf = (id: string) => projectRank.get(segmentOf.get(id)!.projectId) ?? projectRank.size;
+  const leveled = levelSchedule(graph, ctx, unleveledSlack, options.levelingPriority ?? 'slack', resourcesOf, rankOf);
   const leveledLate = backwardPass(
     leveled.backwardOrder,
     (id) => [...successors.get(id)!, ...(leveled.resourceSuccessors.get(id) ?? [])],
-    latest(leveled.early.finish, projectStart),
+    endOfProjects(leveled.early),
     ctx
   );
-  const analysis = buildAnalysis(projectId, calculatedAt, taskIds, leveled.early, leveledLate, projectSchedule, ctx, (id) => {
-    const delay = round2(getWorkingHoursBetween(early.start.get(id)!, leveled.early.start.get(id)!, calendarOf.get(id)!));
-    const waitingOn = leveled.waitingOn.get(id);
-    return { levelingDelayHours: delay, ...(waitingOn ? { waitingOn } : {}) };
-  });
+  const overallocations = findOverallocations(taskMap, leveled.early, resourcesOf);
+  const unleveledEnd = endOfProjects(early);
   return {
-    ...analysis,
-    leveled: true,
-    unleveledProjectEndDate: latest(early.finish, projectStart).toISOString(),
-    overallocations: findOverallocations(taskMap, leveled.early, resourcesOf)
+    projects: segments.map((seg) => ({
+      ...analyse(seg, leveled.early, leveledLate, (id) => {
+        const delay = round2(getWorkingHoursBetween(early.start.get(id)!, leveled.early.start.get(id)!, calendarOf.get(id)!));
+        const waitingOn = leveled.waitingOn.get(id);
+        return { levelingDelayHours: delay, ...(waitingOn ? { waitingOn } : {}) };
+      }),
+      leveled: true,
+      unleveledProjectEndDate: (seg.taskIds.length ? unleveledEnd(seg.taskIds[0]) : seg.start).toISOString(),
+      overallocations: involving(overallocations, seg)
+    })),
+    overallocations
   };
+}
+
+/** Over-allocation entries that include at least one of the project's tasks. */
+function involving(overallocations: Overallocation[], seg: ProjectSegment): Overallocation[] {
+  const ids = new Set(seg.taskIds);
+  return overallocations.filter((o) => o.taskIds.some((id) => ids.has(id)));
 }
 
 interface PassContext {
   taskMap: Map<string, Task>;
   calendarOf: Map<string, WorkSchedule>;
   durationOf: Map<string, number>;
-  projectStart: Date;
+  /** Earliest start for a task: its project's start. */
+  startOf: (id: string) => Date;
 }
 
 interface Dates {
@@ -243,9 +318,9 @@ interface Dates {
   finish: Map<string, Date>;
 }
 
-function latest(dates: Map<string, Date>, floor: Date): Date {
+function latest(dates: Iterable<Date>, floor: Date): Date {
   let max = floor;
-  for (const d of dates.values()) if (d > max) max = d;
+  for (const d of dates) if (d > max) max = d;
   return max;
 }
 
@@ -262,7 +337,7 @@ function forwardPass(order: string[], prerequisites: Map<string, Set<string>>, c
   const start = new Map<string, Date>();
   const finish = new Map<string, Date>();
   for (const id of order) {
-    let ready = ctx.projectStart;
+    let ready = ctx.startOf(id);
     for (const p of prerequisites.get(id)!) {
       const f = finish.get(p);
       if (f && f > ready) ready = f;
@@ -276,11 +351,11 @@ function forwardPass(order: string[], prerequisites: Map<string, Set<string>>, c
 }
 
 /** Latest dates; `order` must list every successor before its predecessors. */
-function backwardPass(order: string[], successorsOf: (id: string) => Iterable<string>, projectEnd: Date, ctx: PassContext): Dates {
+function backwardPass(order: string[], successorsOf: (id: string) => Iterable<string>, endOf: (id: string) => Date, ctx: PassContext): Dates {
   const start = new Map<string, Date>();
   const finish = new Map<string, Date>();
   for (const id of order) {
-    let due = projectEnd;
+    let due = endOf(id);
     for (const s of successorsOf(id)) {
       const ls = start.get(s);
       if (ls && ls < due) due = ls;
@@ -312,7 +387,8 @@ function levelSchedule(
   ctx: PassContext,
   unleveledSlack: Map<string, number>,
   rule: LevelingPriority,
-  resourcesOf: (task: Task) => Resource[]
+  resourcesOf: (task: Task) => Resource[],
+  projectRankOf: (id: string) => number = () => 0
 ) {
   const creation = new Map(
     [...taskIds]
@@ -330,11 +406,17 @@ function levelSchedule(
     dueDate: (id) => [due(id), unleveledSlack.get(id)!, creation.get(id)!],
     order: (id) => [creation.get(id)!]
   };
-  const compare = (a: string, b: string) => {
-    const ka = keys[rule](a);
-    const kb = keys[rule](b);
-    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
-    return 0;
+  // Keys never change, so compute them once; picking the next task is then a linear scan.
+  const keyOf = new Map(taskIds.map((id) => [id, [projectRankOf(id), ...keys[rule](id)]]));
+  const before = (a: string, b: string) => {
+    const [ka, kb] = [keyOf.get(a)!, keyOf.get(b)!];
+    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] < kb[i];
+    return false;
+  };
+  const first = (ids: Set<string>) => {
+    let best: string | undefined;
+    for (const id of ids) if (best === undefined || before(id, best)) best = id;
+    return best!;
   };
 
   const start = new Map<string, Date>();
@@ -349,10 +431,10 @@ function levelSchedule(
   while (placed.length < taskIds.length) {
     // A dependency cycle leaves tasks that never become eligible; take them in topological order.
     if (eligible.size === 0) eligible.add(topoOrder.find((id) => !start.has(id))!);
-    const id = [...eligible].sort(compare)[0];
+    const id = first(eligible);
     eligible.delete(id);
 
-    let ready = ctx.projectStart;
+    let ready = ctx.startOf(id);
     for (const p of prerequisites.get(id)!) {
       const f = finish.get(p);
       if (f && f > ready) ready = f;
@@ -525,16 +607,14 @@ function findOverallocations(taskMap: Map<string, Task>, dates: Dates, resources
 }
 
 function buildAnalysis(
-  projectId: string,
+  { projectId, start: projectStart, schedule: projectSchedule, taskIds }: ProjectSegment,
   calculatedAt: string,
-  taskIds: string[],
   early: Dates,
   late: Dates,
-  projectSchedule: WorkSchedule,
   ctx: PassContext,
   extra: (id: string) => Partial<TaskCriticalPathSchedule> = () => ({})
 ): CriticalPathAnalysis {
-  const { projectStart, calendarOf, durationOf, taskMap } = ctx;
+  const { calendarOf, durationOf, taskMap } = ctx;
   const offset = (date: Date) =>
     date >= projectStart
       ? getWorkingHoursBetween(projectStart, date, projectSchedule)
@@ -569,7 +649,7 @@ function buildAnalysis(
     });
   }
 
-  const projectEnd = latest(early.finish, projectStart);
+  const projectEnd = latest(taskIds.map((id) => early.finish.get(id)!), projectStart);
   const totalHours = round2(offset(projectEnd));
   return {
     projectId,
@@ -580,6 +660,54 @@ function buildAnalysis(
     projectEndDate: projectEnd.toISOString(),
     criticalTaskIds,
     tasks: schedules
+  };
+}
+
+export interface PortfolioProjectInput {
+  projectId: string;
+  tasks: Task[];
+  /** The project's start. Default: today (UTC midnight). */
+  projectStartDate?: string | Date;
+  /** The project calendar. Default: `DEFAULT_WORK_SCHEDULE`. */
+  schedule?: WorkSchedule;
+}
+
+export interface PortfolioCPMOptions extends Omit<CPMOptions, 'projectStartDate' | 'schedule'> {
+  /** Project ids in priority order; when levelling, their tasks get people first. Unlisted projects come last. */
+  projectOrder?: string[];
+}
+
+/**
+ * Critical path analysis over several projects at once. Always date-based. Each task starts no
+ * earlier than its own project's start and is due by its project's end. Dependencies between tasks
+ * in different projects are honoured. With `levelResources` (requires `calendars: 'assignee'`),
+ * assignees and team pools are shared across all projects, so nobody is booked above capacity in
+ * total. Returns one analysis per project, the latest end, and the combined over-allocation report.
+ */
+export function calculatePortfolioCPM(
+  projects: PortfolioProjectInput[],
+  dependencies: TaskDependency[],
+  options: PortfolioCPMOptions = {}
+): PortfolioCriticalPathAnalysis {
+  if (options.levelResources && options.calendars !== 'assignee') {
+    throw new Error("levelResources requires calendars: 'assignee'.");
+  }
+  const calculatedAt = new Date().toISOString();
+  const graph = buildGraph(projects.flatMap((p) => p.tasks), dependencies);
+  const segments: ProjectSegment[] = projects.map((p) => ({
+    projectId: p.projectId,
+    start: startOrToday(p.projectStartDate),
+    schedule: p.schedule || DEFAULT_WORK_SCHEDULE,
+    taskIds: p.tasks.map((t) => t.id)
+  }));
+  const result = scheduleOnDates(graph, segments, options, calculatedAt);
+  const ends = result.projects.map((a) => a.projectEndDate!).filter(Boolean).sort();
+  return {
+    calculatedAt,
+    projects: result.projects,
+    ...(ends.length ? { projectEndDate: ends[ends.length - 1] } : {}),
+    ...(options.levelResources ? { leveled: true } : {}),
+    overallocations: result.overallocations
   };
 }
 
@@ -627,7 +755,7 @@ export function calculateCPM(
 
   for (const id of topoOrder) {
     const task = taskMap.get(id)!;
-    const duration = getTaskElapsedHours(task);
+    const duration = getTaskScheduledHours(task);
     const prereqs = prerequisites.get(id) || new Set();
 
     let maxPrereqFinish = 0;
@@ -661,7 +789,7 @@ export function calculateCPM(
   for (let i = topoOrder.length - 1; i >= 0; i--) {
     const id = topoOrder[i];
     const task = taskMap.get(id)!;
-    const duration = getTaskElapsedHours(task);
+    const duration = getTaskScheduledHours(task);
     const succs = successors.get(id) || new Set();
 
     let minSuccLateStart = totalDurationHours;
@@ -704,7 +832,7 @@ export function calculateCPM(
     }
 
     const task = taskMap.get(id)!;
-    const duration = getTaskElapsedHours(task);
+    const duration = getTaskScheduledHours(task);
 
     const earlyStartDate = projectStartDate
       ? addWorkingHours(projectStartDate, es, schedule).toISOString()

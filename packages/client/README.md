@@ -71,6 +71,7 @@ const attachment = await client.uploadAttachmentFile({
 
 // Calculate Critical Path Method (CPM) schedule & bottlenecks
 const cpmAnalysis = await client.calculateCriticalPath('proj_1'); // or { calendars: 'assignee', levelResources: true }
+const portfolio = await client.calculatePortfolioCriticalPath({ projectIds: ['proj_1', 'proj_2'], calendars: 'assignee', levelResources: true });
 console.log('Total project duration:', cpmAnalysis.totalDurationHours);
 console.log('Bottleneck tasks:', cpmAnalysis.criticalTaskIds);
 

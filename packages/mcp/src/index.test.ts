@@ -33,6 +33,7 @@ describe('@critical-path/mcp', () => {
       expect(toolNames).toContain('list_comments');
       expect(toolNames).toContain('add_comment');
       expect(toolNames).toContain('calculate_critical_path');
+      expect(toolNames).toContain('calculate_portfolio_critical_path');
       expect(toolNames).toContain('get_timeline_ladder');
       expect(toolNames).toContain('get_task_ladder');
       expect(toolNames).toContain('get_workload_distribution');
@@ -140,15 +141,18 @@ describe('@critical-path/mcp', () => {
       // 1. calculate_critical_path tool
       const cpmTool = TOOL_MAP.get('calculate_critical_path')!;
       const cpmResult = await cpmTool.execute({ projectId: project.id }, engine);
-      expect(cpmResult.totalDurationHours).toBe(10);
+      // The done 4h task takes no time; the in-progress 6h task remains
+      expect(cpmResult.totalDurationHours).toBe(6);
       expect(cpmResult.criticalTaskIds).toEqual([t1.id, t2.id]);
       expect(cpmResult.projectStartDate).toBeUndefined();
       // Assignee calendars work in dates, so they anchor on a start date (today here)
       const byAssignee = await cpmTool.execute({ projectId: project.id, calendars: 'assignee' }, engine);
       expect(byAssignee.projectStartDate).toBeDefined();
-      expect(byAssignee.totalDurationHours).toBe(10);
+      expect(byAssignee.totalDurationHours).toBe(6);
       const leveled = await cpmTool.execute({ projectId: project.id, calendars: 'assignee', levelResources: true }, engine);
       expect(leveled.leveled).toBe(true);
+      const portfolio = await TOOL_MAP.get('calculate_portfolio_critical_path')!.execute({ projectIds: [project.id], calendars: 'assignee', levelResources: true }, engine);
+      expect(portfolio.projects[0].projectId).toBe(project.id);
 
       const scratch = await TOOL_MAP.get('create_project')!.execute({ name: 'Allocation', key: 'ALC' }, engine);
       const halfTime = await TOOL_MAP.get('create_task')!.execute({ projectId: scratch.id, title: 'Half', estimatedHours: 4, allocation: 0.5 }, engine);
@@ -160,7 +164,7 @@ describe('@critical-path/mcp', () => {
       const ladderTool = TOOL_MAP.get('get_timeline_ladder')!;
       const ladderResult = await ladderTool.execute({ projectId: project.id, level: 'all' }, engine);
       expect(ladderResult.macro).toBeDefined();
-      expect(ladderResult.macro.criticalPathDurationHours).toBe(10);
+      expect(ladderResult.macro.criticalPathDurationHours).toBe(6);
       expect(ladderResult.standard.tasks).toHaveLength(2);
 
       // 3. get_task_ladder tool
