@@ -56,14 +56,14 @@ export class InMemoryFirestoreMock implements FirestoreDBInterface {
             return {
               exists: !!data,
               id: docId,
-              data: () => data
+              data: () => structuredClone(data)
             };
           },
           async set(data: any, options?: { merge?: boolean }) {
             if (options?.merge && colMap.has(docId)) {
-              colMap.set(docId, { ...colMap.get(docId), ...data });
+              colMap.set(docId, structuredClone({ ...colMap.get(docId), ...data }));
             } else {
-              colMap.set(docId, data);
+              colMap.set(docId, structuredClone(data));
             }
           },
           async delete() {
@@ -74,7 +74,7 @@ export class InMemoryFirestoreMock implements FirestoreDBInterface {
       async get() {
         const docs = Array.from(colMap.entries()).map(([id, data]) => ({
           id,
-          data: () => data
+          data: () => structuredClone(data)
         }));
         return { docs };
       },
@@ -88,7 +88,7 @@ export class InMemoryFirestoreMock implements FirestoreDBInterface {
               })
               .map(([id, data]) => ({
                 id,
-                data: () => data
+                data: () => structuredClone(data)
               }));
             return { docs };
           }

@@ -291,7 +291,7 @@ Several items above change the storage interface. Before them, add `runStorageAd
 - **SQLite:** now persists `key`, `semanticStatus` and `todos` on tasks, `schedule`, `startDate` and `targetEndDate` on projects, `weeklyCapacityHours` and `schedule` on teams, and `artifactType` on attachments. These go in a JSON `extra` column that also future-proofs new fields.
 - **Firestore:** applies every attachment and activity filter, returns activities newest first and comments oldest first.
 
-**Follow-ups:** copy-on-read for `InMemoryStore`, and running the suite against the Firestore emulator in CI.
+**Follow-ups:** running the suite against the Firestore emulator in CI. (Done: `InMemoryStore` copies on read and write, checked by the suite.)
 
 ## Process
 
