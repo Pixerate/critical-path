@@ -217,7 +217,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `@critical-path/core` (`SQLiteStore`, `FirebaseStore`, custom adapters)
 - **Symptom / Behavior**: After clearing a field (e.g. `parentId`, `iterationId`, `completedAt` set to `undefined`), SQLite returned `null` while other adapters returned nothing, and Firestore kept the old value.
 - **Root Cause**: SQLite yields `NULL` columns as `null`. Firestore `set(..., { merge: true })` ignores fields that were stripped because they were `undefined`.
-- **Solution / Workaround**: `SQLiteStore` drops `null` values in every row mapper (`dropNulls`). `FirebaseStore` update methods write the complete merged record without `merge`, so cleared fields are removed. Custom adapters should behave the same way; `cascade.test.ts` exercises all three built-in adapters.
+- **Solution / Workaround**: `SQLiteStore` drops `null` values in every row mapper (`dropNulls`). `FirebaseStore` update methods write the complete merged record without `merge`, so cleared fields are removed. Custom adapters should behave the same way. Run `runStorageAdapterConformance` from `@critical-path/core/testing` against them. `SQLiteStore` keeps fields without a dedicated column in a JSON `extra` column, so new entity fields round-trip without a schema change.
 
 ### List Endpoints Are Paginated; Order Ties Break by Id
 - **Area / Package**: `@critical-path/server` (`GET /tasks`, `GET /activities`), `@critical-path/core` (`queryTasks`, `queryActivities`), `@critical-path/mcp` (`list_tasks`)
@@ -248,4 +248,10 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: Workload charts show raw user ids and a 40h default capacity.
 - **Root Cause**: Critical Path has no user table. Names, `weeklyCapacityHours` and per-user `schedule` come from the `users` engine option (plus `initialData.users`). Before this option existed, `initialData.users` was ignored.
 - **Solution / Workaround**: Pass `users: User[]` or `users: (actor) => Promise<User[]>` to load them from your auth system, per tenant if needed. Critical-path (CPM) date projections still use one project-wide calendar, not per-assignee schedules.
+
+### `InMemoryStore` Returns Live References
+- **Area / Package**: `@critical-path/core` (`InMemoryStore`)
+- **Symptom / Behavior**: Mutating an object returned by the in-memory store (e.g. pushing to `task.tags`) changes the stored record without an update call; SQLite and Firestore return independent copies.
+- **Root Cause**: `InMemoryStore` returns the objects it holds rather than copies.
+- **Solution / Workaround**: Treat returned records as read-only and call `update*` to change them. Copying on read and write is a known follow-up.
 

@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) shipped; phase 4 item 8 (client SDK) on `feat/client-sdk`, item 9 (S3) on `feat/s3-presign`, item 10 (config) on `feat/engine-config`.
+Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) shipped; phase 4 item 8 (client SDK) on `feat/client-sdk`, item 9 (S3) on `feat/s3-presign`, item 10 (config) shipped; phase 5 store conformance on `test/store-conformance`.
 
 Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
@@ -272,6 +272,12 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 ## Cross-Cutting Prerequisite: Store Conformance Suite
 
 Several items above change the storage interface. Before them, add `runStorageAdapterConformance(name, factory)` run via `describe.each` over InMemory, SQLite, and Firestore (emulator in CI). Cover: round-tripping every optional field (SQLite currently drops `semanticStatus`, `todos`, project `schedule`/dates, attachment `artifactType`), clearing fields with `undefined` (Firestore cannot today), combined filters, sort order, not-found contracts, and cascades. This also fixes the storage parity bugs found in the audit.
+
+**Implemented**: `runStorageAdapterConformance` is exported from `@critical-path/core/testing`, with test-runner functions injected so core has no vitest dependency. It runs against InMemory, SQLite and Firestore. Fixes it drove:
+- **SQLite:** now persists `key`, `semanticStatus` and `todos` on tasks, `schedule`, `startDate` and `targetEndDate` on projects, `weeklyCapacityHours` and `schedule` on teams, and `artifactType` on attachments. These go in a JSON `extra` column that also future-proofs new fields.
+- **Firestore:** applies every attachment and activity filter, returns activities newest first and comments oldest first.
+
+**Follow-ups:** copy-on-read for `InMemoryStore`, and running the suite against the Firestore emulator in CI.
 
 ## Process
 
