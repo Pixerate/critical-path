@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-07T08:39:22.894Z
+> Documentation generated on: 2026-10-07T08:42:31.743Z
 
 ================================================================================
 
@@ -1668,7 +1668,7 @@ graph TD
 | `list_projects` | List all projects with optional query filter | `query`, `limit` |
 | `get_project` | Get detailed project information by ID or slug | `id` |
 | `create_project` | Create a new project workspace | `name`, `key`, `description` |
-| `list_tasks` | List tasks filtered by project, status, priority, or assignee | `projectId`, `status`, `assigneeId` |
+| `list_tasks` | List tasks filtered by project, status, priority, assignee or iteration; paginated (`{ tasks, nextCursor }`) | `projectId`, `status`, `assigneeId`, `iterationId`, `limit`, `cursor` |
 | `get_task` | Fetch full task details including dependencies | `id` |
 | `create_task` | Create a new task within a project | `projectId`, `title`, `status`, `priority` |
 | `update_task` | Update title, status, priority, description, or custom fields | `id`, `status`, `priority`, `title` |
@@ -2054,8 +2054,23 @@ Delete a project and everything in it: tasks (with their subtasks, dependencies,
 
 ## Tasks Endpoints
 
-### `GET /tasks?projectId=:projectId&status=:status`
-List tasks with optional filtering by project, assignee, or status.
+### `GET /tasks`
+List tasks, oldest first (`createdAt`, then `id`), one page at a time.
+
+| Parameter | Description |
+| :--- | :--- |
+| `projectId` | Limit to one project (otherwise all projects the caller can read) |
+| `status`, `priority` | Comma-separated values, e.g. `status=todo,in_progress` |
+| `assigneeId` | Matches `assigneeId` or any entry in `assignees` |
+| `iterationId`, `deliverableId`, `containerId` | Exact match |
+| `parentId` | Subtasks of a task, or `none` for top-level tasks |
+| `limit` | Page size, 1–500 (default 100) |
+| `cursor` | The previous page's `nextCursor` |
+
+Response: `{ "tasks": [...], "nextCursor": "..." }`. `nextCursor` is omitted on the last page. Unknown parameters return `400`.
+
+### `GET /activities`
+The activity (audit) feed, newest first. Accepts `projectId`, `taskId`, `limit` and `cursor`, and returns `{ "activities": [...], "nextCursor": "..." }`.
 
 ### `POST /tasks`
 Create a new task.
