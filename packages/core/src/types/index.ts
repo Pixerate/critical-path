@@ -53,7 +53,11 @@ export interface Holiday {
 export interface WorkSchedule {
   id?: string;
   name?: string;
-  timezone?: string; // Informational (e.g. "UTC", "America/New_York")
+  /**
+   * IANA time zone the schedule's hours, weekdays and holiday dates are in (e.g. "America/New_York").
+   * Default UTC. Working-time arithmetic follows the zone's offsets and daylight-saving changes.
+   */
+  timezone?: string;
   defaultHoursPerDay?: number; // Default: 8
   days: DaySchedule[];
   holidays?: Holiday[];

@@ -74,7 +74,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `@critical-path/core`, `calendar.ts`, `cpm.ts`, `workload.ts`
 - **Symptom / Behavior**: Calculating working hour durations across Daylight Saving Time (DST) clock change weekends or comparing dates across client/server timezones causes 1-hour schedule drifts or off-by-one errors when using local time methods (`getHours()`, `getDate()`) or naive millisecond offsets `(end - start) / 86400000`.
 - **Root Cause**: Local time objects shift clocks by $\pm 1$ hour on DST transitions, making a 24-hour day 23 or 25 hours. When servers and browsers run in different local timezones, string parses like `new Date('2026-09-01')` shift calendar days backwards or forwards based on local UTC offset.
-- **Solution / Workaround**: The calendar engine standardizes on ISO `YYYY-MM-DD` date keys and UTC day-offset arithmetic (`Date.UTC(y, m, d)`) to compute day transitions and calendar bucket intervals, guaranteeing DST-drift-free headless execution across all client and server timezones.
+- **Solution / Workaround**: The calendar engine never uses the host's local time. Day iteration uses ISO `YYYY-MM-DD` date keys and UTC day arithmetic (`Date.UTC(y, m, d)`). A schedule's `timezone` is applied explicitly via `Intl`: each local day's working windows are converted to absolute instants, so offsets and DST changes come out right on any server. Inside the calendar module, pass date keys (not UTC-midnight `Date` objects) to day-level helpers, since a `Date` is read as an instant and moved to its local date in the schedule's zone.
 
 ### Firebase App Hosting Default Domain vs Custom Domain in Astro Sitemaps
 - **Area / Package**: `apps/docs`, Astro Starlight, Firebase App Hosting
@@ -292,8 +292,14 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: npm stages and then finalizes publishes. The registry can answer 409 while a publish is still finalizing (seen on 2026-10-07 for `@critical-path/mcp@0.11.10`, which appeared about 30 seconds later).
 - **Solution / Workaround**: Before re-running, check `npm view @critical-path/<pkg>@<version> dist-tags dist.attestations` and `git ls-remote --tags origin`. If the version and tag exist, nothing is missing. Otherwise re-run the workflow; `changeset publish` skips versions that are already published.
 
-### Assignee-Calendar CPM Works in Dates, in UTC
+### Assignee-Calendar CPM Works in Dates
 - **Area / Package**: `@critical-path/core` (`calculateCPM`, `calculateCriticalPath`, `calendars: 'assignee'`)
-- **Symptom / Behavior**: In assignee mode, a project without `startDate` gets dates from today, and results change from day to day. Slack differs between tasks with the same span. A London `09:00–17:00` and a New York `09:00–17:00` schedule produce identical dates.
-- **Root Cause**: Working-hour offsets are only comparable on one calendar, so assignee mode schedules on real dates and needs an anchor. Without a project start it uses today at UTC midnight. Slack is counted in each task's own calendar. Every calendar is evaluated in UTC (`WorkSchedule.timezone` is informational), matching the rest of the calendar engine.
-- **Solution / Workaround**: Set `project.startDate` (or pass `projectStartDate`) for stable results. To model time zones today, shift the schedule's hours to their UTC equivalents. Numeric offsets (`earlyStart` and the others) are project-calendar hours from the start; use the `*Date` fields for per-task timing.
+- **Symptom / Behavior**: In assignee mode, a project without `startDate` gets dates from today, and results change from day to day. Slack differs between tasks with the same span.
+- **Root Cause**: Working-hour offsets are only comparable on one calendar, so assignee mode schedules on real dates and needs an anchor. Without a project start it uses today at UTC midnight. Slack is counted in each task's own calendar. Each calendar is evaluated in its own `timezone`.
+- **Solution / Workaround**: Set `project.startDate` (or pass `projectStartDate`) for stable results. Numeric offsets (`earlyStart` and the others) are project-calendar hours from the start; use the `*Date` fields for per-task timing.
+
+### Schedule Time Zones Change Results, and Schedules Are Cached by Identity
+- **Area / Package**: `@critical-path/core` (`calendar.ts`, `WorkSchedule.timezone`)
+- **Symptom / Behavior**: After upgrading, schedules with `timezone: 'America/New_York'` (previously informational) produce dates shifted by the zone's offset. Date-times without an offset (`'2026-10-05T09:00'`) no longer depend on the server's local zone. Mutating a schedule object after it has been used, such as pushing a holiday onto `DEFAULT_WORK_SCHEDULE.holidays`, has no effect on later calculations.
+- **Root Cause**: Hours, weekdays and holidays are wall-clock rules in the schedule's zone. Offset-less inputs are read in that zone (UTC by default) instead of being passed to `new Date()`. Per-day working windows are cached in a `WeakMap` keyed by the schedule object, and zone offsets are cached per 15-minute slot, which keeps zoned CPM about as fast as UTC.
+- **Solution / Workaround**: Remove `timezone`, or set it to `'UTC'`, to keep the old results. Treat schedules as immutable: build a new object (`{ ...schedule, holidays: [...] }`) instead of mutating one. Engine and store reads already return fresh objects.
