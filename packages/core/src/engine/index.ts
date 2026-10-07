@@ -2320,9 +2320,25 @@ export class CriticalPathEngine {
     if (calendars !== 'project' && calendars !== 'assignee') {
       throw new ValidationError(`Unknown calendars mode "${calendars}"; use "project" or "assignee".`);
     }
+    const levelResources = options.levelResources ?? (this.config.criticalPathLevelResources && calendars === 'assignee');
+    if (levelResources && calendars !== 'assignee') {
+      throw new ValidationError("levelResources requires calendars: 'assignee'.");
+    }
+    const levelingPriority = options.levelingPriority;
+    if (levelingPriority && !['slack', 'priority', 'dueDate', 'order'].includes(levelingPriority)) {
+      throw new ValidationError(`Unknown levelingPriority "${levelingPriority}"; use "slack", "priority", "dueDate" or "order".`);
+    }
     if (calendars === 'project') return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate });
     const [users, teams] = await Promise.all([options.users ?? this.getUsers(), options.teams ?? this.store.getTeams()]);
-    return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate, calendars, users, teams });
+    return calculateCPM(projectId, tasks, dependencies, {
+      schedule,
+      projectStartDate,
+      calendars,
+      users,
+      teams,
+      levelResources: !!levelResources,
+      levelingPriority
+    });
   }
 
   async getTimelineLadder(

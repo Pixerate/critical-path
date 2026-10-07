@@ -147,6 +147,8 @@ describe('@critical-path/mcp', () => {
       const byAssignee = await cpmTool.execute({ projectId: project.id, calendars: 'assignee' }, engine);
       expect(byAssignee.projectStartDate).toBeDefined();
       expect(byAssignee.totalDurationHours).toBe(10);
+      const leveled = await cpmTool.execute({ projectId: project.id, calendars: 'assignee', levelResources: true }, engine);
+      expect(leveled.leveled).toBe(true);
 
       // 2. get_timeline_ladder tool
       const ladderTool = TOOL_MAP.get('get_timeline_ladder')!;

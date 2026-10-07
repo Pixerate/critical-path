@@ -46,7 +46,21 @@ export interface CPMOptions {
   users?: User[];
   /** Teams whose `schedule` applies to tasks with that `teamId` (assignee mode). */
   teams?: Team[];
+  /**
+   * Assignee mode only. Delays tasks so each assignee works on one task at a time (tasks are not
+   * split; unassigned tasks are unconstrained). Results report `levelingDelayHours` and
+   * `waitingOn` per task and `unleveledProjectEndDate`.
+   */
+  levelResources?: boolean;
+  /**
+   * Which task gets an assignee first when several are ready: `'slack'` (least unlevelled slack,
+   * then task priority; default), `'priority'` (task priority, then slack), `'dueDate'` (earliest
+   * due date, then slack) or `'order'` (creation order).
+   */
+  levelingPriority?: LevelingPriority;
 }
+
+export type LevelingPriority = 'slack' | 'priority' | 'dueDate' | 'order';
 
 /** The calendar a task runs on in assignee mode: assignee, then task team, then project. */
 export function resolveTaskSchedule(
@@ -156,14 +170,15 @@ function buildGraph(tasks: Task[], dependencies: TaskDependency[]): TaskGraph {
  *   working time; start = finish - duration
  * - slack = working hours between early and late finish in the task calendar
  * Numeric offsets (`earlyStart`, ..., `totalDurationHours`) are project-calendar working hours from
- * the project start.
+ * the project start. With `levelResources`, see `levelSchedule`.
  */
 function calculateCalendarCPM(
   projectId: string,
   calculatedAt: string,
-  { taskMap, taskIds, prerequisites, successors, topoOrder }: TaskGraph,
+  graph: TaskGraph,
   options: CPMOptions
 ): CriticalPathAnalysis {
+  const { taskMap, taskIds, prerequisites, successors, topoOrder } = graph;
   const projectSchedule = options.schedule || DEFAULT_WORK_SCHEDULE;
   const today = new Date();
   const projectStart = options.projectStartDate
@@ -171,39 +186,204 @@ function calculateCalendarCPM(
     : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const calendarOf = new Map(taskIds.map((id) => [id, resolveTaskSchedule(taskMap.get(id)!, options)]));
   const durationOf = new Map(taskIds.map((id) => [id, getTaskDurationHours(taskMap.get(id)!)]));
+  const ctx: PassContext = { calendarOf, durationOf, projectStart };
 
-  const earlyStart = new Map<string, Date>();
-  const earlyFinish = new Map<string, Date>();
-  for (const id of topoOrder) {
-    let ready = projectStart;
+  const early = forwardPass(topoOrder, prerequisites, ctx);
+  const late = backwardPass([...topoOrder].reverse(), (id) => successors.get(id)!, latest(early.finish, projectStart), ctx);
+  if (!options.levelResources) {
+    return buildAnalysis(projectId, calculatedAt, taskIds, early, late, projectSchedule, ctx);
+  }
+
+  const unleveledSlack = new Map(taskIds.map((id) => [id, slackHours(early.finish.get(id)!, late.finish.get(id)!, calendarOf.get(id)!)]));
+  const leveled = levelSchedule(graph, ctx, unleveledSlack, options.levelingPriority ?? 'slack');
+  const leveledLate = backwardPass(
+    leveled.backwardOrder,
+    (id) => [...successors.get(id)!, ...(leveled.resourceSuccessor.has(id) ? [leveled.resourceSuccessor.get(id)!] : [])],
+    latest(leveled.early.finish, projectStart),
+    ctx
+  );
+  const analysis = buildAnalysis(projectId, calculatedAt, taskIds, leveled.early, leveledLate, projectSchedule, ctx, (id) => {
+    const delay = round2(getWorkingHoursBetween(early.start.get(id)!, leveled.early.start.get(id)!, calendarOf.get(id)!));
+    const waitingOn = leveled.waitingOn.get(id);
+    return { levelingDelayHours: delay, ...(waitingOn ? { waitingOn } : {}) };
+  });
+  return { ...analysis, leveled: true, unleveledProjectEndDate: latest(early.finish, projectStart).toISOString() };
+}
+
+interface PassContext {
+  calendarOf: Map<string, WorkSchedule>;
+  durationOf: Map<string, number>;
+  projectStart: Date;
+}
+
+interface Dates {
+  start: Map<string, Date>;
+  finish: Map<string, Date>;
+}
+
+function latest(dates: Map<string, Date>, floor: Date): Date {
+  let max = floor;
+  for (const d of dates.values()) if (d > max) max = d;
+  return max;
+}
+
+function slackHours(earlyFinish: Date, lateFinish: Date, calendar: WorkSchedule): number {
+  return round2(
+    lateFinish >= earlyFinish
+      ? getWorkingHoursBetween(earlyFinish, lateFinish, calendar)
+      : -getWorkingHoursBetween(lateFinish, earlyFinish, calendar)
+  );
+}
+
+/** Earliest dates ignoring resource limits. */
+function forwardPass(order: string[], prerequisites: Map<string, Set<string>>, ctx: PassContext): Dates {
+  const start = new Map<string, Date>();
+  const finish = new Map<string, Date>();
+  for (const id of order) {
+    let ready = ctx.projectStart;
     for (const p of prerequisites.get(id)!) {
-      const finish = earlyFinish.get(p);
-      if (finish && finish > ready) ready = finish;
+      const f = finish.get(p);
+      if (f && f > ready) ready = f;
     }
-    const calendar = calendarOf.get(id)!;
+    const calendar = ctx.calendarOf.get(id)!;
     const es = nextWorkingTime(ready, calendar);
-    earlyStart.set(id, es);
-    earlyFinish.set(id, addWorkingHours(es, durationOf.get(id)!, calendar));
+    start.set(id, es);
+    finish.set(id, addWorkingHours(es, ctx.durationOf.get(id)!, calendar));
   }
+  return { start, finish };
+}
 
-  let projectEnd = projectStart;
-  for (const ef of earlyFinish.values()) if (ef > projectEnd) projectEnd = ef;
-
-  const lateStart = new Map<string, Date>();
-  const lateFinish = new Map<string, Date>();
-  for (let i = topoOrder.length - 1; i >= 0; i--) {
-    const id = topoOrder[i];
+/** Latest dates; `order` must list every successor before its predecessors. */
+function backwardPass(order: string[], successorsOf: (id: string) => Iterable<string>, projectEnd: Date, ctx: PassContext): Dates {
+  const start = new Map<string, Date>();
+  const finish = new Map<string, Date>();
+  for (const id of order) {
     let due = projectEnd;
-    for (const s of successors.get(id)!) {
-      const start = lateStart.get(s);
-      if (start && start < due) due = start;
+    for (const s of successorsOf(id)) {
+      const ls = start.get(s);
+      if (ls && ls < due) due = ls;
     }
-    const calendar = calendarOf.get(id)!;
+    const calendar = ctx.calendarOf.get(id)!;
     const lf = previousWorkingTime(due, calendar);
-    lateFinish.set(id, lf);
-    lateStart.set(id, subtractWorkingHours(lf, durationOf.get(id)!, calendar));
+    finish.set(id, lf);
+    start.set(id, subtractWorkingHours(lf, ctx.durationOf.get(id)!, calendar));
+  }
+  return { start, finish };
+}
+
+const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3, none: 4 };
+
+/**
+ * Resource levelling with a serial schedule-generation scheme: repeatedly take the eligible task
+ * (all predecessors placed) that ranks first under `rule`, and place it at the earliest time its
+ * predecessors are finished and its assignee is free for its whole duration on their calendar.
+ * Each assignee works on one task at a time; tasks are not split. Unassigned tasks and
+ * zero-duration milestones do not occupy anyone.
+ *
+ * Returns the levelled early dates, which task each delayed task waited for, and each assignee's
+ * tasks chained in time order (`resourceSuccessor`) so the backward pass respects the levelling.
+ */
+function levelSchedule(
+  { taskMap, taskIds, prerequisites, successors, topoOrder }: TaskGraph,
+  ctx: PassContext,
+  unleveledSlack: Map<string, number>,
+  rule: LevelingPriority
+) {
+  const creation = new Map(
+    [...taskIds]
+      .sort((a, b) => (taskMap.get(a)!.createdAt ?? '').localeCompare(taskMap.get(b)!.createdAt ?? '') || a.localeCompare(b))
+      .map((id, i) => [id, i])
+  );
+  const due = (id: string) => {
+    const d = taskMap.get(id)!.dueDate;
+    return d ? parseDate(d).getTime() : Infinity;
+  };
+  const rank = (id: string) => PRIORITY_RANK[taskMap.get(id)!.priority] ?? PRIORITY_RANK.medium;
+  const keys: Record<LevelingPriority, (id: string) => number[]> = {
+    slack: (id) => [unleveledSlack.get(id)!, rank(id), creation.get(id)!],
+    priority: (id) => [rank(id), unleveledSlack.get(id)!, creation.get(id)!],
+    dueDate: (id) => [due(id), unleveledSlack.get(id)!, creation.get(id)!],
+    order: (id) => [creation.get(id)!]
+  };
+  const compare = (a: string, b: string) => {
+    const ka = keys[rule](a);
+    const kb = keys[rule](b);
+    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+    return 0;
+  };
+
+  const start = new Map<string, Date>();
+  const finish = new Map<string, Date>();
+  const waitingOn = new Map<string, string>();
+  const busy = new Map<string, Array<{ start: number; end: number; taskId: string }>>();
+  const placed: string[] = [];
+  const remaining = new Map(taskIds.map((id) => [id, prerequisites.get(id)!.size]));
+  const eligible = new Set(taskIds.filter((id) => remaining.get(id) === 0));
+
+  while (placed.length < taskIds.length) {
+    // A dependency cycle leaves tasks that never become eligible; take them in topological order.
+    if (eligible.size === 0) eligible.add(topoOrder.find((id) => !start.has(id))!);
+    const id = [...eligible].sort(compare)[0];
+    eligible.delete(id);
+
+    let ready = ctx.projectStart;
+    for (const p of prerequisites.get(id)!) {
+      const f = finish.get(p);
+      if (f && f > ready) ready = f;
+    }
+    const calendar = ctx.calendarOf.get(id)!;
+    const duration = ctx.durationOf.get(id)!;
+    const assignee = taskMap.get(id)!.assigneeId;
+    const slots = assignee && duration > 0 ? busy.get(assignee) ?? [] : [];
+
+    let es = nextWorkingTime(ready, calendar);
+    let ef = addWorkingHours(es, duration, calendar);
+    for (;;) {
+      const clash = slots.find((b) => b.start < ef.getTime() && b.end > es.getTime());
+      if (!clash) break;
+      waitingOn.set(id, clash.taskId);
+      es = nextWorkingTime(new Date(clash.end), calendar);
+      ef = addWorkingHours(es, duration, calendar);
+    }
+    start.set(id, es);
+    finish.set(id, ef);
+    if (assignee && duration > 0) busy.set(assignee, [...slots, { start: es.getTime(), end: ef.getTime(), taskId: id }]);
+    placed.push(id);
+
+    for (const s of successors.get(id)!) {
+      const left = remaining.get(s)! - 1;
+      remaining.set(s, left);
+      if (left === 0 && !start.has(s)) eligible.add(s);
+    }
   }
 
+  const resourceSuccessor = new Map<string, string>();
+  for (const slots of busy.values()) {
+    const ordered = [...slots].sort((a, b) => a.start - b.start);
+    for (let i = 0; i + 1 < ordered.length; i++) resourceSuccessor.set(ordered[i].taskId, ordered[i + 1].taskId);
+  }
+
+  // Every edge (dependency or resource chain) goes forward in levelled start time; ties are
+  // zero-duration tasks, ordered by placement.
+  const placement = new Map(placed.map((id, i) => [id, i]));
+  const backwardOrder = [...taskIds].sort(
+    (a, b) => start.get(b)!.getTime() - start.get(a)!.getTime() || placement.get(b)! - placement.get(a)!
+  );
+
+  return { early: { start, finish } as Dates, waitingOn, resourceSuccessor, backwardOrder };
+}
+
+function buildAnalysis(
+  projectId: string,
+  calculatedAt: string,
+  taskIds: string[],
+  early: Dates,
+  late: Dates,
+  projectSchedule: WorkSchedule,
+  ctx: PassContext,
+  extra: (id: string) => Partial<TaskCriticalPathSchedule> = () => ({})
+): CriticalPathAnalysis {
+  const { projectStart, calendarOf, durationOf } = ctx;
   const offset = (date: Date) =>
     date >= projectStart
       ? getWorkingHoursBetween(projectStart, date, projectSchedule)
@@ -213,29 +393,31 @@ function calculateCalendarCPM(
   const criticalTaskIds: string[] = [];
   for (const id of taskIds) {
     const calendar = calendarOf.get(id)!;
-    const ef = earlyFinish.get(id)!;
-    const lf = lateFinish.get(id)!;
-    const slack = round2(lf >= ef ? getWorkingHoursBetween(ef, lf, calendar) : -getWorkingHoursBetween(lf, ef, calendar));
+    const ef = early.finish.get(id)!;
+    const lf = late.finish.get(id)!;
+    const slack = slackHours(ef, lf, calendar);
     const isCritical = slack <= 0.001;
     if (isCritical) criticalTaskIds.push(id);
     schedules.push({
       taskId: id,
-      earlyStart: round2(offset(earlyStart.get(id)!)),
+      earlyStart: round2(offset(early.start.get(id)!)),
       earlyFinish: round2(offset(ef)),
-      lateStart: round2(offset(lateStart.get(id)!)),
+      lateStart: round2(offset(late.start.get(id)!)),
       lateFinish: round2(offset(lf)),
       totalSlack: slack,
       isCritical,
       durationHours: durationOf.get(id)!,
       slackWorkingHours: slack,
-      earlyStartDate: earlyStart.get(id)!.toISOString(),
+      earlyStartDate: early.start.get(id)!.toISOString(),
       earlyFinishDate: ef.toISOString(),
-      lateStartDate: lateStart.get(id)!.toISOString(),
+      lateStartDate: late.start.get(id)!.toISOString(),
       lateFinishDate: lf.toISOString(),
-      ...(calendar.id ? { scheduleId: calendar.id } : {})
+      ...(calendar.id ? { scheduleId: calendar.id } : {}),
+      ...extra(id)
     });
   }
 
+  const projectEnd = latest(early.finish, projectStart);
   const totalHours = round2(offset(projectEnd));
   return {
     projectId,
@@ -280,6 +462,9 @@ export function calculateCPM(
   }
 
   const { taskMap, taskIds, prerequisites, successors, topoOrder } = buildGraph(tasks, dependencies);
+  if (options.levelResources && options.calendars !== 'assignee') {
+    throw new Error("levelResources requires calendars: 'assignee'.");
+  }
   if (options.calendars === 'assignee') {
     return calculateCalendarCPM(projectId, calculatedAt, { taskMap, taskIds, prerequisites, successors, topoOrder }, options);
   }

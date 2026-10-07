@@ -432,6 +432,13 @@ describe('@critical-path/server Router Tests', () => {
       expect((await (await get('')).json()).analysis.projectEndDate).toBe('2026-10-09T17:00:00.000Z');
       expect((await (await get('?calendars=assignee')).json()).analysis.projectEndDate).toBe('2026-10-12T17:00:00.000Z');
       expect((await get('?calendars=bogus')).status).toBe(400);
+
+      await router.engine.createTask({ projectId: proj.id, title: 'B', estimatedHours: 8, assigneeId: 'alice' });
+      const leveled = (await (await get('?calendars=assignee&levelResources=true')).json()).analysis;
+      expect(leveled.leveled).toBe(true);
+      expect(leveled.projectEndDate).toBe('2026-10-13T17:00:00.000Z'); // Thu, (no Fri), Mon, then Tue for B
+      expect((await get('?calendars=assignee&levelResources=yes')).status).toBe(400);
+      expect((await get('?levelResources=true')).status).toBe(400);
     });
 
     it('rejects dependency cycles created over HTTP with 409', async () => {

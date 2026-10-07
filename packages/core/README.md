@@ -349,9 +349,13 @@ console.log('Total Working Hours on Critical Path:', cpm.totalWorkingHours);
 
 // Schedule each task on its assignee's (or team's) calendar instead, using the `users` directory
 const byAssignee = await engine.calculateCriticalPath('proj_123', { calendars: 'assignee' });
+
+// ...and limit each assignee to one task at a time (resource levelling)
+const leveled = await engine.calculateCriticalPath('proj_123', { calendars: 'assignee', levelResources: true });
+console.log(leveled.unleveledProjectEndDate, '->', leveled.projectEndDate);
 ```
 
-With `calendars: 'assignee'` (or `criticalPathCalendars: 'assignee'` on the engine), each task uses its assignee's schedule, then its team's, then the project calendar. Passes run on dates, slack is measured in each task's calendar, and each calendar is evaluated in its own `timezone` (IANA name; default UTC), including daylight-saving changes.
+With `calendars: 'assignee'` (or `criticalPathCalendars: 'assignee'` on the engine), each task uses its assignee's schedule, then its team's, then the project calendar. Passes run on dates, slack is measured in each task's calendar, and each calendar is evaluated in its own `timezone` (IANA name; default UTC), including daylight-saving changes. `levelResources: true` additionally delays tasks so nobody works on two at once (priority rule `levelingPriority`, default least slack), reporting `levelingDelayHours` and `waitingOn` per task.
 
 ### 9. Fractional Lexical Indexing (Kanban Reordering)
 
