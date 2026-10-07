@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-07T12:44:11.313Z
+> Documentation generated on: 2026-10-07T13:05:02.426Z
 
 ================================================================================
 
@@ -938,38 +938,74 @@ Queries automatically leverage Firestore compound indexes for fast filtering by 
 
 ## Custom Storage Adapters
 URL: https://criticalpath.uchiage.app/storage/custom/
-Description: Implement your own custom storage adapter for PostgreSQL, MongoDB, DynamoDB, or Redis.
+Description: Implement the StorageAdapter interface for PostgreSQL, MongoDB, DynamoDB or another database, and verify it with the conformance suite.
 
-Critical Path makes zero assumptions about your persistence layer. Any class implementing `CriticalPathStore` can be passed to `CriticalPathEngine`.
+Any class implementing `StorageAdapter` from `@critical-path/core` can be passed to the engine as `store`. The interface is composed of one repository per entity:
+
+| Repository | Methods |
+| :--- | :--- |
+| `ProjectRepository` | `getProjects`, `getProject`, `createProject`, `updateProject`, `deleteProject` |
+| `TaskRepository` | `getTasks(projectId?)`, `queryTasks(query)`, `getTask`, `createTask`, `updateTask`, `deleteTask` |
+| `WorkflowRepository`, `TeamRepository`, `ContainerRepository`, `IterationRepository`, `DeliverableRepository` | `get…s`, `get…`, `create…`, `update…`, `delete…` |
+| `CommentRepository` | `getComments(taskId)`, `getComment`, `addComment`, `updateComment`, `deleteComment`, optional `addReaction` / `removeReaction` |
+| `AttachmentRepository` | `getAttachments(filter)`, `getAttachment`, `createAttachment`, `deleteAttachment` |
+| `ActivityRepository` | `getActivities(filter)`, `queryActivities(query)`, `logActivity` |
+| `TimeEntryRepository` | `getTimeEntries(taskId)`, `logTime`, `deleteTimeEntry` |
+| `DependencyRepository` | `getDependencies(taskId)`, `getDependency`, `addDependency`, `removeDependency` |
+| `WebhookRepository` | `getWebhooks`, `getWebhook`, `addWebhook`, `updateWebhook`, `deleteWebhook` |
+
+```typescript
+import type { StorageAdapter } from '@critical-path/core';
+
+export class PostgresStore implements StorageAdapter {
+  // ...
+}
+
+const engine = new CriticalPathEngine({ store: new PostgresStore(pool) });
+```
 
 ---
 
-## The `CriticalPathStore` Interface
+## Contracts your adapter must follow
+
+- **Round-trip every field.** Return exactly what was stored, including nested objects and fields your schema has no column for. `SQLiteStore` keeps those in a JSON `extra` column.
+- **Absent, not `null`.** Unset optional fields must be missing (`undefined`), never `null`.
+- **Updates.** `update*` merges into the existing record. A field set to `undefined` is removed, and nested objects such as `customFields` are replaced, not deep-merged. Return `null` when the record does not exist.
+- **Deletes.** `delete*` and `remove*` return `false` when nothing was deleted.
+- **Ordering.**
+  - `getComments`: oldest first.
+  - `getActivities`: newest first.
+  - `queryTasks`: `(createdAt, id)` ascending.
+  - `queryActivities`: `(createdAt, id)` descending.
+- **Filters.** Every filter passed to `getAttachments`, `getActivities`, `queryTasks` and `queryActivities` must be applied together. The exported helpers `matchesTaskQuery`, `matchesActivityQuery` and `paginate` implement the in-memory semantics if your database cannot push a filter down.
+
+---
+
+## Verify with the conformance suite
+
+`@critical-path/core/testing` exports the suite the built-in adapters run. Pass your test runner's functions, so core has no test-framework dependency:
 
 ```typescript
-import type { Task, Project, Dependency, StatusDefinition } from '@critical-path/core';
+// postgres-store.test.ts
+import { describe, it, expect } from 'vitest';
+import { runStorageAdapterConformance } from '@critical-path/core/testing';
+import { PostgresStore } from './postgres-store';
 
-export interface CriticalPathStore {
-  // Project Methods
-  createProject(project: Project): Promise<Project>;
-  getProject(id: string): Promise<Project | null>;
-  listProjects(): Promise<Project[]>;
-  updateProject(id: string, updates: Partial<Project>): Promise<Project>;
-  deleteProject(id: string): Promise<void>;
-
-  // Task Methods
-  createTask(task: Task): Promise<Task>;
-  getTask(id: string): Promise<Task | null>;
-  listTasks(filter?: { projectId?: string; status?: string }): Promise<Task[]>;
-  updateTask(id: string, updates: Partial<Task>): Promise<Task>;
-  deleteTask(id: string): Promise<void>;
-
-  // Dependency Methods
-  addDependency(dep: Dependency): Promise<Dependency>;
-  listDependencies(projectId: string): Promise<Dependency[]>;
-  deleteDependency(id: string): Promise<void>;
-}
+runStorageAdapterConformance({
+  name: 'PostgresStore',
+  createStore: async () => new PostgresStore(await freshTestDatabase()),
+  describe,
+  it,
+  expect
+});
 ```
+
+It checks:
+- round-tripping every field of every entity
+- partial updates and clearing fields
+- the not-found contracts
+- combined filters
+- sort orders
 
 --------------------------------------------------------------------------------
 

@@ -28,7 +28,7 @@ Critical Path decouples project management logic from the presentation layer. It
 - [In-Memory Storage Adapter](https://criticalpath.uchiage.app/storage/in-memory/): Fast, zero-configuration in-memory store for unit tests, prototyping, and ephemeral workflows.
 - [SQLite Storage Adapter](https://criticalpath.uchiage.app/storage/sqlite/): High-performance embedded SQL storage powered by better-sqlite3 for local development and edge deployments.
 - [Firebase & Cloud Firestore Storage Adapter](https://criticalpath.uchiage.app/storage/firebase/): Scalable serverless NoSQL storage powered by Google Cloud Firestore.
-- [Custom Storage Adapters](https://criticalpath.uchiage.app/storage/custom/): Implement your own custom storage adapter for PostgreSQL, MongoDB, DynamoDB, or Redis.
+- [Custom Storage Adapters](https://criticalpath.uchiage.app/storage/custom/): Implement the StorageAdapter interface for PostgreSQL, MongoDB, DynamoDB or another database, and verify it with the conformance suite.
 
 ## Framework Adapters
 
