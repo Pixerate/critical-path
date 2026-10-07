@@ -40,5 +40,9 @@
   },
   "dependencies": {
     "zod": "^3.25.76"
-  }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*"
+  ]
 }
