@@ -41,7 +41,7 @@ Create a new project.
 Retrieve single project by ID.
 
 ### `PATCH /projects/:projectId`
-Update project fields. `id`, `createdAt` and `updatedAt` in the body are ignored. Returns `404` if the project does not exist.
+Update project fields. `id`, `createdAt` and `updatedAt` in the body are rejected with `400`. Returns `404` if the project does not exist.
 
 ### `DELETE /projects/:projectId`
 Delete a project and its tasks. Each task deletion runs plugin hooks and publishes `task.deleted`, then `project.deleted` is published and dispatched to webhooks.
@@ -127,5 +127,5 @@ Errors are returned as JSON with an `error` message and, where useful, extra det
 
 ### Validation
 
-Server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, and the owning `projectId` on updates) and unknown keys are stripped from request bodies. Comments, reactions and attachments require an author (`authorId`, `userId`, `uploaderId`) unless the router's `getContext` resolves the caller.
+Request bodies are strict. Server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, and the owning `projectId` on updates), identity fields (`actorId`, `authorId`, `userId`, `uploaderId`) and unknown keys are rejected with `400`. Authors of comments, reactions, attachments and time entries are the caller resolved by `getContext`, or `anonymous`. Remove a reaction with `DELETE /comments/:commentId/reactions?emoji=<emoji>`.
 

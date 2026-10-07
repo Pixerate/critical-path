@@ -83,7 +83,7 @@ export const ROUTES: RouteDoc[] = [
   { method: 'patch', path: '/comments/{commentId}', summary: 'Update a comment', tag: 'Comments', body: schemas.UpdateCommentSchema, responseKey: 'comment' },
   { method: 'delete', path: '/comments/{commentId}', summary: 'Delete a comment', tag: 'Comments' },
   { method: 'post', path: '/comments/{commentId}/reactions', summary: 'Add a reaction', tag: 'Comments', body: schemas.CommentReactionSchema, responseKey: 'comment' },
-  { method: 'delete', path: '/comments/{commentId}/reactions', summary: 'Remove a reaction', tag: 'Comments', query: ['emoji', 'userId'], responseKey: 'comment' },
+  { method: 'delete', path: '/comments/{commentId}/reactions', summary: 'Remove a reaction', tag: 'Comments', query: ['emoji!'], responseKey: 'comment' },
 
   { method: 'get', path: '/attachments', summary: 'List attachments', tag: 'Attachments', query: ['taskId', 'projectId', 'commentId'], responseKey: 'attachments' },
   { method: 'post', path: '/attachments', summary: 'Register an attachment', tag: 'Attachments', body: schemas.CreateAttachmentSchema, responseKey: 'attachment', status: 201 },

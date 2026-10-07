@@ -111,7 +111,7 @@ describe('@critical-path/server Router Tests', () => {
     const postCmtReq = new Request(`http://localhost:3000/api/critical-path/tasks/${task.id}/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: 'Root comment', authorId: 'u1', authorType: 'user' })
+      body: JSON.stringify({ content: 'Root comment' })
     });
     const postCmtRes = await router.handleRequest(postCmtReq);
     expect(postCmtRes.status).toBe(201);
@@ -146,8 +146,7 @@ describe('@critical-path/server Router Tests', () => {
         mimeType: 'text/markdown',
         sizeBytes: 100,
         taskId: task.id,
-        projectId: proj.id,
-        uploaderId: 'u1'
+        projectId: proj.id
       })
     });
     const postAttRes = await router.handleRequest(postAttReq);
@@ -183,8 +182,7 @@ describe('@critical-path/server Router Tests', () => {
       body: JSON.stringify({
         filename: 'huge.pdf',
         url: `data:application/pdf;base64,${'B'.repeat(3000)}`,
-        taskId: task.id,
-        uploaderId: 'u1'
+        taskId: task.id
       })
     });
     const invalidAttRes = await router.handleRequest(invalidAttReq);
@@ -203,29 +201,29 @@ describe('@critical-path/server Router Tests', () => {
     const addReactReq = new Request(`http://localhost:3000/api/critical-path/comments/${comment.id}/reactions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emoji: '❤️', userId: 'u2' })
+      body: JSON.stringify({ emoji: '❤️' })
     });
     const addReactRes = await router.handleRequest(addReactReq);
     expect(addReactRes.status).toBe(200);
     const addReactData = await addReactRes.json();
     expect(addReactData.comment.reactions).toHaveLength(1);
     expect(addReactData.comment.reactions[0].emoji).toBe('❤️');
+    expect(addReactData.comment.reactions[0].userId).toBe('anonymous');
 
-    // 2. Add reaction validation error (missing emoji or userId)
+    // 2. Add reaction validation error (missing emoji, or identity claimed in the body)
     const badReactReq = new Request(`http://localhost:3000/api/critical-path/comments/${comment.id}/reactions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emoji: '❤️' })
+      body: JSON.stringify({ emoji: '❤️', userId: 'u2' })
     });
     const badReactRes = await router.handleRequest(badReactReq);
     expect(badReactRes.status).toBe(400);
 
     // 3. Remove reaction via DELETE
-    const delReactReq = new Request(`http://localhost:3000/api/critical-path/comments/${comment.id}/reactions`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emoji: '❤️', userId: 'u2' })
-    });
+    const delReactReq = new Request(
+      `http://localhost:3000/api/critical-path/comments/${comment.id}/reactions?emoji=${encodeURIComponent('❤️')}`,
+      { method: 'DELETE' }
+    );
     const delReactRes = await router.handleRequest(delReactReq);
     expect(delReactRes.status).toBe(200);
     const delReactData = await delReactRes.json();
@@ -483,11 +481,16 @@ describe('@critical-path/server Router Tests', () => {
       }
     });
 
-    it('answers CORS preflight requests', async () => {
-      const router = new CriticalPathRouter();
-      const res = await router.handleRequest(new Request(`${base}/tasks`, { method: 'OPTIONS' }));
-      expect(res.status).toBe(204);
-      expect(res.headers.get('Access-Control-Allow-Methods')).toContain('PATCH');
+    it('answers CORS preflight requests, sending CORS headers only when configured', async () => {
+      const preflight = () => new Request(`${base}/tasks`, { method: 'OPTIONS', headers: { Origin: 'https://x.test' } });
+
+      const closed = await new CriticalPathRouter().handleRequest(preflight());
+      expect(closed.status).toBe(204);
+      expect(closed.headers.get('Access-Control-Allow-Origin')).toBeNull();
+
+      const open = await new CriticalPathRouter(undefined, { cors: { origins: '*' } }).handleRequest(preflight());
+      expect(open.headers.get('Access-Control-Allow-Origin')).toBe('*');
+      expect(open.headers.get('Access-Control-Allow-Methods')).toContain('PATCH');
     });
   });
 
@@ -500,7 +503,7 @@ describe('@critical-path/server Router Tests', () => {
     expect((await GET(req())).status).toBe(200);
   });
 
-  it('updates projects via PATCH without allowing id or timestamp overrides', async () => {
+  it('updates projects via PATCH and rejects id or timestamp overrides', async () => {
     const router = new CriticalPathRouter();
     const proj = await router.engine.createProject({ key: 'UPD', name: 'Before' });
     const patch = (id: string, body: unknown) =>
@@ -512,7 +515,10 @@ describe('@critical-path/server Router Tests', () => {
         })
       );
 
-    const res = await patch(proj.id, { name: 'After', id: 'hijacked', createdAt: '1999-01-01T00:00:00.000Z' });
+    expect((await patch(proj.id, { name: 'After', id: 'hijacked' })).status).toBe(400);
+    expect((await patch(proj.id, { name: 'After', createdAt: '1999-01-01T00:00:00.000Z' })).status).toBe(400);
+
+    const res = await patch(proj.id, { name: 'After' });
     expect(res.status).toBe(200);
     const { project } = await res.json();
     expect(project.id).toBe(proj.id);
@@ -632,7 +638,7 @@ describe('@critical-path/server Router Tests', () => {
       expect((await call(router, '/projects', { method: 'OPTIONS' })).status).toBe(204);
     });
 
-    it('attributes mutations to the context user and ignores identity in bodies', async () => {
+    it('attributes mutations to the context user', async () => {
       const router = new CriticalPathRouter(undefined, { getContext: tokenContext });
       const project = await router.engine.createProject({ key: 'CTX', name: 'Context' });
       const task = await router.engine.createTask({ projectId: project.id, title: 'T' });
@@ -640,14 +646,14 @@ describe('@critical-path/server Router Tests', () => {
       const patched = await call(router, `/tasks/${task.id}`, {
         method: 'PATCH',
         token: 'alice',
-        body: JSON.stringify({ title: 'Renamed', actorId: 'ceo', actorName: 'CEO' })
+        body: JSON.stringify({ title: 'Renamed' })
       });
       expect(patched.status).toBe(200);
 
       const commented = await call(router, `/tasks/${task.id}/comments`, {
         method: 'POST',
         token: 'alice',
-        body: JSON.stringify({ content: 'hi', authorId: 'ceo' })
+        body: JSON.stringify({ content: 'hi' })
       });
       const { comment } = await commented.json();
       expect(comment.authorId).toBe('alice');
@@ -727,7 +733,7 @@ describe('@critical-path/server Router Tests', () => {
         new Request(`http://localhost/api/critical-path/tasks/${task.id}/comments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: 'from svelte', authorId: 'spoofed' })
+          body: JSON.stringify({ content: 'from svelte' })
         });
 
       expect((await POST({ request: commentReq(), locals: {} })).status).toBe(401);
@@ -763,7 +769,7 @@ describe('@critical-path/server Router Tests', () => {
         })
       );
 
-    it('ignores attempts to move tasks or rewrite server-assigned fields', async () => {
+    it('rejects attempts to move tasks or rewrite server-assigned fields', async () => {
       const router = new CriticalPathRouter();
       const home = await router.engine.createProject({ key: 'HOME', name: 'Home' });
       const other = await router.engine.createProject({ key: 'OTH', name: 'Other' });
@@ -776,12 +782,14 @@ describe('@critical-path/server Router Tests', () => {
         createdAt: '1999-01-01T00:00:00.000Z',
         injected: '<script>'
       });
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
+      const { issues } = await res.json();
+      expect(issues[0].message).toMatch(/Unrecognized key/);
+      expect(issues[0].message).toMatch(/projectId/);
+
       const stored = await router.engine.getTask(task.id);
-      expect(stored?.title).toBe('Renamed');
+      expect(stored?.title).toBe('Stay');
       expect(stored?.projectId).toBe(home.id);
-      expect(stored?.createdAt).toBe(task.createdAt);
-      expect((stored as any).injected).toBeUndefined();
     });
 
     it('returns 400 with field-level issues for invalid bodies', async () => {
@@ -797,7 +805,7 @@ describe('@critical-path/server Router Tests', () => {
       expect((await send(router, 'POST', '/iterations', { projectId: project.id, name: 'S1', status: 'later' })).status).toBe(400);
     });
 
-    it('requires an author unless the caller is resolved, and path ids win over body ids', async () => {
+    it('takes authorship from the caller (or anonymous), never the body, and path ids win', async () => {
       const router = new CriticalPathRouter(undefined, {
         getContext: (request) => {
           const token = request.headers.get('Authorization')?.replace('Bearer ', '');
@@ -809,8 +817,11 @@ describe('@critical-path/server Router Tests', () => {
       const decoy = await router.engine.createTask({ projectId: project.id, title: 'Decoy' });
 
       const anonymous = await send(router, 'POST', `/tasks/${task.id}/comments`, { content: 'hi' });
-      expect(anonymous.status).toBe(400);
-      expect((await anonymous.json()).error).toContain('authorId');
+      expect(anonymous.status).toBe(201);
+      expect((await anonymous.json()).comment.authorId).toBe('anonymous');
+
+      const spoofed = await send(router, 'POST', `/tasks/${task.id}/comments`, { content: 'hi', authorId: 'ceo' }, 'alice');
+      expect(spoofed.status).toBe(400);
 
       const authed = await send(router, 'POST', `/tasks/${task.id}/comments`, { content: 'hi', taskId: decoy.id }, 'alice');
       expect(authed.status).toBe(201);
@@ -819,15 +830,18 @@ describe('@critical-path/server Router Tests', () => {
       expect(comment.taskId).toBe(task.id);
     });
 
-    it('keeps accepting actor claims from unauthenticated trusted callers', async () => {
+    it('attributes unauthenticated writes to the anonymous actor and rejects actor claims', async () => {
       const router = new CriticalPathRouter();
-      const project = await router.engine.createProject({ key: 'CLI', name: 'CLI' });
+      const project = await router.engine.createProject({ key: 'ANO', name: 'Anonymous' });
       const task = await router.engine.createTask({ projectId: project.id, title: 'T' });
 
-      const res = await send(router, 'PATCH', `/tasks/${task.id}`, { isBlocked: true, actorId: 'agent-7', actorType: 'agent' });
+      const claimed = await send(router, 'PATCH', `/tasks/${task.id}`, { isBlocked: true, actorId: 'agent-7' });
+      expect(claimed.status).toBe(400);
+
+      const res = await send(router, 'PATCH', `/tasks/${task.id}`, { isBlocked: true });
       expect(res.status).toBe(200);
       const activities = await router.engine.store.getActivities({ taskId: task.id });
-      expect(activities.some((a) => a.actorId === 'agent-7')).toBe(true);
+      expect(activities.some((a) => a.actorId === 'anonymous')).toBe(true);
     });
   });
 });

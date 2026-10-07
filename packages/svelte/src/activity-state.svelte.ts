@@ -1,4 +1,5 @@
 /// <reference types="svelte" />
+import type { CreateAttachmentBody, CreateCommentBody } from '@critical-path/core/schemas';
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Comment, Attachment } from '@critical-path/core';
 
@@ -79,8 +80,8 @@ export class TaskActivityState {
   }
 
   async addComment(
-    input: Omit<Comment, 'id' | 'taskId' | 'createdAt' | 'updatedAt'>,
-    attachmentInputs?: Array<Omit<Attachment, 'id' | 'taskId' | 'commentId' | 'createdAt' | 'updatedAt'>>
+    input: Omit<CreateCommentBody, 'taskId'>,
+    attachmentInputs?: Array<Omit<CreateAttachmentBody, 'taskId' | 'commentId'>>
   ) {
     if (!this.taskId) {
       throw new Error('TaskActivityState requires a taskId to add comments.');
@@ -156,14 +157,10 @@ export class TaskActivityState {
 
   async addReaction(
     commentId: string,
-    reactionOrEmoji: { emoji: string; userId: string } | string,
-    maybeUserId?: string
+    emoji: string
   ) {
     try {
-      const payload =
-        typeof reactionOrEmoji === 'string'
-          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
-          : reactionOrEmoji;
+      const payload = { emoji };
       const updated = await this.client.addCommentReaction(commentId, payload);
       this.comments = this.comments.map((c) => (c.id === commentId ? updated : c));
       return updated;
@@ -176,14 +173,10 @@ export class TaskActivityState {
 
   async removeReaction(
     commentId: string,
-    reactionOrEmoji: { emoji: string; userId: string } | string,
-    maybeUserId?: string
+    emoji: string
   ) {
     try {
-      const payload =
-        typeof reactionOrEmoji === 'string'
-          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
-          : reactionOrEmoji;
+      const payload = { emoji };
       const updated = await this.client.removeCommentReaction(commentId, payload);
       this.comments = this.comments.map((c) => (c.id === commentId ? updated : c));
       return updated;

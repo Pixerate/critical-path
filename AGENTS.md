@@ -99,7 +99,7 @@ export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(
 );
 ```
 
-Never trust identity fields (`actorId`, `authorId`, `userId`) from request bodies; attribute mutations with `getContext` or `engine.withActor(actor)`.
+Identity never comes from request bodies (the API rejects `actorId`, `authorId`, `userId`, `uploaderId`); attribute mutations with `getContext` on the router or `engine.withActor(actor)` in server code.
 
 ### 4. Generating a Custom Critical Path Plugin
 

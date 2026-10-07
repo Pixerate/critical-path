@@ -216,7 +216,7 @@ describe('@critical-path/mcp', () => {
       expect(await engine.getTask(task.id)).not.toBeNull();
     });
 
-    it('validates tool arguments and strips undeclared fields', async () => {
+    it('validates tool arguments and rejects undeclared fields', async () => {
       const source = await engine.createProject({ name: 'Source', key: 'SRC' });
       const other = await engine.createProject({ name: 'Other', key: 'OTH' });
       const task = await engine.createTask({ projectId: source.id, title: 'Stay put' });
@@ -226,13 +226,28 @@ describe('@critical-path/mcp', () => {
       expect(invalid.isError).toBe(true);
       expect((invalid.content as Array<{ text: string }>)[0].text).toContain('Invalid arguments');
 
-      await client.callTool({
+      const undeclared = await client.callTool({
         name: 'update_task',
         arguments: { id: task.id, title: 'Renamed', projectId: other.id }
       });
-      const updated = await engine.getTask(task.id);
-      expect(updated?.title).toBe('Renamed');
-      expect(updated?.projectId).toBe(source.id);
+      expect(undeclared.isError).toBe(true);
+      expect((undeclared.content as Array<{ text: string }>)[0].text).toContain('projectId');
+      const unchanged = await engine.getTask(task.id);
+      expect(unchanged?.title).toBe('Stay put');
+      expect(unchanged?.projectId).toBe(source.id);
+    });
+
+    it('attributes engine writes to the configured actor', async () => {
+      const project = await engine.createProject({ name: 'Actors', key: 'ACT' });
+      const task = await engine.createTask({ projectId: project.id, title: 'T' });
+
+      const defaultClient = await connect({ engine });
+      const first = await defaultClient.callTool({ name: 'add_comment', arguments: { taskId: task.id, content: 'hi' } });
+      expect(JSON.parse((first.content as Array<{ text: string }>)[0].text).authorId).toBe('mcp-agent');
+
+      const namedClient = await connect({ engine, actor: { userId: 'claude', actorType: 'agent' } });
+      const second = await namedClient.callTool({ name: 'add_comment', arguments: { taskId: task.id, content: 'hi' } });
+      expect(JSON.parse((second.content as Array<{ text: string }>)[0].text).authorId).toBe('claude');
     });
 
     it('marks destructive tools with MCP annotations', async () => {

@@ -143,13 +143,19 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 
 ### New Entity Fields Must Be Added to `@critical-path/core/schemas`
 - **Area / Package**: `@critical-path/core` (`schemas/index.ts`), `@critical-path/server`
-- **Symptom / Behavior**: A field added to a domain type (e.g. `Task`) is silently dropped from REST requests, or `tsc --build` fails in `schemas.test.ts` with `missingFromSchema: "<field>"`.
-- **Root Cause**: The router parses bodies with zod schemas that strip unknown keys, so only fields declared in the schema reach the engine. `schemas.test.ts` compares schema keys to the domain types at compile time to catch this.
-- **Solution / Workaround**: Add the field to the matching create/update schema in `packages/core/src/schemas/index.ts`. If the field is server-assigned, add it to the `Omit<>` in the test instead. Keep schemas on the `@critical-path/core/schemas` subpath and never export them from the core root, or zod will be bundled into browser apps.
+- **Symptom / Behavior**: A field added to a domain type (e.g. `Task`) is rejected by the REST API with `Unrecognized key`, or `tsc --build` fails in `schemas.test.ts` with `missingFromSchema: "<field>"`.
+- **Root Cause**: The router parses bodies with strict zod schemas, so a field missing from the schema is rejected with `400 Unrecognized key`. `schemas.test.ts` compares schema keys to the domain types at compile time to catch this.
+- **Solution / Workaround**: Add the field to the matching create/update schema in `packages/core/src/schemas/index.ts`. If the field is server-assigned or an identity field, add it to the `Omit<>` in the test instead. Keep schemas on the `@critical-path/core/schemas` subpath and never export them from the core root, or zod will be bundled into browser apps.
 
 ### Documenting New Routes in the OpenAPI Route Table
 - **Area / Package**: `@critical-path/server` (`openapi.ts`)
 - **Symptom / Behavior**: `openapi.test.ts` fails with `Route not found` or a missing response property.
 - **Root Cause**: `CriticalPathRouter` is an if-chain, so the OpenAPI document is built from a hand-maintained `ROUTES` table. The test calls every documented route against seeded data to keep the table honest.
 - **Solution / Workaround**: When adding or changing a route, update its `ROUTES` entry (path, method, body schema, `responseKey`). Undocumented new routes are not detected automatically, so add them in the same change.
+
+### Unauthenticated API Writes Are Attributed to `anonymous`
+- **Area / Package**: `@critical-path/server`, `@critical-path/client` CLI, `@critical-path/mcp`
+- **Symptom / Behavior**: Comments, activity entries and reactions created over HTTP show `anonymous` as the author, or requests that include `authorId` / `actorId` / `userId` / `uploaderId` fail with `400 Unrecognized key`.
+- **Root Cause**: Request bodies never carry identity. The router runs every request through `engine.withActor(...)` as the user resolved by `getContext`, or as `ANONYMOUS_ACTOR` when there is none.
+- **Solution / Workaround**: Configure `getContext` on the router to map your session or API token to a user. Agents using the `critical-path` CLI or `@critical-path/mcp --api` authenticate with a token (`CRITICAL_PATH_KEY` / `CRITICAL_PATH_API_TOKEN`) that `getContext` maps to the agent's identity; the old `--author` / `CRITICAL_PATH_AUTHOR_ID` options no longer exist. A local MCP server using an `engine` attributes writes to its `actor` option (default `mcp-agent`).
 

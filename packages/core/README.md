@@ -131,17 +131,17 @@ const input = parsePayload(CreateTaskSchema, await request.json()); // throws Va
 await engine.createTask(input);
 ```
 
-Create and update schemas exist for workflows, projects, tasks, dependencies, deliverables, teams, containers, iterations, comments, reactions, attachments and time entries. They strip server-assigned fields and unknown keys. The schemas live on a subpath so importing `@critical-path/core` in a browser bundle does not pull in zod. A compile-time test fails the build if a domain type gains a field its schema lacks.
+Create and update schemas exist for workflows, projects, tasks, dependencies, deliverables, teams, containers, iterations, comments, reactions, attachments and time entries. They are strict: server-assigned fields, identity fields and unknown keys are rejected. The schemas live on a subpath so importing `@critical-path/core` in a browser bundle does not pull in zod. A compile-time test fails the build if a domain type gains a field its schema lacks.
 
 #### Attributing Mutations to a User (`withActor`)
 
 ```ts
 const asAlice = engine.withActor({ userId: 'alice', username: 'Alice' });
 await asAlice.updateTask(taskId, { status: 'in_progress' }); // activity actorId: 'alice'
-await asAlice.addComment({ taskId, content: 'On it', authorId: 'ignored' }); // authorId: 'alice'
+await asAlice.addComment({ taskId, content: 'On it' }); // authorId: 'alice'
 ```
 
-`withActor` returns a per-request view that shares the store, plugins and event bus with the base engine. On the view, identity fields in payloads (`actorId`, `authorId`, reaction `userId`, time entry `userId`, `uploaderId`) are replaced by the actor, and new tasks default `reporterId` to it. Explicit `updateTask(id, updates, { actorId })` options still win, for trusted server-side automation. `@critical-path/server` creates these views from its `getContext` option.
+`withActor` returns a per-request view that shares the store, plugins and event bus with the base engine. On the view, every write is attributed to the actor: activity log entries, comment authors, reactions, time entries, attachment uploaders, and the default task `reporterId`. `updateTask` never reads identity from the update payload; trusted server-side automation can pass `updateTask(id, updates, { actorId })` explicitly. Without a view, `addComment`, reactions and `createAttachment` accept an optional `authorId` / `userId` / `uploaderId` and fall back to `'system'`. `@critical-path/server` runs every request through a view (the resolved user, or `anonymous`).
 
 Other domain errors are exported for callers and route handlers to map: `ValidationError` (bad input, e.g. non-positive logged hours) and `NotFoundError` (missing referenced entity). `engine.deleteProject(id)` deletes a project and its tasks through `deleteTask`, then publishes `project.deleted`.
 

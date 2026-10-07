@@ -335,11 +335,11 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       await commentState.updateComment('cmt_1', { content: 'Updated comment' });
       expect(commentState.data[0].content).toBe('Updated comment');
 
-      await commentState.addReaction('cmt_1', '🔥', 'u2');
+      await commentState.addReaction('cmt_1', '🔥');
       expect(commentState.data[0].reactions).toHaveLength(1);
       expect(commentState.data[0].reactions?.[0].emoji).toBe('🔥');
 
-      await commentState.removeReaction('cmt_1', '🔥', 'u2');
+      await commentState.removeReaction('cmt_1', '🔥');
       expect(commentState.data[0].reactions).toBeUndefined();
 
       await commentState.deleteComment('cmt_1');

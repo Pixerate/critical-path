@@ -4,8 +4,9 @@
  * Exposed from `@critical-path/core/schemas` (not the package root) so browser bundles of core do
  * not pull in zod. Create schemas omit server-assigned fields (`id`, `createdAt`, `updatedAt`, task
  * `key`); update schemas additionally make every field optional and omit the owning `projectId`.
- * Unknown keys are stripped rather than rejected, so older clients that send whole objects keep
- * working while protected fields are never written.
+ * Schemas are strict: unknown or server-assigned keys are rejected with a 400 rather than ignored.
+ * Identity (authors, reactors, uploaders, time-entry users) is never taken from payloads; it comes
+ * from the caller resolved by the server (see `CriticalPathEngine.withActor`).
  */
 import { z } from 'zod';
 import { ValidationError, type ValidationIssue } from '../domain/errors.js';
@@ -25,36 +26,41 @@ export function parsePayload<S extends z.ZodTypeAny>(schema: S, data: unknown): 
   throw new ValidationError(`Invalid request body: ${summary}`, issues);
 }
 
+/** Objects reject unknown keys so typos and protected fields surface as 400s. */
+function strictObject<T extends z.ZodRawShape>(shape: T) {
+  return z.object(shape).strict();
+}
+
 const isoString = z.string();
 const nonEmpty = z.string().min(1);
 
 export const SemanticStatusSchema = z.enum(['not_started', 'in_progress', 'completed', 'canceled']);
 export const AuthorTypeSchema = z.enum(['user', 'agent', 'system']);
 
-export const StatusDefinitionSchema = z.object({
+export const StatusDefinitionSchema = strictObject({
   key: nonEmpty,
   label: z.string(),
   category: SemanticStatusSchema
 });
 
-export const WorkScheduleSchema = z.object({
+export const WorkScheduleSchema = strictObject({
   id: z.string().optional(),
   name: z.string().optional(),
   timezone: z.string().optional(),
   defaultHoursPerDay: z.number().nonnegative().optional(),
   days: z.array(
-    z.object({
+    strictObject({
       dayOfWeek: z.number().int().min(0).max(6),
       isWorkingDay: z.boolean(),
-      hours: z.array(z.object({ start: z.string(), end: z.string() })).optional()
+      hours: z.array(strictObject({ start: z.string(), end: z.string() })).optional()
     })
   ),
   holidays: z
-    .array(z.object({ date: z.string(), name: z.string().optional(), halfDay: z.boolean().optional() }))
+    .array(strictObject({ date: z.string(), name: z.string().optional(), halfDay: z.boolean().optional() }))
     .optional()
 });
 
-export const CustomFieldDefinitionSchema = z.object({
+export const CustomFieldDefinitionSchema = strictObject({
   id: z.string(),
   key: nonEmpty,
   label: z.string(),
@@ -64,7 +70,7 @@ export const CustomFieldDefinitionSchema = z.object({
   defaultValue: z.unknown().optional()
 });
 
-export const TaskTypeDefinitionSchema = z.object({
+export const TaskTypeDefinitionSchema = strictObject({
   key: nonEmpty,
   label: z.string(),
   description: z.string().optional(),
@@ -78,13 +84,13 @@ const metadata = z.record(z.unknown());
 
 // --- Workflows ---
 
-export const CreateWorkflowSchema = z.object({
+export const CreateWorkflowSchema = strictObject({
   name: nonEmpty,
   description: z.string().optional(),
   statuses: z.array(StatusDefinitionSchema),
   transitions: z
     .array(
-      z.object({
+      strictObject({
         id: z.string().optional(),
         name: z.string().optional(),
         fromStatusKey: z.string(),
@@ -100,7 +106,7 @@ export const UpdateWorkflowSchema = CreateWorkflowSchema.partial();
 
 // --- Projects ---
 
-export const CreateProjectSchema = z.object({
+export const CreateProjectSchema = strictObject({
   key: z.string().optional(),
   name: nonEmpty,
   description: z.string().optional(),
@@ -111,7 +117,7 @@ export const CreateProjectSchema = z.object({
   taskTypes: z.array(TaskTypeDefinitionSchema).optional(),
   statusDefinitions: z.array(StatusDefinitionSchema).optional(),
   priorityDefinitions: z
-    .array(z.object({ key: z.string(), label: z.string(), level: z.number().optional() }))
+    .array(strictObject({ key: z.string(), label: z.string(), level: z.number().optional() }))
     .optional(),
   customFieldDefinitions: z.array(CustomFieldDefinitionSchema).optional(),
   schedule: WorkScheduleSchema.optional(),
@@ -132,7 +138,7 @@ const taskFields = {
   assigneeId: z.string().optional(),
   assignees: z
     .array(
-      z.object({
+      strictObject({
         id: z.string(),
         name: z.string().optional(),
         role: z.string().optional(),
@@ -169,7 +175,7 @@ const taskFields = {
   tags: z.array(z.string()).optional(),
   todos: z
     .array(
-      z.object({
+      strictObject({
         id: z.string(),
         title: z.string(),
         completed: z.boolean(),
@@ -182,23 +188,13 @@ const taskFields = {
   parentId: z.string().optional()
 };
 
-export const CreateTaskSchema = z.object({ projectId: nonEmpty, ...taskFields });
+export const CreateTaskSchema = strictObject({ projectId: nonEmpty, ...taskFields });
 
-/** Actor fields accepted on task updates; ignored when the server resolves the caller. */
-const actorClaimFields = {
-  actorId: z.string().optional(),
-  actorName: z.string().optional(),
-  actorType: z.string().optional(),
-  actor: z
-    .object({ userId: z.string(), username: z.string().optional(), actorType: z.string().optional() })
-    .optional()
-};
-
-export const UpdateTaskSchema = z.object(taskFields).partial().extend(actorClaimFields);
+export const UpdateTaskSchema = strictObject(taskFields).partial();
 
 // --- Dependencies ---
 
-export const CreateDependencySchema = z.object({
+export const CreateDependencySchema = strictObject({
   dependsOnTaskId: nonEmpty,
   type: z.enum(['blocking', 'blocked_by', 'relates_to']).default('blocking')
 });
@@ -218,12 +214,12 @@ const deliverableFields = {
   outputUrls: z.array(z.string()).optional(),
   customFields: customFields.optional()
 };
-export const CreateDeliverableSchema = z.object({ projectId: nonEmpty, ...deliverableFields });
-export const UpdateDeliverableSchema = z.object(deliverableFields).partial();
+export const CreateDeliverableSchema = strictObject({ projectId: nonEmpty, ...deliverableFields });
+export const UpdateDeliverableSchema = strictObject(deliverableFields).partial();
 
 // --- Teams ---
 
-export const CreateTeamSchema = z.object({
+export const CreateTeamSchema = strictObject({
   name: nonEmpty,
   description: z.string().optional(),
   leaderId: z.string().optional(),
@@ -242,8 +238,8 @@ const containerFields = {
   type: z.string().optional(),
   color: z.string().optional()
 };
-export const CreateContainerSchema = z.object({ projectId: nonEmpty, ...containerFields });
-export const UpdateContainerSchema = z.object(containerFields).partial();
+export const CreateContainerSchema = strictObject({ projectId: nonEmpty, ...containerFields });
+export const UpdateContainerSchema = strictObject(containerFields).partial();
 
 // --- Iterations ---
 
@@ -255,18 +251,15 @@ const iterationFields = {
   endDate: isoString.optional(),
   status: z.enum(['planning', 'active', 'completed']).default('planning')
 };
-export const CreateIterationSchema = z.object({ projectId: nonEmpty, ...iterationFields });
+export const CreateIterationSchema = strictObject({ projectId: nonEmpty, ...iterationFields });
 export const UpdateIterationSchema = z
   .object({ ...iterationFields, status: z.enum(['planning', 'active', 'completed']) })
   .partial();
 
 // --- Comments & Reactions ---
 
-export const CreateCommentSchema = z.object({
+export const CreateCommentSchema = strictObject({
   taskId: nonEmpty,
-  /** Required unless the server resolves the caller, in which case it is replaced. */
-  authorId: z.string().optional(),
-  authorType: AuthorTypeSchema.optional(),
   parentId: z.string().optional(),
   content: nonEmpty,
   mentions: z.array(z.string()).optional(),
@@ -276,10 +269,8 @@ export const UpdateCommentSchema = z
   .object({ content: nonEmpty, mentions: z.array(z.string()), metadata })
   .partial();
 
-export const CommentReactionSchema = z.object({
-  emoji: nonEmpty,
-  /** Required unless the server resolves the caller, in which case it is replaced. */
-  userId: z.string().optional()
+export const CommentReactionSchema = strictObject({
+  emoji: nonEmpty
 });
 
 // --- Attachments ---
@@ -288,14 +279,11 @@ const attachmentLinks = {
   taskId: z.string().optional(),
   projectId: z.string().optional(),
   commentId: z.string().optional(),
-  /** Required unless the server resolves the caller, in which case it is replaced. */
-  uploaderId: z.string().optional(),
-  uploaderType: AuthorTypeSchema.optional(),
   artifactType: z.enum(['plan', 'spec', 'deliverable', 'review', 'general']).optional(),
   metadata: metadata.optional()
 };
 
-export const CreateAttachmentSchema = z.object({
+export const CreateAttachmentSchema = strictObject({
   ...attachmentLinks,
   filename: nonEmpty,
   // Linked (rather than uploaded) files often have no known type or size.
@@ -305,7 +293,7 @@ export const CreateAttachmentSchema = z.object({
   storageKey: z.string().optional()
 });
 
-export const UploadAttachmentSchema = z.object({
+export const UploadAttachmentSchema = strictObject({
   ...attachmentLinks,
   filename: nonEmpty,
   data: z.string(),
@@ -314,7 +302,7 @@ export const UploadAttachmentSchema = z.object({
   encoding: z.enum(['base64', 'utf-8', 'binary']).optional()
 });
 
-export const PresignAttachmentSchema = z.object({
+export const PresignAttachmentSchema = strictObject({
   storageKey: nonEmpty,
   expiresInSeconds: z.number().int().positive().optional(),
   contentType: z.string().optional()
@@ -322,12 +310,11 @@ export const PresignAttachmentSchema = z.object({
 
 // --- Time Tracking ---
 
-export const LogTimeSchema = z.object({
+export const LogTimeSchema = strictObject({
   taskId: nonEmpty,
   hours: z.number().positive(),
   isBillable: z.boolean().optional(),
   description: z.string().optional(),
-  userId: z.string().optional(),
   loggedAt: isoString.optional()
 });
 
@@ -335,3 +322,28 @@ export type CreateTaskPayload = z.infer<typeof CreateTaskSchema>;
 export type UpdateTaskPayload = z.infer<typeof UpdateTaskSchema>;
 export type CreateProjectPayload = z.infer<typeof CreateProjectSchema>;
 export type UpdateProjectPayload = z.infer<typeof UpdateProjectSchema>;
+
+/** Request body types (before defaults are applied), for typed API clients. */
+export type CreateWorkflowBody = z.input<typeof CreateWorkflowSchema>;
+export type UpdateWorkflowBody = z.input<typeof UpdateWorkflowSchema>;
+export type CreateProjectBody = z.input<typeof CreateProjectSchema>;
+export type UpdateProjectBody = z.input<typeof UpdateProjectSchema>;
+export type CreateTaskBody = z.input<typeof CreateTaskSchema>;
+export type UpdateTaskBody = z.input<typeof UpdateTaskSchema>;
+export type CreateDependencyBody = z.input<typeof CreateDependencySchema>;
+export type CreateDeliverableBody = z.input<typeof CreateDeliverableSchema>;
+export type UpdateDeliverableBody = z.input<typeof UpdateDeliverableSchema>;
+export type CreateTeamBody = z.input<typeof CreateTeamSchema>;
+export type UpdateTeamBody = z.input<typeof UpdateTeamSchema>;
+export type CreateContainerBody = z.input<typeof CreateContainerSchema>;
+export type UpdateContainerBody = z.input<typeof UpdateContainerSchema>;
+export type CreateIterationBody = z.input<typeof CreateIterationSchema>;
+export type UpdateIterationBody = z.input<typeof UpdateIterationSchema>;
+export type CreateCommentBody = z.input<typeof CreateCommentSchema>;
+export type UpdateCommentBody = z.input<typeof UpdateCommentSchema>;
+export type CommentReactionBody = z.input<typeof CommentReactionSchema>;
+export type CreateAttachmentBody = z.input<typeof CreateAttachmentSchema>;
+export type UploadAttachmentBody = z.input<typeof UploadAttachmentSchema>;
+export type PresignAttachmentBody = z.input<typeof PresignAttachmentSchema>;
+export type LogTimeBody = z.input<typeof LogTimeSchema>;
+

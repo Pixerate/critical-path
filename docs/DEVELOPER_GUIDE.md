@@ -215,7 +215,7 @@ All endpoints return JSON responses.
 - `GET /api/critical-path/projects` - List all projects.
 - `POST /api/critical-path/projects` - Create project.
 - `GET /api/critical-path/projects/:id` - Get project by ID.
-- `PATCH /api/critical-path/projects/:id` - Update project (`id`, `createdAt`, `updatedAt` are ignored).
+- `PATCH /api/critical-path/projects/:id` - Update project (`id`, `createdAt`, `updatedAt` are rejected with `400`).
 - `DELETE /api/critical-path/projects/:id` - Delete project and its tasks (publishes `task.deleted` per task, then `project.deleted`).
 
 ### Deliverables
@@ -261,7 +261,7 @@ All endpoints return JSON responses.
 - `POST /api/critical-path/time-entries` - Log time against task (hours must be a positive number; rolls up into the task's `loggedHours`).
 
 ### Request Validation & OpenAPI
-- Request bodies are parsed with the schemas in `@critical-path/core/schemas`. Invalid bodies return `400` with `issues: [{ path, message }]`; server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, owning `projectId` on updates) and unknown keys are stripped.
+- Request bodies are parsed with the strict schemas in `@critical-path/core/schemas`. Invalid bodies, server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, owning `projectId` on updates), identity fields and unknown keys return `400` with `issues: [{ path, message }]`.
 - `GET /api/critical-path/openapi.json` returns an OpenAPI 3.1 document generated from the same schemas. `buildOpenApiDocument()` from `@critical-path/server` builds it without a router.
 - When adding a route, add it to `ROUTES` in `packages/server/src/openapi.ts`; `openapi.test.ts` calls every documented route and fails on unknown routes or mismatched response keys.
 
@@ -294,7 +294,7 @@ export { handler as GET, handler as POST, handler as PUT, handler as PATCH, hand
 
 ### Authentication & Request Context
 
-All adapters take router options as a second argument. `getContext` resolves the caller per request; with a `userId`, the router uses `engine.withActor(...)` so every mutation is attributed to that user and identity fields in request bodies are ignored. `requireAuth: true` returns `401` when no user is resolved. `basePath` sets an exact mount path and `cors` configures an origin allow-list (`false` disables CORS headers).
+All adapters take router options as a second argument. `getContext` resolves the caller per request, and the router runs the request through `engine.withActor(...)` as that user, or as `anonymous` when none is resolved. Request bodies never carry identity (`actorId`, `authorId`, `userId` and `uploaderId` are rejected). `requireAuth: true` returns `401` when no user is resolved. `basePath` sets an exact mount path and `cors` configures an origin allow-list (CORS is off by default, which suits same-origin apps).
 
 ```ts
 export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(
@@ -560,8 +560,8 @@ function TaskDetail({ taskId }: { taskId: string }) {
         <div key={thread.id}>
           <p><strong>{thread.authorId}</strong> ({thread.authorType}): {thread.content}</p>
           <div className="reactions">
-            <button onClick={() => addReaction(thread.id, '👍', 'user_1')}>👍</button>
-            <button onClick={() => addReaction(thread.id, '❤️', 'user_1')}>❤️</button>
+            <button onClick={() => addReaction(thread.id, '👍')}>👍</button>
+            <button onClick={() => addReaction(thread.id, '❤️')}>❤️</button>
             <span>{thread.reactions?.length || 0} reactions</span>
           </div>
           {thread.replies.map(reply => (
@@ -603,7 +603,7 @@ Unifies threaded comments with their inline attachments (`attachment.commentId =
 
     <!-- Emoji Reactions -->
     <div class="reactions">
-      <button on:click={() => activityState.addReaction(thread.id, '👍', 'user_1')}>👍</button>
+      <button on:click={() => activityState.addReaction(thread.id, '👍')}>👍</button>
       <span>{thread.reactions?.length || 0} reactions</span>
     </div>
 

@@ -1,4 +1,5 @@
 /// <reference types="svelte" />
+import type { UpdateDeliverableBody } from '@critical-path/core/schemas';
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Deliverable, DeliverableSummary, CreateDeliverableInput } from '@critical-path/core';
 
@@ -38,7 +39,7 @@ export class DeliverableState {
     }
   }
 
-  async updateDeliverable(id: string, updates: Partial<Deliverable>) {
+  async updateDeliverable(id: string, updates: UpdateDeliverableBody) {
     const previous = this.data;
     this.data = this.data.map((d) => (d.id === id ? { ...d, ...updates } : d));
     try {

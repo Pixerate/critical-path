@@ -511,12 +511,7 @@ export class CriticalPathEngine {
 
   async updateTask(
     id: string,
-    updates: Partial<Task> & {
-      actorId?: string;
-      actorName?: string;
-      actorType?: string;
-      actor?: { userId: string; username?: string; actorType?: string };
-    },
+    updates: Partial<Task>,
     options?: {
       actorId?: string;
       actorName?: string;
@@ -527,42 +522,15 @@ export class CriticalPathEngine {
     const existing = await this.store.getTask(id);
     if (!existing) return null;
 
-    // On a withActor view, the scoped actor replaces any identity claimed in the payload.
-    // Explicit options from trusted server-side code still take precedence.
+    // Identity comes from trusted options or the withActor view, never from the update payload.
     options = options ?? (this.actor ? { actor: this.actor } : undefined);
-    const claimed = this.actor ? undefined : updates;
-
-    const actorId =
-      options?.actorId ||
-      claimed?.actorId ||
-      options?.actor?.userId ||
-      claimed?.actor?.userId ||
-      'system';
+    const actorId = options?.actorId || options?.actor?.userId || 'system';
     const actorName =
-      options?.actorName ||
-      claimed?.actorName ||
-      options?.actor?.username ||
-      claimed?.actor?.username ||
-      (actorId === 'system' ? 'System' : undefined);
+      options?.actorName || options?.actor?.username || (actorId === 'system' ? 'System' : undefined);
     const actorType =
-      options?.actorType ||
-      claimed?.actorType ||
-      options?.actor?.actorType ||
-      claimed?.actor?.actorType ||
-      (actorId === 'system' ? 'system' : 'user');
-    const actorObj = options?.actor || claimed?.actor || {
-      userId: actorId,
-      username: actorName,
-      actorType
-    };
-
-    const {
-      actorId: _aId,
-      actorName: _aName,
-      actorType: _aType,
-      actor: _aObj,
-      ...taskUpdates
-    } = updates;
+      options?.actorType || options?.actor?.actorType || (actorId === 'system' ? 'system' : 'user');
+    const actorObj = options?.actor || { userId: actorId, username: actorName, actorType };
+    const taskUpdates = updates;
 
     const project = await this.store.getProject(existing.projectId);
     const workflow = await this.resolveProjectWorkflow(existing.projectId);
@@ -1139,10 +1107,12 @@ export class CriticalPathEngine {
     return this.store.getComment(id);
   }
 
-  async addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
-    if (this.actor) {
-      comment = { ...comment, authorId: this.actor.userId, authorType: this.actor.actorType ?? 'user' };
-    }
+  async addComment(
+    input: Omit<Comment, 'id' | 'createdAt' | 'updatedAt' | 'authorId'> & { authorId?: string }
+  ): Promise<Comment> {
+    const comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'> = this.actor
+      ? { ...input, authorId: this.actor.userId, authorType: this.actor.actorType ?? 'user' }
+      : { ...input, authorId: input.authorId ?? 'system' };
     const mentions = comment.mentions ?? extractMentions(comment.content);
     const created = await this.store.addComment({ ...comment, mentions });
     const now = new Date().toISOString();
@@ -1208,8 +1178,8 @@ export class CriticalPathEngine {
     return deleted;
   }
 
-  async addCommentReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
-    if (this.actor) reaction = { ...reaction, userId: this.actor.userId };
+  async addCommentReaction(commentId: string, input: { emoji: string; userId?: string }): Promise<Comment | null> {
+    const reaction = { emoji: input.emoji, userId: this.actor?.userId ?? input.userId ?? 'system' };
     const existing = await this.store.getComment(commentId);
     if (!existing) return null;
 
@@ -1254,8 +1224,8 @@ export class CriticalPathEngine {
     return updated;
   }
 
-  async removeCommentReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
-    if (this.actor) reaction = { ...reaction, userId: this.actor.userId };
+  async removeCommentReaction(commentId: string, input: { emoji: string; userId?: string }): Promise<Comment | null> {
+    const reaction = { emoji: input.emoji, userId: this.actor?.userId ?? input.userId ?? 'system' };
     const existing = await this.store.getComment(commentId);
     if (!existing) return null;
 
@@ -1299,10 +1269,12 @@ export class CriticalPathEngine {
     return this.store.getAttachment(id);
   }
 
-  async createAttachment(attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
-    if (this.actor) {
-      attachment = { ...attachment, uploaderId: this.actor.userId, uploaderType: this.actor.actorType ?? 'user' };
-    }
+  async createAttachment(
+    input: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt' | 'uploaderId'> & { uploaderId?: string }
+  ): Promise<Attachment> {
+    const attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'> = this.actor
+      ? { ...input, uploaderId: this.actor.userId, uploaderType: this.actor.actorType ?? 'user' }
+      : { ...input, uploaderId: input.uploaderId ?? 'system' };
     validateAttachmentUrl(attachment.url);
     const created = await this.store.createAttachment(attachment);
     const now = new Date().toISOString();
@@ -1356,7 +1328,7 @@ export class CriticalPathEngine {
       taskId?: string;
       projectId?: string;
       commentId?: string;
-      uploaderId: string;
+      uploaderId?: string;
       uploaderType?: 'user' | 'agent' | 'system';
       artifactType?: 'plan' | 'spec' | 'deliverable' | 'review' | 'general';
       metadata?: Record<string, unknown>;

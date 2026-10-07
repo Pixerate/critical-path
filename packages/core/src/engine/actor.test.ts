@@ -10,7 +10,8 @@ describe('CriticalPathEngine.withActor', () => {
     const task = await alice.createTask({ projectId: project.id, title: 'Scoped' });
     expect(task.reporterId).toBe('alice');
 
-    await alice.updateTask(task.id, { title: 'Renamed', actorId: 'ceo', actor: { userId: 'ceo' } });
+    // Identity in the payload is not part of the update type at all; cast to simulate an untyped caller
+    await alice.updateTask(task.id, { title: 'Renamed', actorId: 'ceo', actor: { userId: 'ceo' } } as any);
     const comment = await alice.addComment({ taskId: task.id, content: 'hi', authorId: 'ceo', authorType: 'agent' });
     const reacted = await alice.addCommentReaction(comment.id, { emoji: '👍', userId: 'ceo' });
     const entry = await alice.logTime({ taskId: task.id, hours: 1, userId: 'ceo' } as any);

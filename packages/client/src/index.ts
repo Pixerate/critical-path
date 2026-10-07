@@ -1,4 +1,29 @@
 import type {
+  CreateWorkflowBody,
+  UpdateWorkflowBody,
+  CreateProjectBody,
+  UpdateProjectBody,
+  CreateTaskBody,
+  UpdateTaskBody,
+  CreateDependencyBody,
+  CreateTeamBody,
+  UpdateTeamBody,
+  CreateContainerBody,
+  UpdateContainerBody,
+  CreateDeliverableBody,
+  UpdateDeliverableBody,
+  CreateIterationBody,
+  UpdateIterationBody,
+  CreateCommentBody,
+  UpdateCommentBody,
+  CommentReactionBody,
+  CreateAttachmentBody,
+  UploadAttachmentBody,
+  PresignAttachmentBody,
+  LogTimeBody
+} from '@critical-path/core/schemas';
+import type {
+  TaskDependency,
   Project,
   Task,
   TaskTodoItem,
@@ -98,6 +123,15 @@ export interface ClientOptions {
   fetch?: typeof fetch;
 }
 
+function toBase64(data: Uint8Array | ArrayBuffer): string {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
 class NotFoundResponseError extends Error {
   constructor(message: string) {
     super(message);
@@ -166,7 +200,7 @@ export class CriticalPathClient {
     return res.workflow;
   }
 
-  async createWorkflow(data: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workflow> {
+  async createWorkflow(data: CreateWorkflowBody): Promise<Workflow> {
     const res = await this.request<{ workflow: Workflow }>('/workflows', {
       method: 'POST',
       body: JSON.stringify(data)
@@ -174,7 +208,7 @@ export class CriticalPathClient {
     return res.workflow;
   }
 
-  async updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow> {
+  async updateWorkflow(id: string, updates: UpdateWorkflowBody): Promise<Workflow> {
     const res = await this.request<{ workflow: Workflow }>(`/workflows/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
@@ -197,12 +231,25 @@ export class CriticalPathClient {
     return res.project;
   }
 
-  async createProject(data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project> {
+  async createProject(data: CreateProjectBody): Promise<Project> {
     const res = await this.request<{ project: Project }>('/projects', {
       method: 'POST',
       body: JSON.stringify(data)
     });
     return res.project;
+  }
+
+  async updateProject(id: string, updates: UpdateProjectBody): Promise<Project> {
+    const res = await this.request<{ project: Project }>(`/projects/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+    return res.project;
+  }
+
+  /** Deletes a project and its tasks. Resolves to `false` if it does not exist. */
+  async deleteProject(id: string): Promise<boolean> {
+    return this.deleteRequest(`/projects/${encodeURIComponent(id)}`);
   }
 
   async calculateCriticalPath(projectId: string): Promise<CriticalPathAnalysis> {
@@ -285,7 +332,7 @@ export class CriticalPathClient {
     return res.progressHistory;
   }
 
-  async createTask(data: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task> {
+  async createTask(data: CreateTaskBody): Promise<Task> {
     const res = await this.request<{ task: Task }>('/tasks', {
       method: 'POST',
       body: JSON.stringify(data)
@@ -293,15 +340,7 @@ export class CriticalPathClient {
     return res.task;
   }
 
-  async updateTask(
-    id: string,
-    updates: Partial<Task> & {
-      actorId?: string;
-      actorName?: string;
-      actorType?: string;
-      actor?: { userId: string; username?: string; actorType?: string };
-    }
-  ): Promise<Task> {
+  async updateTask(id: string, updates: UpdateTaskBody): Promise<Task> {
     const res = await this.request<{ task: Task }>(`/tasks/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
@@ -340,8 +379,7 @@ export class CriticalPathClient {
 
   async addTodo(
     taskId: string,
-    title: string,
-    options?: { actorId?: string; actorName?: string; actorType?: string }
+    title: string
   ): Promise<TaskTodoItem> {
     const task = await this.getTask(taskId);
     const item: TaskTodoItem = {
@@ -351,15 +389,14 @@ export class CriticalPathClient {
       createdAt: new Date().toISOString()
     };
     const todos = [...(task.todos || []), item];
-    await this.updateTask(taskId, { todos, ...options });
+    await this.updateTask(taskId, { todos });
     return item;
   }
 
   async toggleTodo(
     taskId: string,
     todoIdOrTitle: string,
-    completed?: boolean,
-    options?: { actorId?: string; actorName?: string; actorType?: string }
+    completed?: boolean
   ): Promise<Task> {
     const task = await this.getTask(taskId);
     if (!task.todos || task.todos.length === 0) {
@@ -373,7 +410,16 @@ export class CriticalPathClient {
     }
     item.completed = completed !== undefined ? completed : !item.completed;
     item.completedAt = item.completed ? new Date().toISOString() : undefined;
-    return this.updateTask(taskId, { todos: task.todos, ...options });
+    return this.updateTask(taskId, { todos: task.todos });
+  }
+
+  /** Declares that `taskId` depends on another task. Rejects with a 409 error on cycles. */
+  async addDependency(taskId: string, data: CreateDependencyBody): Promise<TaskDependency> {
+    const res = await this.request<{ dependency: TaskDependency }>(`/tasks/${encodeURIComponent(taskId)}/dependencies`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.dependency;
   }
 
   async deleteTask(id: string): Promise<boolean> {
@@ -411,7 +457,7 @@ export class CriticalPathClient {
     return res.team;
   }
 
-  async createTeam(data: Omit<Team, 'id' | 'createdAt' | 'updatedAt'>): Promise<Team> {
+  async createTeam(data: CreateTeamBody): Promise<Team> {
     const res = await this.request<{ team: Team }>('/teams', {
       method: 'POST',
       body: JSON.stringify(data)
@@ -419,7 +465,7 @@ export class CriticalPathClient {
     return res.team;
   }
 
-  async updateTeam(id: string, updates: Partial<Team>): Promise<Team> {
+  async updateTeam(id: string, updates: UpdateTeamBody): Promise<Team> {
     const res = await this.request<{ team: Team }>(`/teams/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
@@ -437,7 +483,7 @@ export class CriticalPathClient {
     return res.containers;
   }
 
-  async createContainer(data: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer> {
+  async createContainer(data: CreateContainerBody): Promise<TaskContainer> {
     const res = await this.request<{ container: TaskContainer }>('/containers', {
       method: 'POST',
       body: JSON.stringify(data)
@@ -445,7 +491,7 @@ export class CriticalPathClient {
     return res.container;
   }
 
-  async updateContainer(id: string, updates: Partial<TaskContainer>): Promise<TaskContainer> {
+  async updateContainer(id: string, updates: UpdateContainerBody): Promise<TaskContainer> {
     const res = await this.request<{ container: TaskContainer }>(`/containers/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
@@ -473,7 +519,7 @@ export class CriticalPathClient {
     return res.summary;
   }
 
-  async createDeliverable(data: CreateDeliverableInput): Promise<Deliverable> {
+  async createDeliverable(data: CreateDeliverableBody): Promise<Deliverable> {
     const res = await this.request<{ deliverable: Deliverable }>('/deliverables', {
       method: 'POST',
       body: JSON.stringify(data)
@@ -481,7 +527,7 @@ export class CriticalPathClient {
     return res.deliverable;
   }
 
-  async updateDeliverable(id: string, updates: Partial<Deliverable>): Promise<Deliverable> {
+  async updateDeliverable(id: string, updates: UpdateDeliverableBody): Promise<Deliverable> {
     const res = await this.request<{ deliverable: Deliverable }>(`/deliverables/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
@@ -499,7 +545,7 @@ export class CriticalPathClient {
     return res.iterations;
   }
 
-  async createIteration(data: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
+  async createIteration(data: CreateIterationBody): Promise<Iteration> {
     const res = await this.request<{ iteration: Iteration }>('/iterations', {
       method: 'POST',
       body: JSON.stringify(data)
@@ -507,7 +553,7 @@ export class CriticalPathClient {
     return res.iteration;
   }
 
-  async updateIteration(id: string, updates: Partial<Iteration>): Promise<Iteration> {
+  async updateIteration(id: string, updates: UpdateIterationBody): Promise<Iteration> {
     const res = await this.request<{ iteration: Iteration }>(`/iterations/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
@@ -540,7 +586,7 @@ export class CriticalPathClient {
     return res.comment;
   }
 
-  async addComment(data: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
+  async addComment(data: CreateCommentBody): Promise<Comment> {
     const res = await this.request<{ comment: Comment }>('/comments', {
       method: 'POST',
       body: JSON.stringify(data)
@@ -548,7 +594,7 @@ export class CriticalPathClient {
     return res.comment;
   }
 
-  async updateComment(id: string, updates: Partial<Comment>): Promise<Comment> {
+  async updateComment(id: string, updates: UpdateCommentBody): Promise<Comment> {
     const res = await this.request<{ comment: Comment }>(`/comments/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(updates)
@@ -560,7 +606,7 @@ export class CriticalPathClient {
     return this.deleteRequest(`/comments/${encodeURIComponent(id)}`);
   }
 
-  async addCommentReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment> {
+  async addCommentReaction(commentId: string, reaction: CommentReactionBody): Promise<Comment> {
     const res = await this.request<{ comment: Comment }>(`/comments/${encodeURIComponent(commentId)}/reactions`, {
       method: 'POST',
       body: JSON.stringify(reaction)
@@ -568,11 +614,12 @@ export class CriticalPathClient {
     return res.comment;
   }
 
-  async removeCommentReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment> {
-    const res = await this.request<{ comment: Comment }>(`/comments/${encodeURIComponent(commentId)}/reactions`, {
-      method: 'DELETE',
-      body: JSON.stringify(reaction)
-    });
+  async removeCommentReaction(commentId: string, reaction: CommentReactionBody): Promise<Comment> {
+    const query = new URLSearchParams({ emoji: reaction.emoji });
+    const res = await this.request<{ comment: Comment }>(
+      `/comments/${encodeURIComponent(commentId)}/reactions?${query}`,
+      { method: 'DELETE' }
+    );
     return res.comment;
   }
 
@@ -592,7 +639,7 @@ export class CriticalPathClient {
     return res.attachment;
   }
 
-  async createAttachment(data: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
+  async createAttachment(data: CreateAttachmentBody): Promise<Attachment> {
     const res = await this.request<{ attachment: Attachment }>('/attachments', {
       method: 'POST',
       body: JSON.stringify(data)
@@ -600,21 +647,19 @@ export class CriticalPathClient {
     return res.attachment;
   }
 
-  async uploadAttachmentFile(data: {
-    filename: string;
-    data: string | Uint8Array | ArrayBuffer;
-    mimeType?: string;
-    pathPrefix?: string;
-    taskId?: string;
-    projectId?: string;
-    commentId?: string;
-    uploaderId: string;
-    uploaderType?: 'user' | 'agent' | 'system';
-    metadata?: Record<string, unknown>;
-  }): Promise<Attachment> {
+  /**
+   * Uploads a file through the server's FileStorageAdapter. Binary data is sent base64-encoded.
+   */
+  async uploadAttachmentFile(
+    data: Omit<UploadAttachmentBody, 'data'> & { data: string | Uint8Array | ArrayBuffer }
+  ): Promise<Attachment> {
+    const body: UploadAttachmentBody =
+      typeof data.data === 'string'
+        ? { ...data, data: data.data }
+        : { ...data, data: toBase64(data.data), encoding: 'base64' };
     const res = await this.request<{ attachment: Attachment }>('/attachments/upload', {
       method: 'POST',
-      body: JSON.stringify(data)
+      body: JSON.stringify(body)
     });
     return res.attachment;
   }
@@ -623,7 +668,7 @@ export class CriticalPathClient {
     return this.deleteRequest(`/attachments/${encodeURIComponent(id)}`);
   }
 
-  async getPresignedAttachmentUploadUrl(options: PresignedUrlOptions): Promise<PresignedUploadResult> {
+  async getPresignedAttachmentUploadUrl(options: PresignAttachmentBody): Promise<PresignedUploadResult> {
     const res = await this.request<{ presigned: PresignedUploadResult }>('/attachments/presign', {
       method: 'POST',
       body: JSON.stringify(options)
@@ -637,7 +682,7 @@ export class CriticalPathClient {
     return res.timeEntries;
   }
 
-  async logTime(data: Omit<TimeEntry, 'id' | 'loggedAt'>): Promise<TimeEntry> {
+  async logTime(data: LogTimeBody): Promise<TimeEntry> {
     const res = await this.request<{ timeEntry: TimeEntry }>('/time-entries', {
       method: 'POST',
       body: JSON.stringify(data)

@@ -1,4 +1,5 @@
 /// <reference types="svelte" />
+import type { CreateTaskBody } from '@critical-path/core/schemas';
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Task, TaskStatus, StatusDefinition, SemanticStatus } from '@critical-path/core';
 import { resolveStatusDefinition } from '@critical-path/core';
@@ -86,7 +87,7 @@ export class KanbanState {
     return this.taskState.fetch();
   }
 
-  async createTask(input: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) {
+  async createTask(input: CreateTaskBody) {
     return this.taskState.createTask(input);
   }
 

@@ -172,12 +172,14 @@ handle.unregister();
 | `list_deliverables` | List project milestone deliverables | `{ projectId? }` |
 | `create_deliverable` | Create a milestone deliverable | `{ projectId?, title, dueDate? }` |
 | `list_comments` | Retrieve task comments | `{ taskId }` |
-| `add_comment` | Post a comment to a task | `{ taskId, content, authorId }` |
+| `add_comment` | Post a comment to a task (authored by the server's actor) | `{ taskId, content }` |
 | `calculate_critical_path` | Calculate CPM schedule, float/slack & bottleneck tasks | `{ projectId? }` |
 | `get_timeline_ladder` | Multi-scale Ladder of Abstraction (macro/standard/concrete) | `{ projectId?, level?, containerId?, iterationId? }` |
 | `get_task_ladder` | Single-task ladder view connecting phase, CPM Gantt, and concrete evidence | `{ taskId }` |
 
-Each tool's JSON `inputSchema` is generated from its zod schema with `defineTool`, so what the model sees always matches what is enforced. Tool arguments are validated against each tool's zod schema before execution, on both the standard server and WebMCP. Invalid arguments return an `isError` result, and fields a tool does not declare are stripped (for example, `projectId` cannot be changed through `update_task`). When you pass `tools: [...]` to `createCriticalPathMcpServer`, tools outside that list are neither listed nor callable. `delete_task` is advertised with the MCP `destructiveHint` annotation.
+Each tool's JSON `inputSchema` is generated from its zod schema with `defineTool`, so what the model sees always matches what is enforced. Tool arguments are validated against each tool's zod schema before execution, on both the standard server and WebMCP. Invalid or undeclared arguments return an `isError` result naming the problem (for example, `projectId` cannot be passed to `update_task`).
+
+**Identity:** with an `engine`, changes are attributed to the server's `actor` option (default `DEFAULT_MCP_ACTOR`, `mcp-agent`); tools never take author or actor arguments. With a `client`, the API's authentication decides who the caller is. When you pass `tools: [...]` to `createCriticalPathMcpServer`, tools outside that list are neither listed nor callable. `delete_task` is advertised with the MCP `destructiveHint` annotation.
 
 ---
 

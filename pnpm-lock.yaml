@@ -129,6 +129,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@critical-path/server':
+        specifier: workspace:*
+        version: link:../server
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3

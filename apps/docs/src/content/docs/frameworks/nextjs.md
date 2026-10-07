@@ -32,7 +32,7 @@ export {
 
 ## Authentication & Context Injection
 
-Pass router options as the second argument. `getContext` resolves the caller for each request; when it returns a `userId`, every mutation in that request is attributed to that user (activity log, comment authors, reactions, time entries, uploads), and identity fields in request bodies such as `actorId` or `authorId` are ignored.
+Pass router options as the second argument. `getContext` resolves the caller for each request; every mutation in that request is attributed to the returned `userId` (activity log, comment authors, reactions, time entries, uploads), or to `anonymous` when there is none. Request bodies cannot carry identity: fields such as `actorId` or `authorId` are rejected.
 
 ```typescript
 import { createNextHandler } from '@critical-path/server';
@@ -64,4 +64,4 @@ createNextHandler({ store }, {
 });
 ```
 
-`cors` defaults to `{ origins: '*' }` without credentials; pass `false` to send no CORS headers (same-origin apps).
+CORS is off by default, which is what same-origin apps want. Set `cors` only when browsers on other origins must call the API; `{ origins: '*' }` allows any site (without credentials).

@@ -1,4 +1,5 @@
 /// <reference types="svelte" />
+import type { CreateTaskBody, UpdateTaskBody } from '@critical-path/core/schemas';
 import type { CriticalPathClient } from '@critical-path/client';
 import { type Task, type TaskStatus, isTempTaskId } from '@critical-path/core';
 
@@ -27,11 +28,14 @@ export class TaskState {
     }
   }
 
-  async createTask(input: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) {
+  async createTask(input: CreateTaskBody) {
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const now = new Date().toISOString();
     const tempTask: Task = {
       ...input,
+      // Placeholders until the server responds with the workflow's real defaults
+      status: input.status ?? 'todo',
+      priority: input.priority ?? 'medium',
       id: tempId,
       createdAt: now,
       updatedAt: now
@@ -60,7 +64,7 @@ export class TaskState {
     }
   }
 
-  async updateTask(taskId: string, updates: Partial<Task>) {
+  async updateTask(taskId: string, updates: UpdateTaskBody) {
     let targetId = taskId;
     if (this.tempToRealIdMap.has(taskId)) {
       targetId = this.tempToRealIdMap.get(taskId)!;

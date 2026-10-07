@@ -1,3 +1,4 @@
+import type { CreateAttachmentBody, CreateCommentBody, CreateTaskBody, UpdateCommentBody, UpdateDeliverableBody, UpdateTaskBody } from '@critical-path/core/schemas';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type {
   Project,
@@ -196,11 +197,14 @@ export function useTasks(projectId?: string) {
     fetchTasks();
   }, [fetchTasks]);
 
-  const createTask = async (input: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const createTask = async (input: CreateTaskBody) => {
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const now = new Date().toISOString();
     const tempTask: Task = {
       ...input,
+      // Placeholders until the server responds with the workflow's real defaults
+      status: input.status ?? 'todo',
+      priority: input.priority ?? 'medium',
       id: tempId,
       createdAt: now,
       updatedAt: now
@@ -226,7 +230,7 @@ export function useTasks(projectId?: string) {
     }
   };
 
-  const updateTask = async (taskId: string, updates: Partial<Task>) => {
+  const updateTask = async (taskId: string, updates: UpdateTaskBody) => {
     let targetId = taskId;
     if (tempToRealIdMapRef.current.has(taskId)) {
       targetId = tempToRealIdMapRef.current.get(taskId)!;
@@ -442,7 +446,7 @@ export function useComments(taskId: string) {
     fetchComments();
   }, [fetchComments]);
 
-  const addComment = async (input: Omit<Comment, 'id' | 'taskId' | 'createdAt' | 'updatedAt'>) => {
+  const addComment = async (input: Omit<CreateCommentBody, 'taskId'>) => {
     try {
       const created = await client.addComment({ ...input, taskId });
       setComments((prev) => [...prev, created]);
@@ -454,7 +458,7 @@ export function useComments(taskId: string) {
     }
   };
 
-  const updateComment = async (id: string, updates: Partial<Comment>) => {
+  const updateComment = async (id: string, updates: UpdateCommentBody) => {
     try {
       const updated = await client.updateComment(id, updates);
       setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
@@ -479,14 +483,10 @@ export function useComments(taskId: string) {
 
   const addReaction = async (
     commentId: string,
-    reactionOrEmoji: { emoji: string; userId: string } | string,
-    maybeUserId?: string
+    emoji: string
   ) => {
     try {
-      const payload =
-        typeof reactionOrEmoji === 'string'
-          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
-          : reactionOrEmoji;
+      const payload = { emoji };
       const updated = await client.addCommentReaction(commentId, payload);
       setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)));
       return updated;
@@ -499,14 +499,10 @@ export function useComments(taskId: string) {
 
   const removeReaction = async (
     commentId: string,
-    reactionOrEmoji: { emoji: string; userId: string } | string,
-    maybeUserId?: string
+    emoji: string
   ) => {
     try {
-      const payload =
-        typeof reactionOrEmoji === 'string'
-          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
-          : reactionOrEmoji;
+      const payload = { emoji };
       const updated = await client.removeCommentReaction(commentId, payload);
       setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)));
       return updated;
@@ -652,7 +648,7 @@ export function useDeliverables(projectId?: string) {
     }
   };
 
-  const updateDeliverable = async (id: string, updates: Partial<Deliverable>) => {
+  const updateDeliverable = async (id: string, updates: UpdateDeliverableBody) => {
     try {
       const updated = await client.updateDeliverable(id, updates);
       setDeliverables((prev) => prev.map((d) => (d.id === id ? updated : d)));
@@ -851,8 +847,8 @@ export function useTaskActivity(taskId?: string) {
   }, [attachments]);
 
   const addComment = async (
-    input: Omit<Comment, 'id' | 'taskId' | 'createdAt' | 'updatedAt'>,
-    attachmentInputs?: Array<Omit<Attachment, 'id' | 'taskId' | 'commentId' | 'createdAt' | 'updatedAt'>>
+    input: Omit<CreateCommentBody, 'taskId'>,
+    attachmentInputs?: Array<Omit<CreateAttachmentBody, 'taskId' | 'commentId'>>
   ) => {
     if (!taskId) {
       throw new Error('useTaskActivity requires a taskId to add comments.');
@@ -936,14 +932,10 @@ export function useTaskActivity(taskId?: string) {
 
   const addReaction = async (
     commentId: string,
-    reactionOrEmoji: { emoji: string; userId: string } | string,
-    maybeUserId?: string
+    emoji: string
   ) => {
     try {
-      const payload =
-        typeof reactionOrEmoji === 'string'
-          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
-          : reactionOrEmoji;
+      const payload = { emoji };
       const updated = await client.addCommentReaction(commentId, payload);
       setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)));
       return updated;
@@ -956,14 +948,10 @@ export function useTaskActivity(taskId?: string) {
 
   const removeReaction = async (
     commentId: string,
-    reactionOrEmoji: { emoji: string; userId: string } | string,
-    maybeUserId?: string
+    emoji: string
   ) => {
     try {
-      const payload =
-        typeof reactionOrEmoji === 'string'
-          ? { emoji: reactionOrEmoji, userId: maybeUserId! }
-          : reactionOrEmoji;
+      const payload = { emoji };
       const updated = await client.removeCommentReaction(commentId, payload);
       setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)));
       return updated;

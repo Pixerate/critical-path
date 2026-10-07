@@ -62,10 +62,10 @@ Router options are the second argument to `createNextHandler`, `createSvelteKitH
 
 | Option | Default | Description |
 | :--- | :--- | :--- |
-| `getContext(request)` | none | Resolve the caller (`{ userId, userName?, actorType?, ...extra }`). With a `userId`, every mutation is attributed to that user and identity fields in bodies (`actorId`, `authorId`, `userId`, `uploaderId`) are ignored. For SvelteKit it receives the `RequestEvent`, so `event.locals` is available. |
+| `getContext(request)` | none | Resolve the caller (`{ userId, userName?, actorType?, ...extra }`). Every mutation is attributed to that user, or to `anonymous` (`ANONYMOUS_ACTOR`) when no user is resolved. Request bodies never carry identity. For SvelteKit it receives the `RequestEvent`, so `event.locals` is available. |
 | `requireAuth` | `false` | Return `401` unless `getContext` yields a `userId`. `OPTIONS` preflight is always allowed. |
 | `basePath` | strip up to first `/critical-path` | Exact mount path, e.g. `/api/pm`. Requests outside it return `404`. |
-| `cors` | `{ origins: '*' }` | `{ origins: string[] \| '*', credentials?, allowHeaders?, maxAge? }`, or `false` for no CORS headers. `credentials` cannot be combined with `'*'`. |
+| `cors` | `false` (no CORS headers) | `{ origins: string[] \| '*', credentials?, allowHeaders?, maxAge? }`, or `false` for no CORS headers. `credentials` cannot be combined with `'*'`. |
 | `onError`, `exposeErrors` | see below | Unexpected error reporting. |
 
 ```ts
@@ -77,7 +77,7 @@ export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(
       return session?.user ? { userId: session.user.id } : null;
     },
     requireAuth: true,
-    cors: { origins: ['https://app.example.com'], credentials: true }
+    cors: { origins: ['https://app.example.com'], credentials: true } // omit for same-origin apps
   }
 );
 ```
@@ -91,8 +91,8 @@ For other Fetch runtimes (Workers, Deno, Bun, Hono), use `createUniversalHandler
 Every request body is parsed with the zod schemas from `@critical-path/core/schemas` before it reaches the engine:
 
 - Wrong types or missing required fields return `400` with `issues: [{ path, message }]`.
-- Server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, and the owning `projectId` on updates) and unknown keys are stripped, so a `PATCH` cannot move a task to another project or rewrite timestamps.
-- Comments, reactions and attachments need an author (`authorId`, `userId`, `uploaderId`) unless `getContext` resolves the caller, in which case the caller is used.
+- Bodies are strict: server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, the owning `projectId` on updates), identity fields (`actorId`, `authorId`, `userId`, `uploaderId`) and unknown keys are rejected with `400`, so a `PATCH` cannot move a task to another project or rewrite timestamps.
+- Authors of comments, reactions, attachments and time entries are the resolved caller, or `anonymous`. Remove a reaction with `DELETE /comments/:id/reactions?emoji=👍`.
 
 `GET /openapi.json` serves an OpenAPI 3.1 document whose request bodies are generated from the same schemas (behind the same auth as other routes). To publish it statically:
 
