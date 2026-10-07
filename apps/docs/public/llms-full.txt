@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-07T06:26:57.577Z
+> Documentation generated on: 2026-10-07T06:40:40.422Z
 
 ================================================================================
 
@@ -1008,7 +1008,7 @@ export {
 
 ## Authentication & Context Injection
 
-Pass router options as the second argument. `getContext` resolves the caller for each request; when it returns a `userId`, every mutation in that request is attributed to that user (activity log, comment authors, reactions, time entries, uploads), and identity fields in request bodies such as `actorId` or `authorId` are ignored.
+Pass router options as the second argument. `getContext` resolves the caller for each request; every mutation in that request is attributed to the returned `userId` (activity log, comment authors, reactions, time entries, uploads), or to `anonymous` when there is none. Request bodies cannot carry identity: fields such as `actorId` or `authorId` are rejected.
 
 ```typescript
 import { createNextHandler } from '@critical-path/server';
@@ -1040,7 +1040,7 @@ createNextHandler({ store }, {
 });
 ```
 
-`cors` defaults to `{ origins: '*' }` without credentials; pass `false` to send no CORS headers (same-origin apps).
+CORS is off by default, which is what same-origin apps want. Set `cors` only when browsers on other origins must call the API; `{ origins: '*' }` allows any site (without credentials).
 
 --------------------------------------------------------------------------------
 
@@ -1092,7 +1092,7 @@ export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createSvelteKitHandler
 );
 ```
 
-When a `userId` is resolved, all mutations in the request are attributed to that user and identity fields in request bodies are ignored. The other router options (`basePath`, `cors`, `onError`, `exposeErrors`) are accepted here too.
+All mutations in the request are attributed to the resolved `userId`, or to `anonymous`. Request bodies cannot carry identity. The other router options (`basePath`, `cors`, `onError`, `exposeErrors`) are accepted here too.
 
 --------------------------------------------------------------------------------
 
@@ -1243,7 +1243,7 @@ function TaskActivity({ taskId }: { taskId: string }) {
       {threads.map(thread => (
         <div key={thread.id}>
           <p>{thread.content}</p>
-          <button onClick={() => addReaction(thread.id, '👍', 'user_1')}>👍</button>
+          <button onClick={() => addReaction(thread.id, '👍')}>👍</button>
         </div>
       ))}
     </div>
@@ -1398,7 +1398,7 @@ Combines threaded comments with inline attachments and emoji reactions:
   {#each activity.threads as thread (thread.id)}
     <div class="thread">
       <p><strong>{thread.authorId}</strong>: {thread.content}</p>
-      <button on:click={() => activity.addReaction(thread.id, '👍', 'user_1')}>👍</button>
+      <button on:click={() => activity.addReaction(thread.id, '👍')}>👍</button>
       {#each thread.attachments as att}
         <a href={att.url} target="_blank">{att.filename}</a>
       {/each}
@@ -1602,7 +1602,7 @@ graph TD
 | `list_deliverables` | List deliverables for a project with format and container specs | `projectId` |
 | `create_deliverable`| Create a high-level creative deliverable | `projectId`, `title`, `format` |
 | `list_comments` | Retrieve threaded discussion comments for a task | `taskId` |
-| `add_comment` | Post a discussion comment or agent reply | `taskId`, `content`, `authorId` |
+| `add_comment` | Post a discussion comment or agent reply (authored by the server's actor) | `taskId`, `content` |
 
 ---
 
@@ -1971,7 +1971,7 @@ Create a new project.
 Retrieve single project by ID.
 
 ### `PATCH /projects/:projectId`
-Update project fields. `id`, `createdAt` and `updatedAt` in the body are ignored. Returns `404` if the project does not exist.
+Update project fields. `id`, `createdAt` and `updatedAt` in the body are rejected with `400`. Returns `404` if the project does not exist.
 
 ### `DELETE /projects/:projectId`
 Delete a project and its tasks. Each task deletion runs plugin hooks and publishes `task.deleted`, then `project.deleted` is published and dispatched to webhooks.
@@ -2057,7 +2057,7 @@ Errors are returned as JSON with an `error` message and, where useful, extra det
 
 ### Validation
 
-Server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, and the owning `projectId` on updates) and unknown keys are stripped from request bodies. Comments, reactions and attachments require an author (`authorId`, `userId`, `uploaderId`) unless the router's `getContext` resolves the caller.
+Request bodies are strict. Server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, and the owning `projectId` on updates), identity fields (`actorId`, `authorId`, `userId`, `uploaderId`) and unknown keys are rejected with `400`. Authors of comments, reactions, attachments and time entries are the caller resolved by `getContext`, or `anonymous`. Remove a reaction with `DELETE /comments/:commentId/reactions?emoji=<emoji>`.
 
 --------------------------------------------------------------------------------
 
