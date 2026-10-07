@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { CriticalPathRouter } from './router.js';
 import { createNextHandler } from './adapters/next.js';
+import { createSvelteKitHandler } from './adapters/sveltekit.js';
+import { createUniversalHandler } from './adapters/universal.js';
 import { InMemoryStore } from '@critical-path/core';
 
 describe('@critical-path/server Router Tests', () => {
@@ -607,6 +609,147 @@ describe('@critical-path/server Router Tests', () => {
       expect(res.status).toBe(500);
       expect((await res.json()).error).toBe('adapter failure');
       expect(errors).toHaveLength(1);
+    });
+  });
+
+  describe('request context, auth, mounting and CORS', () => {
+    const tokenContext = (request: Request) => {
+      const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+      return token ? { userId: token, userName: token.toUpperCase() } : null;
+    };
+    const call = (router: CriticalPathRouter, path: string, init: RequestInit & { token?: string } = {}) => {
+      const headers = new Headers(init.headers);
+      if (init.token) headers.set('Authorization', `Bearer ${init.token}`);
+      if (init.body) headers.set('Content-Type', 'application/json');
+      return router.handleRequest(new Request(`http://localhost:3000/api/critical-path${path}`, { ...init, headers }));
+    };
+
+    it('returns 401 when requireAuth is set and no user is resolved', async () => {
+      const router = new CriticalPathRouter(undefined, { getContext: tokenContext, requireAuth: true });
+      expect((await call(router, '/projects')).status).toBe(401);
+      expect((await call(router, '/projects', { token: 'alice' })).status).toBe(200);
+      // Preflight is answered without credentials
+      expect((await call(router, '/projects', { method: 'OPTIONS' })).status).toBe(204);
+    });
+
+    it('attributes mutations to the context user and ignores identity in bodies', async () => {
+      const router = new CriticalPathRouter(undefined, { getContext: tokenContext });
+      const project = await router.engine.createProject({ key: 'CTX', name: 'Context' });
+      const task = await router.engine.createTask({ projectId: project.id, title: 'T' });
+
+      const patched = await call(router, `/tasks/${task.id}`, {
+        method: 'PATCH',
+        token: 'alice',
+        body: JSON.stringify({ title: 'Renamed', actorId: 'ceo', actorName: 'CEO' })
+      });
+      expect(patched.status).toBe(200);
+
+      const commented = await call(router, `/tasks/${task.id}/comments`, {
+        method: 'POST',
+        token: 'alice',
+        body: JSON.stringify({ content: 'hi', authorId: 'ceo' })
+      });
+      const { comment } = await commented.json();
+      expect(comment.authorId).toBe('alice');
+
+      const reacted = await call(router, `/comments/${comment.id}/reactions`, {
+        method: 'POST',
+        token: 'alice',
+        body: JSON.stringify({ emoji: '🚀' })
+      });
+      expect(reacted.status).toBe(200);
+      expect((await reacted.json()).comment.reactions[0].userId).toBe('alice');
+
+      const activities = await router.engine.store.getActivities({ taskId: task.id });
+      const update = activities.find((a) => a.action !== 'task.created');
+      expect(update?.actorId).toBe('alice');
+    });
+
+    it('treats getContext failures as unexpected errors', async () => {
+      const errors: unknown[] = [];
+      const router = new CriticalPathRouter(undefined, {
+        getContext: () => {
+          throw new Error('session store offline');
+        },
+        onError: (err) => void errors.push(err)
+      });
+      const res = await call(router, '/projects');
+      expect(res.status).toBe(500);
+      expect(errors).toHaveLength(1);
+    });
+
+    it('mounts at an explicit basePath', async () => {
+      const router = new CriticalPathRouter(undefined, { basePath: '/api/pm/' });
+      const ok = await router.handleRequest(new Request('http://localhost/api/pm/projects'));
+      expect(ok.status).toBe(200);
+      const outside = await router.handleRequest(new Request('http://localhost/api/critical-path/projects'));
+      expect(outside.status).toBe(404);
+      const lookalike = await router.handleRequest(new Request('http://localhost/api/pmx/projects'));
+      expect(lookalike.status).toBe(404);
+    });
+
+    it('applies an origin allow-list with credentials', async () => {
+      const router = new CriticalPathRouter(undefined, {
+        cors: { origins: ['https://app.example.com'], credentials: true, maxAge: 600 }
+      });
+      const allowed = await call(router, '/projects', { headers: { Origin: 'https://app.example.com' } });
+      expect(allowed.headers.get('Access-Control-Allow-Origin')).toBe('https://app.example.com');
+      expect(allowed.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+      expect(allowed.headers.get('Vary')).toContain('Origin');
+
+      const denied = await call(router, '/projects', { headers: { Origin: 'https://evil.example.com' } });
+      expect(denied.headers.get('Access-Control-Allow-Origin')).toBeNull();
+
+      const preflight = await call(router, '/projects', { method: 'OPTIONS', headers: { Origin: 'https://app.example.com' } });
+      expect(preflight.headers.get('Access-Control-Max-Age')).toBe('600');
+    });
+
+    it('can disable CORS headers and rejects credentials with a wildcard origin', async () => {
+      const router = new CriticalPathRouter(undefined, { cors: false });
+      const res = await call(router, '/projects', { headers: { Origin: 'https://app.example.com' } });
+      expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+
+      expect(() => new CriticalPathRouter(undefined, { cors: { origins: '*', credentials: true } })).toThrow(/credentials/);
+    });
+  });
+
+  describe('framework adapters with context', () => {
+    it('createSvelteKitHandler attributes writes to the user from event.locals', async () => {
+      type Event = { request: Request; locals: { user?: { id: string } } };
+      const router = new CriticalPathRouter(undefined, { requireAuth: true });
+      const project = await router.engine.createProject({ key: 'SK', name: 'SvelteKit' });
+      const task = await router.engine.createTask({ projectId: project.id, title: 'T' });
+      const { POST } = createSvelteKitHandler<Event>(router, {
+        getContext: (event) => (event.locals.user ? { userId: event.locals.user.id } : null)
+      });
+
+      const commentReq = () =>
+        new Request(`http://localhost/api/critical-path/tasks/${task.id}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: 'from svelte', authorId: 'spoofed' })
+        });
+
+      expect((await POST({ request: commentReq(), locals: {} })).status).toBe(401);
+      const res = await POST({ request: commentReq(), locals: { user: { id: 'svelte-user' } } });
+      expect(res.status).toBe(201);
+      expect((await res.json()).comment.authorId).toBe('svelte-user');
+    });
+
+    it('createSvelteKitHandler passes locals-derived context to its own router', async () => {
+      const { GET } = createSvelteKitHandler<{ request: Request; locals: { userId?: string } }>(
+        {},
+        { requireAuth: true, getContext: (event) => ({ userId: event.locals.userId }) }
+      );
+      const req = () => new Request('http://localhost/api/critical-path/projects');
+      expect((await GET({ request: req(), locals: {} })).status).toBe(401);
+      expect((await GET({ request: req(), locals: { userId: 'u1' } })).status).toBe(200);
+    });
+
+    it('createUniversalHandler serves requests with router options', async () => {
+      const handle = createUniversalHandler({}, { basePath: '/pm', requireAuth: true, getContext: () => ({ userId: 'u1' }) });
+      expect((await handle(new Request('http://localhost/pm/projects'))).status).toBe(200);
+      expect((await handle(new Request('http://localhost/other/projects'))).status).toBe(404);
     });
   });
 });

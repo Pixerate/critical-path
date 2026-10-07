@@ -1,10 +1,34 @@
-import { CriticalPathEngine, type CriticalPathConfig } from '@critical-path/core';
+import { CriticalPathEngine, type AuthorType, type CriticalPathConfig } from '@critical-path/core';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-};
+const CORS_ALLOW_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
+const DEFAULT_CORS_ALLOW_HEADERS = ['Content-Type', 'Authorization'];
+
+/**
+ * Per-request identity resolved by `getContext`. `userId` becomes the actor every mutation in
+ * the request is attributed to. Extra fields (e.g. `tenantId`, `roles`) are carried for
+ * future authorization hooks.
+ */
+export interface RequestContext {
+  userId?: string;
+  userName?: string;
+  actorType?: AuthorType;
+  [key: string]: unknown;
+}
+
+export interface RequestInitOptions {
+  getContext?: CriticalPathRouterOptions['getContext'];
+}
+
+export interface CorsOptions {
+  /** Allowed origins. `'*'` allows any origin (and cannot be combined with `credentials`). */
+  origins: '*' | string[];
+  /** Send `Access-Control-Allow-Credentials: true` for allowed origins. */
+  credentials?: boolean;
+  /** Request headers browsers may send. Defaults to `Content-Type` and `Authorization`. */
+  allowHeaders?: string[];
+  /** Seconds browsers may cache preflight results. */
+  maxAge?: number;
+}
 
 class BadRequestError extends Error {
   constructor(message: string) {
@@ -25,6 +49,21 @@ export interface CriticalPathRouterOptions {
    * `NODE_ENV === 'development'`, so production deployments never leak internals.
    */
   exposeErrors?: boolean;
+  /**
+   * Resolves the caller's identity from the request (session cookie, bearer token, etc.).
+   * When it returns a `userId`, all mutations in the request are attributed to that user and
+   * identity fields in request bodies (`actorId`, `authorId`, `userId`, ...) are ignored.
+   */
+  getContext?: (request: Request) => RequestContext | null | undefined | Promise<RequestContext | null | undefined>;
+  /** Reject requests with `401` unless `getContext` returns a `userId`. Defaults to `false`. */
+  requireAuth?: boolean;
+  /**
+   * The path the router is mounted at, e.g. `/api/pm`. Requests outside it return `404`.
+   * When omitted, everything up to the first `/critical-path` segment is stripped.
+   */
+  basePath?: string;
+  /** CORS policy. Defaults to `{ origins: '*' }`; pass `false` to send no CORS headers. */
+  cors?: CorsOptions | false;
 }
 
 function isDevelopment(): boolean {
@@ -35,6 +74,10 @@ export class CriticalPathRouter {
   public engine: CriticalPathEngine;
   private readonly onError?: CriticalPathRouterOptions['onError'];
   private readonly exposeErrors: boolean;
+  private readonly getContext?: CriticalPathRouterOptions['getContext'];
+  private readonly requireAuth: boolean;
+  private readonly basePath?: string;
+  private readonly cors: CorsOptions | false;
 
   constructor(configOrEngine?: CriticalPathConfig | CriticalPathEngine, options: CriticalPathRouterOptions = {}) {
     if (configOrEngine instanceof CriticalPathEngine) {
@@ -44,21 +87,90 @@ export class CriticalPathRouter {
     }
     this.onError = options.onError;
     this.exposeErrors = options.exposeErrors ?? isDevelopment();
+    this.getContext = options.getContext;
+    this.requireAuth = options.requireAuth ?? false;
+    this.basePath = options.basePath ? '/' + options.basePath.replace(/^\/+|\/+$/g, '') : undefined;
+    this.cors = options.cors === undefined ? { origins: '*' } : options.cors;
+    if (this.cors && this.cors.origins === '*' && this.cors.credentials) {
+      throw new Error('CORS credentials cannot be combined with origins "*"; list the allowed origins instead.');
+    }
   }
 
-  async handleRequest(request: Request): Promise<Response> {
+  /**
+   * Handles a request. Adapters that resolve identity from something other than the `Request`
+   * (e.g. SvelteKit `locals`) pass `init.getContext`, which replaces the router's `getContext`
+   * for this request.
+   */
+  async handleRequest(request: Request, init: RequestInitOptions = {}): Promise<Response> {
+    const response = await this.dispatch(request, init);
+    return this.applyCors(request, response);
+  }
+
+  /** Returns the path after the mount point, or `null` when the request is outside `basePath`. */
+  private resolveSubpath(pathname: string): string | null {
+    if (this.basePath) {
+      if (pathname !== this.basePath && !pathname.startsWith(this.basePath + '/')) return null;
+      return pathname.slice(this.basePath.length).replace(/^\/+/, '');
+    }
+    // Extract subpath after /critical-path/ or /api/critical-path/
+    return pathname.replace(/^.*?\/critical-path\/?/, '').replace(/^\/+/, '');
+  }
+
+  private applyCors(request: Request, response: Response): Response {
+    if (!this.cors) return response;
+
+    const origin = request.headers.get('Origin');
+    let allowOrigin: string | undefined;
+    if (this.cors.origins === '*') {
+      allowOrigin = '*';
+    } else if (origin && this.cors.origins.includes(origin)) {
+      allowOrigin = origin;
+    }
+
+    // Copy so headers are mutable even if a hook returned a Response with immutable headers.
+    const result = new Response(response.body, response);
+    if (this.cors.origins !== '*') result.headers.append('Vary', 'Origin');
+    if (!allowOrigin) return result;
+
+    result.headers.set('Access-Control-Allow-Origin', allowOrigin);
+    result.headers.set('Access-Control-Allow-Methods', CORS_ALLOW_METHODS);
+    result.headers.set('Access-Control-Allow-Headers', (this.cors.allowHeaders ?? DEFAULT_CORS_ALLOW_HEADERS).join(', '));
+    if (this.cors.credentials) result.headers.set('Access-Control-Allow-Credentials', 'true');
+    if (request.method.toUpperCase() === 'OPTIONS' && this.cors.maxAge !== undefined) {
+      result.headers.set('Access-Control-Max-Age', String(this.cors.maxAge));
+    }
+    return result;
+  }
+
+  private async dispatch(request: Request, init: RequestInitOptions): Promise<Response> {
     const url = new URL(request.url);
     const pathname = url.pathname;
     const method = request.method.toUpperCase();
 
-    // Extract subpath after /critical-path/ or /api/critical-path/
-    const subpath = pathname.replace(/^.*?\/critical-path\/?/, '').replace(/^\/+/, '');
+    const subpath = this.resolveSubpath(pathname);
+    if (subpath === null) {
+      return this.jsonResponse({ error: `Route not found: ${method} ${pathname}` }, 404);
+    }
     const segments = subpath.split('/').filter(Boolean);
 
-    // CORS preflight
+    // CORS preflight (browsers send it without credentials, so it is answered before auth)
     if (method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
+      return new Response(null, { status: 204 });
     }
+
+    let context: RequestContext | null | undefined;
+    try {
+      const resolve = init.getContext ?? this.getContext;
+      context = resolve ? await resolve(request) : undefined;
+    } catch (err) {
+      return this.errorResponse(err, request);
+    }
+    if (this.requireAuth && !context?.userId) {
+      return this.jsonResponse({ error: 'Authentication required' }, 401);
+    }
+    const engine = context?.userId
+      ? this.engine.withActor({ userId: context.userId, username: context.userName, actorType: context.actorType })
+      : this.engine;
 
     try {
       // Workflows API
@@ -66,28 +178,28 @@ export class CriticalPathRouter {
         const workflowId = segments[1];
         if (!workflowId) {
           if (method === 'GET') {
-            const workflows = await this.engine.getWorkflows();
+            const workflows = await engine.getWorkflows();
             return this.jsonResponse({ workflows });
           }
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const workflow = await this.engine.createWorkflow(body);
+            const workflow = await engine.createWorkflow(body);
             return this.jsonResponse({ workflow }, 201);
           }
         } else {
           if (method === 'GET') {
-            const workflow = await this.engine.getWorkflow(workflowId);
+            const workflow = await engine.getWorkflow(workflowId);
             if (!workflow) return this.jsonResponse({ error: 'Workflow not found' }, 404);
             return this.jsonResponse({ workflow });
           }
           if (method === 'PATCH' || method === 'PUT') {
             const body = await this.readJson(request);
-            const updated = await this.engine.updateWorkflow(workflowId, body);
+            const updated = await engine.updateWorkflow(workflowId, body);
             if (!updated) return this.jsonResponse({ error: 'Workflow not found' }, 404);
             return this.jsonResponse({ workflow: updated });
           }
           if (method === 'DELETE') {
-            const deleted = await this.engine.deleteWorkflow(workflowId);
+            const deleted = await engine.deleteWorkflow(workflowId);
             if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
             return this.jsonResponse({ success: true });
           }
@@ -100,17 +212,17 @@ export class CriticalPathRouter {
         const subResource = segments[2];
         if (!projectId) {
           if (method === 'GET') {
-            const projects = await this.engine.getProjects();
+            const projects = await engine.getProjects();
             return this.jsonResponse({ projects });
           }
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const project = await this.engine.createProject(body);
+            const project = await engine.createProject(body);
             return this.jsonResponse({ project }, 201);
           }
         } else if (subResource === 'critical-path') {
           if (method === 'GET') {
-            const analysis = await this.engine.calculateCriticalPath(projectId);
+            const analysis = await engine.calculateCriticalPath(projectId);
             return this.jsonResponse({ analysis });
           }
         } else if (subResource === 'ladder' || subResource === 'timeline-ladder') {
@@ -118,7 +230,7 @@ export class CriticalPathRouter {
             const level = (url.searchParams.get('level') || 'all') as any;
             const containerId = url.searchParams.get('containerId') || undefined;
             const iterationId = url.searchParams.get('iterationId') || undefined;
-            const ladder = await this.engine.getTimelineLadder(projectId, { level, containerId, iterationId });
+            const ladder = await engine.getTimelineLadder(projectId, { level, containerId, iterationId });
             return this.jsonResponse({ ladder });
           }
         } else if (subResource === 'workload' || subResource === 'workload-distribution') {
@@ -132,7 +244,7 @@ export class CriticalPathRouter {
               ? parseFloat(url.searchParams.get('defaultWeeklyCapacityHours')!)
               : undefined;
 
-            const workload = await this.engine.getWorkloadDistribution(projectId, {
+            const workload = await engine.getWorkloadDistribution(projectId, {
               startDate,
               endDate,
               interval,
@@ -144,18 +256,18 @@ export class CriticalPathRouter {
           }
         } else {
           if (method === 'GET') {
-            const project = await this.engine.getProject(projectId);
+            const project = await engine.getProject(projectId);
             if (!project) return this.jsonResponse({ error: 'Project not found' }, 404);
             return this.jsonResponse({ project });
           }
           if (method === 'PATCH' || method === 'PUT') {
             const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...updates } = await this.readJson(request);
-            const project = await this.engine.updateProject(projectId, updates);
+            const project = await engine.updateProject(projectId, updates);
             if (!project) return this.jsonResponse({ error: 'Project not found' }, 404);
             return this.jsonResponse({ project });
           }
           if (method === 'DELETE') {
-            const deleted = await this.engine.deleteProject(projectId);
+            const deleted = await engine.deleteProject(projectId);
             if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
             return this.jsonResponse({ success: true });
           }
@@ -170,37 +282,37 @@ export class CriticalPathRouter {
         if (!taskId) {
           if (method === 'GET') {
             const projectId = url.searchParams.get('projectId') || undefined;
-            const tasks = await this.engine.getTasks(projectId);
+            const tasks = await engine.getTasks(projectId);
             return this.jsonResponse({ tasks });
           }
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const task = await this.engine.createTask(body);
+            const task = await engine.createTask(body);
             return this.jsonResponse({ task }, 201);
           }
         } else if (subResource === 'comments') {
           if (method === 'GET') {
-            const comments = await this.engine.getComments(taskId);
+            const comments = await engine.getComments(taskId);
             return this.jsonResponse({ comments });
           }
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const comment = await this.engine.addComment({ ...body, taskId });
+            const comment = await engine.addComment({ ...body, taskId });
             return this.jsonResponse({ comment }, 201);
           }
         } else if (subResource === 'attachments') {
           if (method === 'GET') {
-            const attachments = await this.engine.getAttachments({ taskId });
+            const attachments = await engine.getAttachments({ taskId });
             return this.jsonResponse({ attachments });
           }
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const attachment = await this.engine.createAttachment({ ...body, taskId });
+            const attachment = await engine.createAttachment({ ...body, taskId });
             return this.jsonResponse({ attachment }, 201);
           }
         } else if (subResource === 'dependencies') {
           if (method === 'GET') {
-            const graph = await this.engine.getTaskDependencyGraph(taskId);
+            const graph = await engine.getTaskDependencyGraph(taskId);
             return this.jsonResponse({ graph });
           }
           if (method === 'POST') {
@@ -208,7 +320,7 @@ export class CriticalPathRouter {
             if (typeof body.dependsOnTaskId !== 'string' || !body.dependsOnTaskId) {
               return this.jsonResponse({ error: 'dependsOnTaskId is required' }, 400);
             }
-            const dep = await this.engine.addDependency({
+            const dep = await engine.addDependency({
               taskId,
               dependsOnTaskId: body.dependsOnTaskId,
               type: body.type || 'blocking'
@@ -217,48 +329,48 @@ export class CriticalPathRouter {
           }
         } else if (subResource === 'state' || subResource === 'lifecycle') {
           if (method === 'GET') {
-            const state = await this.engine.getTaskLifecycleState(taskId);
+            const state = await engine.getTaskLifecycleState(taskId);
             if (!state) return this.jsonResponse({ error: 'Task not found' }, 404);
             return this.jsonResponse({ state });
           }
         } else if (subResource === 'transitions' || subResource === 'allowed-transitions') {
           if (method === 'GET') {
-            const allowedNextStatuses = await this.engine.getAllowedTaskTransitions(taskId);
-            const allowedPreviousStatuses = await this.engine.getAllowedPreviousTaskTransitions(taskId);
+            const allowedNextStatuses = await engine.getAllowedTaskTransitions(taskId);
+            const allowedPreviousStatuses = await engine.getAllowedPreviousTaskTransitions(taskId);
             return this.jsonResponse({ allowedNextStatuses, allowedPreviousStatuses });
           }
         } else if (subResource === 'ladder') {
           if (method === 'GET') {
-            const taskLadder = await this.engine.getTaskLadder(taskId);
+            const taskLadder = await engine.getTaskLadder(taskId);
             if (!taskLadder) return this.jsonResponse({ error: 'Task not found' }, 404);
             return this.jsonResponse({ taskLadder });
           }
         } else if (subResource === 'metrics') {
           if (method === 'GET') {
-            const metrics = await this.engine.getTaskMetrics(taskId);
+            const metrics = await engine.getTaskMetrics(taskId);
             if (!metrics) return this.jsonResponse({ error: 'Task not found' }, 404);
             return this.jsonResponse({ metrics });
           }
         } else if (subResource === 'progress-history') {
           if (method === 'GET') {
-            const progressHistory = await this.engine.getTaskProgressHistory(taskId);
+            const progressHistory = await engine.getTaskProgressHistory(taskId);
             if (!progressHistory) return this.jsonResponse({ error: 'Task not found' }, 404);
             return this.jsonResponse({ progressHistory });
           }
         } else {
           if (method === 'GET') {
-            const task = await this.engine.getTask(taskId);
+            const task = await engine.getTask(taskId);
             if (!task) return this.jsonResponse({ error: 'Task not found' }, 404);
             return this.jsonResponse({ task });
           }
           if (method === 'PATCH' || method === 'PUT') {
             const body = await this.readJson(request);
-            const updated = await this.engine.updateTask(taskId, body);
+            const updated = await engine.updateTask(taskId, body);
             if (!updated) return this.jsonResponse({ error: 'Task not found' }, 404);
             return this.jsonResponse({ task: updated });
           }
           if (method === 'DELETE') {
-            const deleted = await this.engine.deleteTask(taskId);
+            const deleted = await engine.deleteTask(taskId);
             if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
             return this.jsonResponse({ success: true });
           }
@@ -270,28 +382,28 @@ export class CriticalPathRouter {
         const teamId = segments[1];
         if (!teamId) {
           if (method === 'GET') {
-            const teams = await this.engine.getTeams();
+            const teams = await engine.getTeams();
             return this.jsonResponse({ teams });
           }
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const team = await this.engine.createTeam(body);
+            const team = await engine.createTeam(body);
             return this.jsonResponse({ team }, 201);
           }
         } else {
           if (method === 'GET') {
-            const team = await this.engine.getTeam(teamId);
+            const team = await engine.getTeam(teamId);
             if (!team) return this.jsonResponse({ error: 'Team not found' }, 404);
             return this.jsonResponse({ team });
           }
           if (method === 'PATCH' || method === 'PUT') {
             const body = await this.readJson(request);
-            const updated = await this.engine.updateTeam(teamId, body);
+            const updated = await engine.updateTeam(teamId, body);
             if (!updated) return this.jsonResponse({ error: 'Team not found' }, 404);
             return this.jsonResponse({ team: updated });
           }
           if (method === 'DELETE') {
-            const deleted = await this.engine.deleteTeam(teamId);
+            const deleted = await engine.deleteTeam(teamId);
             if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
             return this.jsonResponse({ success: true });
           }
@@ -305,28 +417,28 @@ export class CriticalPathRouter {
           if (method === 'GET') {
             const projectId = url.searchParams.get('projectId');
             if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
-            const containers = await this.engine.getContainers(projectId);
+            const containers = await engine.getContainers(projectId);
             return this.jsonResponse({ containers });
           }
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const container = await this.engine.createContainer(body);
+            const container = await engine.createContainer(body);
             return this.jsonResponse({ container }, 201);
           }
         } else {
           if (method === 'GET') {
-            const container = await this.engine.getContainer(containerId);
+            const container = await engine.getContainer(containerId);
             if (!container) return this.jsonResponse({ error: 'Container not found' }, 404);
             return this.jsonResponse({ container });
           }
           if (method === 'PATCH' || method === 'PUT') {
             const body = await this.readJson(request);
-            const updated = await this.engine.updateContainer(containerId, body);
+            const updated = await engine.updateContainer(containerId, body);
             if (!updated) return this.jsonResponse({ error: 'Container not found' }, 404);
             return this.jsonResponse({ container: updated });
           }
           if (method === 'DELETE') {
-            const deleted = await this.engine.deleteContainer(containerId);
+            const deleted = await engine.deleteContainer(containerId);
             if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
             return this.jsonResponse({ success: true });
           }
@@ -340,34 +452,34 @@ export class CriticalPathRouter {
           if (method === 'GET') {
             const projectId = url.searchParams.get('projectId');
             if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
-            const deliverables = await this.engine.getDeliverables(projectId);
+            const deliverables = await engine.getDeliverables(projectId);
             return this.jsonResponse({ deliverables });
           }
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const deliverable = await this.engine.createDeliverable(body);
+            const deliverable = await engine.createDeliverable(body);
             return this.jsonResponse({ deliverable }, 201);
           }
         } else if (segments[2] === 'summary') {
           if (method === 'GET') {
-            const summary = await this.engine.getDeliverableSummary(deliverableId);
+            const summary = await engine.getDeliverableSummary(deliverableId);
             if (!summary) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
             return this.jsonResponse({ summary });
           }
         } else {
           if (method === 'GET') {
-            const deliverable = await this.engine.getDeliverable(deliverableId);
+            const deliverable = await engine.getDeliverable(deliverableId);
             if (!deliverable) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
             return this.jsonResponse({ deliverable });
           }
           if (method === 'PATCH' || method === 'PUT') {
             const body = await this.readJson(request);
-            const updated = await this.engine.updateDeliverable(deliverableId, body);
+            const updated = await engine.updateDeliverable(deliverableId, body);
             if (!updated) return this.jsonResponse({ error: 'Deliverable not found' }, 404);
             return this.jsonResponse({ deliverable: updated });
           }
           if (method === 'DELETE') {
-            const deleted = await this.engine.deleteDeliverable(deliverableId);
+            const deleted = await engine.deleteDeliverable(deliverableId);
             if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
             return this.jsonResponse({ success: true });
           }
@@ -381,28 +493,28 @@ export class CriticalPathRouter {
           if (method === 'GET') {
             const projectId = url.searchParams.get('projectId');
             if (!projectId) return this.jsonResponse({ error: 'projectId parameter required' }, 400);
-            const iterations = await this.engine.getIterations(projectId);
+            const iterations = await engine.getIterations(projectId);
             return this.jsonResponse({ iterations });
           }
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const iteration = await this.engine.createIteration(body);
+            const iteration = await engine.createIteration(body);
             return this.jsonResponse({ iteration }, 201);
           }
         } else {
           if (method === 'GET') {
-            const iteration = await this.engine.getIteration(iterationId);
+            const iteration = await engine.getIteration(iterationId);
             if (!iteration) return this.jsonResponse({ error: 'Iteration not found' }, 404);
             return this.jsonResponse({ iteration });
           }
           if (method === 'PATCH' || method === 'PUT') {
             const body = await this.readJson(request);
-            const updated = await this.engine.updateIteration(iterationId, body);
+            const updated = await engine.updateIteration(iterationId, body);
             if (!updated) return this.jsonResponse({ error: 'Iteration not found' }, 404);
             return this.jsonResponse({ iteration: updated });
           }
           if (method === 'DELETE') {
-            const deleted = await this.engine.deleteIteration(iterationId);
+            const deleted = await engine.deleteIteration(iterationId);
             if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
             return this.jsonResponse({ success: true });
           }
@@ -414,7 +526,7 @@ export class CriticalPathRouter {
         if (method === 'GET') {
           const projectId = url.searchParams.get('projectId') || undefined;
           const taskId = url.searchParams.get('taskId') || undefined;
-          const activities = await this.engine.store.getActivities({ projectId, taskId });
+          const activities = await engine.store.getActivities({ projectId, taskId });
           return this.jsonResponse({ activities });
         }
       }
@@ -426,10 +538,11 @@ export class CriticalPathRouter {
         if (commentId && subResource === 'reactions') {
           if (method === 'POST') {
             const body = await this.readJson(request);
-            if (!body.emoji || !body.userId) {
+            const userId = context?.userId ?? body.userId;
+            if (!body.emoji || !userId) {
               return this.jsonResponse({ error: 'emoji and userId are required' }, 400);
             }
-            const comment = await this.engine.addCommentReaction(commentId, body);
+            const comment = await engine.addCommentReaction(commentId, { emoji: body.emoji, userId });
             if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
             return this.jsonResponse({ comment }, 200);
           }
@@ -441,11 +554,11 @@ export class CriticalPathRouter {
               // Body may be empty on DELETE, fallback to searchParams
             }
             const emoji = body.emoji || url.searchParams.get('emoji');
-            const userId = body.userId || url.searchParams.get('userId');
+            const userId = context?.userId ?? (body.userId || url.searchParams.get('userId'));
             if (!emoji || !userId) {
               return this.jsonResponse({ error: 'emoji and userId are required' }, 400);
             }
-            const comment = await this.engine.removeCommentReaction(commentId, { emoji, userId });
+            const comment = await engine.removeCommentReaction(commentId, { emoji, userId });
             if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
             return this.jsonResponse({ comment }, 200);
           }
@@ -453,28 +566,28 @@ export class CriticalPathRouter {
           if (method === 'GET') {
             const taskId = url.searchParams.get('taskId');
             if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
-            const comments = await this.engine.getComments(taskId);
+            const comments = await engine.getComments(taskId);
             return this.jsonResponse({ comments });
           }
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const comment = await this.engine.addComment(body);
+            const comment = await engine.addComment(body);
             return this.jsonResponse({ comment }, 201);
           }
         } else {
           if (method === 'GET') {
-            const comment = await this.engine.getComment(commentId);
+            const comment = await engine.getComment(commentId);
             if (!comment) return this.jsonResponse({ error: 'Comment not found' }, 404);
             return this.jsonResponse({ comment });
           }
           if (method === 'PATCH' || method === 'PUT') {
             const body = await this.readJson(request);
-            const updated = await this.engine.updateComment(commentId, body);
+            const updated = await engine.updateComment(commentId, body);
             if (!updated) return this.jsonResponse({ error: 'Comment not found' }, 404);
             return this.jsonResponse({ comment: updated });
           }
           if (method === 'DELETE') {
-            const deleted = await this.engine.deleteComment(commentId);
+            const deleted = await engine.deleteComment(commentId);
             if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
             return this.jsonResponse({ success: true });
           }
@@ -487,13 +600,13 @@ export class CriticalPathRouter {
         if (attachmentId === 'presign') {
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const presigned = await this.engine.getPresignedAttachmentUploadUrl(body);
+            const presigned = await engine.getPresignedAttachmentUploadUrl(body);
             return this.jsonResponse({ presigned });
           }
         } else if (attachmentId === 'upload') {
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const attachment = await this.engine.uploadAttachmentFile(body);
+            const attachment = await engine.uploadAttachmentFile(body);
             return this.jsonResponse({ attachment }, 201);
           }
         } else if (!attachmentId) {
@@ -501,22 +614,22 @@ export class CriticalPathRouter {
             const taskId = url.searchParams.get('taskId') || undefined;
             const projectId = url.searchParams.get('projectId') || undefined;
             const commentId = url.searchParams.get('commentId') || undefined;
-            const attachments = await this.engine.getAttachments({ taskId, projectId, commentId });
+            const attachments = await engine.getAttachments({ taskId, projectId, commentId });
             return this.jsonResponse({ attachments });
           }
           if (method === 'POST') {
             const body = await this.readJson(request);
-            const attachment = await this.engine.createAttachment(body);
+            const attachment = await engine.createAttachment(body);
             return this.jsonResponse({ attachment }, 201);
           }
         } else {
           if (method === 'GET') {
-            const attachment = await this.engine.getAttachment(attachmentId);
+            const attachment = await engine.getAttachment(attachmentId);
             if (!attachment) return this.jsonResponse({ error: 'Attachment not found' }, 404);
             return this.jsonResponse({ attachment });
           }
           if (method === 'DELETE') {
-            const deleted = await this.engine.deleteAttachment(attachmentId);
+            const deleted = await engine.deleteAttachment(attachmentId);
             if (!deleted) return this.jsonResponse({ error: 'Not found' }, 404);
             return this.jsonResponse({ success: true });
           }
@@ -528,12 +641,12 @@ export class CriticalPathRouter {
         if (method === 'GET') {
           const taskId = url.searchParams.get('taskId');
           if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
-          const entries = await this.engine.store.getTimeEntries(taskId);
+          const entries = await engine.store.getTimeEntries(taskId);
           return this.jsonResponse({ timeEntries: entries });
         }
         if (method === 'POST') {
           const body = await this.readJson(request);
-          const entry = await this.engine.logTime(body);
+          const entry = await engine.logTime(body);
           return this.jsonResponse({ timeEntry: entry }, 201);
         }
       }
@@ -551,7 +664,7 @@ export class CriticalPathRouter {
             ? parseFloat(url.searchParams.get('defaultWeeklyCapacityHours')!)
             : undefined;
 
-          const workload = await this.engine.getWorkloadDistribution(projectId, {
+          const workload = await engine.getWorkloadDistribution(projectId, {
             startDate,
             endDate,
             interval,
@@ -568,8 +681,8 @@ export class CriticalPathRouter {
         if (method === 'POST') {
           const body = await this.readJson(request);
           const status = typeof body.status === 'string' ? body.status : 'active';
-          if (this.engine.events) {
-            this.engine.events.publish({
+          if (engine.events) {
+            engine.events.publish({
               type: 'agent.status_updated' as any,
               aggregateId: body.taskId || body.projectId || 'system',
               payload: {
@@ -644,8 +757,7 @@ export class CriticalPathRouter {
     return new Response(JSON.stringify(data), {
       status,
       headers: {
-        'Content-Type': 'application/json',
-        ...CORS_HEADERS
+        'Content-Type': 'application/json'
       }
     });
   }

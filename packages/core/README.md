@@ -122,6 +122,16 @@ try {
 
 Cycle detection follows the full upstream chain, so indirect cycles (A → B → C → D → A) are rejected as well as direct ones.
 
+#### Attributing Mutations to a User (`withActor`)
+
+```ts
+const asAlice = engine.withActor({ userId: 'alice', username: 'Alice' });
+await asAlice.updateTask(taskId, { status: 'in_progress' }); // activity actorId: 'alice'
+await asAlice.addComment({ taskId, content: 'On it', authorId: 'ignored' }); // authorId: 'alice'
+```
+
+`withActor` returns a per-request view that shares the store, plugins and event bus with the base engine. On the view, identity fields in payloads (`actorId`, `authorId`, reaction `userId`, time entry `userId`, `uploaderId`) are replaced by the actor, and new tasks default `reporterId` to it. Explicit `updateTask(id, updates, { actorId })` options still win, for trusted server-side automation. `@critical-path/server` creates these views from its `getContext` option.
+
 Other domain errors are exported for callers and route handlers to map: `ValidationError` (bad input, e.g. non-positive logged hours) and `NotFoundError` (missing referenced entity). `engine.deleteProject(id)` deletes a project and its tasks through `deleteTask`, then publishes `project.deleted`.
 
 ### 4. Tracking Creative Deliverables & Rollup Metrics

@@ -1,4 +1,5 @@
 import type {
+  Actor,
   CriticalPathConfig,
   Project,
   Task,
@@ -98,6 +99,8 @@ export class CriticalPathEngine {
   public readonly plugins: PluginRegistry;
   public readonly events: DomainEventBus;
   public readonly ready: Promise<void> = Promise.resolve();
+  /** The identity mutations are attributed to. Set only on views returned by `withActor`. */
+  public readonly actor?: Actor;
 
   constructor(config: CriticalPathConfig = {}) {
     this.config = config;
@@ -118,6 +121,23 @@ export class CriticalPathEngine {
     if (config.initialData) {
       this.ready = this.seedInitialData(config.initialData);
     }
+  }
+
+  /**
+   * Returns a view of this engine that attributes every mutation to `actor`: activity log
+   * entries, comment authors, reactions, time entries, attachment uploaders and task reporters.
+   * Identity fields supplied in payloads are ignored on the view, so callers cannot claim to be
+   * someone else. The view shares the store, plugins and event bus, and does not modify this engine,
+   * so it is safe to create one per request.
+   */
+  withActor(actor: Actor): CriticalPathEngine {
+    const scoped = Object.create(this) as CriticalPathEngine;
+    Object.defineProperty(scoped, 'actor', { value: Object.freeze({ ...actor }), enumerable: true });
+    return scoped;
+  }
+
+  private actorIdOr(fallback: string): string {
+    return this.actor?.userId ?? fallback;
   }
 
   private async seedInitialData(data: NonNullable<CriticalPathConfig['initialData']>): Promise<void> {
@@ -182,7 +202,7 @@ export class CriticalPathEngine {
     await this.events.publish(event);
 
     await this.store.logActivity({
-      actorId: 'system',
+      actorId: this.actorIdOr('system'),
       action: 'workflow.created',
       details: { name: created.name }
     });
@@ -208,7 +228,7 @@ export class CriticalPathEngine {
       await this.events.publish(event);
 
       await this.store.logActivity({
-        actorId: 'system',
+        actorId: this.actorIdOr('system'),
         action: 'workflow.updated',
         details: { name: updated.name }
       });
@@ -235,7 +255,7 @@ export class CriticalPathEngine {
       await this.events.publish(event);
 
       await this.store.logActivity({
-        actorId: 'system',
+        actorId: this.actorIdOr('system'),
         action: 'workflow.deleted',
         details: { name: existing.name }
       });
@@ -306,7 +326,7 @@ export class CriticalPathEngine {
 
     await this.store.logActivity({
       projectId: created.id,
-      actorId: project.ownerId || 'system',
+      actorId: this.actorIdOr(project.ownerId || 'system'),
       action: 'project.created',
       details: { name: created.name, key: created.key }
     });
@@ -333,7 +353,7 @@ export class CriticalPathEngine {
 
       await this.store.logActivity({
         projectId: updated.id,
-        actorId: 'system',
+        actorId: this.actorIdOr('system'),
         action: 'project.updated',
         details: { name: updated.name }
       });
@@ -373,7 +393,7 @@ export class CriticalPathEngine {
 
       await this.store.logActivity({
         projectId: id,
-        actorId: 'system',
+        actorId: this.actorIdOr('system'),
         action: 'project.deleted',
         details: { name: existing.name, deletedTaskCount: deletedTaskIds.length }
       });
@@ -392,6 +412,9 @@ export class CriticalPathEngine {
   }
 
   async createTask(taskInput: CreateTaskInput): Promise<Task> {
+    if (this.actor && !taskInput.reporterId) {
+      taskInput = { ...taskInput, reporterId: this.actor.userId };
+    }
     const processedInput = await this.plugins.runBeforeTaskCreate(taskInput);
     const projectId = processedInput.projectId || taskInput.projectId;
     const project = await this.store.getProject(projectId);
@@ -477,7 +500,7 @@ export class CriticalPathEngine {
     await this.store.logActivity({
       projectId: created.projectId,
       taskId: created.id,
-      actorId: created.reporterId || 'system',
+      actorId: this.actorIdOr(created.reporterId || 'system'),
       action: 'task.created',
       details: { title: created.title, status: created.status }
     });
@@ -504,25 +527,30 @@ export class CriticalPathEngine {
     const existing = await this.store.getTask(id);
     if (!existing) return null;
 
+    // On a withActor view, the scoped actor replaces any identity claimed in the payload.
+    // Explicit options from trusted server-side code still take precedence.
+    options = options ?? (this.actor ? { actor: this.actor } : undefined);
+    const claimed = this.actor ? undefined : updates;
+
     const actorId =
       options?.actorId ||
-      updates.actorId ||
+      claimed?.actorId ||
       options?.actor?.userId ||
-      updates.actor?.userId ||
+      claimed?.actor?.userId ||
       'system';
     const actorName =
       options?.actorName ||
-      updates.actorName ||
+      claimed?.actorName ||
       options?.actor?.username ||
-      updates.actor?.username ||
+      claimed?.actor?.username ||
       (actorId === 'system' ? 'System' : undefined);
     const actorType =
       options?.actorType ||
-      updates.actorType ||
+      claimed?.actorType ||
       options?.actor?.actorType ||
-      updates.actor?.actorType ||
+      claimed?.actor?.actorType ||
       (actorId === 'system' ? 'system' : 'user');
-    const actorObj = options?.actor || updates.actor || {
+    const actorObj = options?.actor || claimed?.actor || {
       userId: actorId,
       username: actorName,
       actorType
@@ -903,7 +931,7 @@ export class CriticalPathEngine {
           await this.store.logActivity({
             projectId: downstream.projectId,
             taskId: downstream.id,
-            actorId: 'system',
+            actorId: this.actorIdOr('system'),
             action: 'task.unblocked',
             details: { unblockedByTaskId: completedTask.id }
           });
@@ -947,7 +975,7 @@ export class CriticalPathEngine {
       await this.store.logActivity({
         projectId: existing.projectId,
         taskId: id,
-        actorId: 'system',
+        actorId: this.actorIdOr('system'),
         action: 'task.deleted',
         details: { title: existing.title }
       });
@@ -1082,7 +1110,7 @@ export class CriticalPathEngine {
 
     const fullEntry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string } = {
       ...entry,
-      userId: entry.userId || task?.assigneeId || 'system',
+      userId: this.actor?.userId || entry.userId || task?.assigneeId || 'system',
       loggedAt: entry.loggedAt
     };
 
@@ -1112,6 +1140,9 @@ export class CriticalPathEngine {
   }
 
   async addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment> {
+    if (this.actor) {
+      comment = { ...comment, authorId: this.actor.userId, authorType: this.actor.actorType ?? 'user' };
+    }
     const mentions = comment.mentions ?? extractMentions(comment.content);
     const created = await this.store.addComment({ ...comment, mentions });
     const now = new Date().toISOString();
@@ -1178,6 +1209,7 @@ export class CriticalPathEngine {
   }
 
   async addCommentReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
+    if (this.actor) reaction = { ...reaction, userId: this.actor.userId };
     const existing = await this.store.getComment(commentId);
     if (!existing) return null;
 
@@ -1223,6 +1255,7 @@ export class CriticalPathEngine {
   }
 
   async removeCommentReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment | null> {
+    if (this.actor) reaction = { ...reaction, userId: this.actor.userId };
     const existing = await this.store.getComment(commentId);
     if (!existing) return null;
 
@@ -1267,6 +1300,9 @@ export class CriticalPathEngine {
   }
 
   async createAttachment(attachment: Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Attachment> {
+    if (this.actor) {
+      attachment = { ...attachment, uploaderId: this.actor.userId, uploaderType: this.actor.actorType ?? 'user' };
+    }
     validateAttachmentUrl(attachment.url);
     const created = await this.store.createAttachment(attachment);
     const now = new Date().toISOString();
@@ -1498,7 +1534,7 @@ export class CriticalPathEngine {
 
     await this.store.logActivity({
       projectId: created.projectId,
-      actorId: 'system',
+      actorId: this.actorIdOr('system'),
       action: 'deliverable.created',
       details: { title: created.title, format: created.format }
     });
@@ -1551,7 +1587,7 @@ export class CriticalPathEngine {
 
       await this.store.logActivity({
         projectId: updated.projectId,
-        actorId: 'system',
+        actorId: this.actorIdOr('system'),
         action: 'deliverable.updated',
         details: { title: updated.title, status: updated.status }
       });
@@ -1579,7 +1615,7 @@ export class CriticalPathEngine {
 
       await this.store.logActivity({
         projectId: existing.projectId,
-        actorId: 'system',
+        actorId: this.actorIdOr('system'),
         action: 'deliverable.deleted',
         details: { title: existing.title }
       });

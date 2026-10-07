@@ -300,6 +300,13 @@ export interface Iteration {
 
 export type AuthorType = 'user' | 'agent' | 'system';
 
+/** The identity a mutation is attributed to (see `CriticalPathEngine.withActor`). */
+export interface Actor {
+  userId: string;
+  username?: string;
+  actorType?: AuthorType;
+}
+
 export interface CommentReaction {
   emoji: string;
   userId: string;

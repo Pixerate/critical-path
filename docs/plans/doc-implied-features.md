@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **Draft, needs review** (AI-generated from a code audit on 2026-10-07; verify before acting).
+Status: **In progress** — item 1 implemented on `feat/request-context-auth`; remaining items are drafts that need review (AI-generated from a code audit on 2026-10-07; verify before acting).
 
 This plan covers features the README, docs site, or package READMEs present as working that are missing or only stubbed in code. Each item lists the claim, what exists today, the proposed design, and how to verify it. Bugs already fixed on `fix/audit-quick-fixes` are not repeated here.
 
@@ -51,7 +51,9 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 
 **Tests**: 401 when `requireAuth` and no context; actor in activity log comes from context, not body; `basePath` mounts at `/api/pm`; CORS origin allow-list.
 
-**Docs**: server README, `frameworks/nextjs.md` (already describes it), `frameworks/sveltekit.md`, DEVELOPER_GUIDE section 5, MCP CLI `--header`/`CP_API_TOKEN` so the MCP server can call an authenticated API.
+**Docs**: server README, `frameworks/nextjs.md` (already describes it), `frameworks/sveltekit.md`, DEVELOPER_GUIDE section 5, MCP CLI `--header`/`CRITICAL_PATH_API_TOKEN` so the MCP server can call an authenticated API.
+
+**Implemented**: `getContext`, `requireAuth`, `basePath` and `cors` router options; `engine.withActor(actor)` per-request views (chosen over adding an `options.actor` parameter to every mutation, which would have changed ~25 signatures); SvelteKit `getContext(event)`; `createUniversalHandler`; MCP CLI `--header` and `CRITICAL_PATH_API_TOKEN`. CORS still defaults to `*` without credentials for compatibility.
 
 ---
 

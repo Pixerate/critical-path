@@ -128,3 +128,16 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: Repeatedly inserting directly after the same item (e.g. dragging cards to "second place") produced, after about six inserts, a key that sorted after its upper bound, duplicating earlier keys and scrambling order.
 - **Root Cause**: The midpoint helper fell back to appending `'V'` when the lower suffix was shorter than the upper one and their next digits were adjacent (e.g. between `""` and `"1"`).
 - **Solution / Workaround**: The midpoint compares digits with missing lower digits treated as `'0'` (the standard fractional-indexing approach), so `between("a0", "a01")` yields `"a00V"`. `generateKeyBetween(a, b)` now throws a `RangeError` when `a >= b` instead of returning an out-of-range key.
+
+### `engine.withActor` Views Are Per-Request Prototypes
+- **Area / Package**: `@critical-path/core`, `@critical-path/server`
+- **Symptom / Behavior**: Code that spreads or clones an engine (`{ ...engine }`) loses its methods, and setting an actor on the shared engine would leak one request's identity into concurrent requests.
+- **Root Cause**: `withActor(actor)` returns `Object.create(engine)` with a frozen `actor` property. Methods and state (store, plugins, events) are inherited from the base engine, so the view is cheap and isolated, but it is not a standalone copy.
+- **Solution / Workaround**: Create a view per request (`engine.withActor(...)`), pass the view around instead of copying it, and never assign `actor` on a shared engine. Inside the engine, use `this` (not a captured base-engine reference) so internal calls such as `deleteProject → deleteTask` keep the actor. Explicit `updateTask(id, updates, { actorId })` options still override the view's actor for trusted automation.
+
+### SvelteKit `getContext` Receives the Event, Other Adapters the Request
+- **Area / Package**: `@critical-path/server`, `createSvelteKitHandler`
+- **Symptom / Behavior**: `event.locals` is undefined inside `getContext`, or a `Request` has no `locals`.
+- **Root Cause**: SvelteKit puts the session on `event.locals` (populated in `hooks.server.ts`), which a bare `Request` does not carry. The SvelteKit adapter therefore calls `getContext(event)`, while `createNextHandler`, `createUniversalHandler` and `CriticalPathRouter` call `getContext(request)`.
+- **Solution / Workaround**: Use `event.locals` in SvelteKit and headers/cookies elsewhere. Custom adapters can pass a per-request resolver with `router.handleRequest(request, { getContext: () => ... })`.
+
