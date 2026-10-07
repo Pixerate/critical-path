@@ -38,7 +38,7 @@ import type {
   WorkloadDistribution,
   WorkloadDistributionOptions
 } from '../types/index.js';
-import { StorageAdapter, InMemoryStore } from '../store/index.js';
+import { StorageAdapter, InMemoryStore, type ActivityQuery, type Page, type TaskQuery } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
 import { deriveTaskLifecycleState, resolveStatusDefinition } from '../utils/status.js';
 import {
@@ -565,6 +565,35 @@ export class CriticalPathEngine {
     if (projectId && !(await this.canReadProject(projectId))) return [];
     const tasks = await this.store.getTasks(projectId);
     return projectId ? tasks : this.filterReadable(tasks, (t) => t.projectId);
+  }
+
+  /**
+   * Filtered, paginated tasks (oldest first). Without `projectId`, results span every project
+   * the actor can read.
+   */
+  async queryTasks(query: TaskQuery = {}): Promise<Page<Task>> {
+    if (query.projectId) {
+      return (await this.canReadProject(query.projectId)) ? this.store.queryTasks(query) : { items: [] };
+    }
+    if (!this.enforcing) return this.store.queryTasks(query);
+    return this.store.queryTasks({ ...query, projectIds: await this.readableProjectIds(query.projectIds) });
+  }
+
+  /** Paginated activity feed (newest first), limited to projects the actor can read. */
+  async queryActivities(query: ActivityQuery = {}): Promise<Page<Activity>> {
+    if (query.taskId) {
+      return (await this.getTask(query.taskId)) ? this.store.queryActivities(query) : { items: [] };
+    }
+    if (query.projectId) {
+      return (await this.canReadProject(query.projectId)) ? this.store.queryActivities(query) : { items: [] };
+    }
+    if (!this.enforcing) return this.store.queryActivities(query);
+    return this.store.queryActivities({ ...query, projectIds: await this.readableProjectIds(query.projectIds) });
+  }
+
+  private async readableProjectIds(requested?: string[]): Promise<string[]> {
+    const readable = (await this.getProjects()).map((p) => p.id);
+    return requested ? requested.filter((id) => readable.includes(id)) : readable;
   }
 
   async getTask(id: string): Promise<Task | null> {

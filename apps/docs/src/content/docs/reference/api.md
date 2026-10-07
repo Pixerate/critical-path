@@ -50,8 +50,23 @@ Delete a project and everything in it: tasks (with their subtasks, dependencies,
 
 ## Tasks Endpoints
 
-### `GET /tasks?projectId=:projectId&status=:status`
-List tasks with optional filtering by project, assignee, or status.
+### `GET /tasks`
+List tasks, oldest first (`createdAt`, then `id`), one page at a time.
+
+| Parameter | Description |
+| :--- | :--- |
+| `projectId` | Limit to one project (otherwise all projects the caller can read) |
+| `status`, `priority` | Comma-separated values, e.g. `status=todo,in_progress` |
+| `assigneeId` | Matches `assigneeId` or any entry in `assignees` |
+| `iterationId`, `deliverableId`, `containerId` | Exact match |
+| `parentId` | Subtasks of a task, or `none` for top-level tasks |
+| `limit` | Page size, 1–500 (default 100) |
+| `cursor` | The previous page's `nextCursor` |
+
+Response: `{ "tasks": [...], "nextCursor": "..." }`. `nextCursor` is omitted on the last page. Unknown parameters return `400`.
+
+### `GET /activities`
+The activity (audit) feed, newest first. Accepts `projectId`, `taskId`, `limit` and `cursor`, and returns `{ "activities": [...], "nextCursor": "..." }`.
 
 ### `POST /tasks`
 Create a new task.

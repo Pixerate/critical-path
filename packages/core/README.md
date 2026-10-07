@@ -137,6 +137,16 @@ await engine.createTask(input);
 
 Create and update schemas exist for workflows, projects, tasks, dependencies, deliverables, teams, containers, iterations, comments, reactions, attachments and time entries. They are strict: server-assigned fields, identity fields and unknown keys are rejected. The schemas live on a subpath so importing `@critical-path/core` in a browser bundle does not pull in zod. A compile-time test fails the build if a domain type gains a field its schema lacks.
 
+#### Querying & Pagination
+
+```ts
+const page = await engine.queryTasks({ projectId, status: ['todo', 'in_progress'], assigneeId: 'ana', limit: 50 });
+const next = await engine.queryTasks({ projectId, limit: 50, cursor: page.nextCursor });
+const feed = await engine.queryActivities({ projectId, limit: 20 }); // newest first
+```
+
+Tasks page oldest first and activities newest first, using keyset cursors (`createdAt`, then `id`). `SQLiteStore` filters and pages in SQL with indexes. `FirebaseStore` pushes down the project filter and applies the rest in memory. Without `projectId`, results are limited to projects the actor can read.
+
 #### Authorization & Multi-Tenancy
 
 ```ts

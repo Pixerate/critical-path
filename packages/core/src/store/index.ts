@@ -18,6 +18,16 @@ import type {
   CreateDeliverableInput
 } from '../types/index.js';
 import { generateProjectKey } from '../utils/key.js';
+import {
+  matchesActivityQuery,
+  matchesTaskQuery,
+  paginate,
+  type ActivityQuery,
+  type Page,
+  type TaskQuery
+} from './query.js';
+
+export * from './query.js';
 
 export interface ProjectRepository {
   getProjects(): Promise<Project[]>;
@@ -37,6 +47,8 @@ export interface WorkflowRepository {
 
 export interface TaskRepository {
   getTasks(projectId?: string): Promise<Task[]>;
+  /** Filtered, paginated tasks ordered by `(createdAt, id)` ascending. */
+  queryTasks(query: TaskQuery): Promise<Page<Task>>;
   getTask(id: string): Promise<Task | null>;
   createTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task>;
   updateTask(id: string, updates: Partial<Task>): Promise<Task | null>;
@@ -86,6 +98,8 @@ export interface AttachmentRepository {
 
 export interface ActivityRepository {
   getActivities(filter?: { projectId?: string; taskId?: string }): Promise<Activity[]>;
+  /** Paginated activity feed ordered by `(createdAt, id)` descending (newest first). */
+  queryActivities(query: ActivityQuery): Promise<Page<Activity>>;
   logActivity(activity: Omit<Activity, 'id' | 'createdAt'>): Promise<Activity>;
 }
 
@@ -232,6 +246,11 @@ export class InMemoryStore implements StorageAdapter {
       return all.filter((t) => t.projectId === projectId);
     }
     return all;
+  }
+
+  async queryTasks(query: TaskQuery): Promise<Page<Task>> {
+    const tasks = Array.from(this.tasks.values()).filter((t) => matchesTaskQuery(t, query));
+    return paginate(tasks, (t) => t.createdAt, 'asc', query.limit, query.cursor);
   }
 
   async getTask(id: string): Promise<Task | null> {
@@ -505,6 +524,11 @@ export class InMemoryStore implements StorageAdapter {
       if (filter?.taskId && a.taskId !== filter.taskId) return false;
       return true;
     });
+  }
+
+  async queryActivities(query: ActivityQuery): Promise<Page<Activity>> {
+    const activities = this.activities.filter((a) => matchesActivityQuery(a, query));
+    return paginate(activities, (a) => a.createdAt, 'desc', query.limit, query.cursor);
   }
 
   async logActivity(activity: Omit<Activity, 'id' | 'createdAt'>): Promise<Activity> {

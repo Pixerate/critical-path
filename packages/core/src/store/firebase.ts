@@ -1,4 +1,5 @@
 import type { StorageAdapter } from './index.js';
+import { matchesActivityQuery, matchesTaskQuery, paginate, type ActivityQuery, type Page, type TaskQuery } from './query.js';
 import type {
   Project,
   Task,
@@ -344,6 +345,12 @@ export class FirebaseStore implements StorageAdapter {
     return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
   }
 
+  /** Pushes down the project filter; remaining filters and pagination are applied in memory. */
+  async queryTasks(query: TaskQuery): Promise<Page<Task>> {
+    const tasks = (await this.getTasks(query.projectId)).filter((t) => matchesTaskQuery(t, query));
+    return paginate(tasks, (t) => t.createdAt, 'asc', query.limit, query.cursor);
+  }
+
   async getTask(id: string): Promise<Task | null> {
     const snap = await this.db.collection('tasks').doc(id).get();
     if (!snap.exists) return null;
@@ -524,6 +531,13 @@ export class FirebaseStore implements StorageAdapter {
       snap = await this.db.collection('activities').get();
     }
     return snap.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+  }
+
+  async queryActivities(query: ActivityQuery): Promise<Page<Activity>> {
+    const activities = (await this.getActivities({ projectId: query.projectId, taskId: query.taskId })).filter((a) =>
+      matchesActivityQuery(a, query)
+    );
+    return paginate(activities, (a) => a.createdAt, 'desc', query.limit, query.cursor);
   }
 
   async logActivity(activity: Omit<Activity, 'id' | 'createdAt'>): Promise<Activity> {

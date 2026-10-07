@@ -25,6 +25,9 @@ import type {
   UpdateWebhookBody
 } from '@critical-path/core/schemas';
 import type {
+  ActivityQuery,
+  Page,
+  TaskQuery,
   PublicWebhook,
   TaskDependency,
   Project,
@@ -303,10 +306,36 @@ export class CriticalPathClient {
   }
 
   // Tasks
+  /** All tasks (optionally in one project), following pagination. Prefer `queryTasks` for large lists. */
   async getTasks(projectId?: string): Promise<Task[]> {
-    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
-    const res = await this.request<{ tasks: Task[] }>(`/tasks${query}`);
-    return res.tasks;
+    return this.collectPages((cursor) => this.queryTasks({ projectId, cursor, limit: 500 }));
+  }
+
+  /**
+   * One page of tasks, oldest first. Filters: `status` and `priority` (arrays), `assigneeId`,
+   * `iterationId`, `deliverableId`, `containerId`, `parentId` (`null` for top-level tasks).
+   */
+  async queryTasks(query: TaskQuery = {}): Promise<Page<Task>> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || key === 'projectIds') continue;
+      if (key === 'parentId' && value === null) params.set('parentId', 'none');
+      else params.set(key, Array.isArray(value) ? value.join(',') : String(value));
+    }
+    const qs = params.size ? `?${params}` : '';
+    const res = await this.request<{ tasks: Task[]; nextCursor?: string }>(`/tasks${qs}`);
+    return { items: res.tasks, nextCursor: res.nextCursor };
+  }
+
+  private async collectPages<T>(fetchPage: (cursor?: string) => Promise<Page<T>>): Promise<T[]> {
+    const items: T[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await fetchPage(cursor);
+      items.push(...page.items);
+      cursor = page.nextCursor;
+    } while (cursor);
+    return items;
   }
 
   async getTask(id: string): Promise<Task> {
@@ -603,13 +632,20 @@ export class CriticalPathClient {
   }
 
   // Activity Stream
+  /** The whole activity feed (newest first), following pagination. Prefer `queryActivities` for feeds. */
   async getActivities(filter?: { projectId?: string; taskId?: string }): Promise<Activity[]> {
+    return this.collectPages((cursor) => this.queryActivities({ ...filter, cursor, limit: 500 }));
+  }
+
+  /** One page of the activity feed, newest first. */
+  async queryActivities(query: ActivityQuery = {}): Promise<Page<Activity>> {
     const params = new URLSearchParams();
-    if (filter?.projectId) params.set('projectId', filter.projectId);
-    if (filter?.taskId) params.set('taskId', filter.taskId);
-    const query = params.toString() ? `?${params.toString()}` : '';
-    const res = await this.request<{ activities: Activity[] }>(`/activities${query}`);
-    return res.activities;
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && key !== 'projectIds') params.set(key, String(value));
+    }
+    const qs = params.size ? `?${params}` : '';
+    const res = await this.request<{ activities: Activity[]; nextCursor?: string }>(`/activities${qs}`);
+    return { items: res.activities, nextCursor: res.nextCursor };
   }
 
   // Comments

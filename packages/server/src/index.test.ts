@@ -993,5 +993,36 @@ describe('@critical-path/server Router Tests', () => {
       expect(res.status).toBe(403);
     });
   });
+
+  it('filters and paginates GET /tasks and GET /activities', async () => {
+    const router = new CriticalPathRouter();
+    const project = await router.engine.createProject({ name: 'Paged' });
+    for (let i = 0; i < 5; i++) {
+      await router.engine.createTask({ projectId: project.id, title: `T${i}`, priority: i % 2 ? 'high' : 'low' });
+    }
+    const get = async (qs: string) => {
+      const res = await router.handleRequest(new Request(`http://localhost/api/critical-path${qs}`));
+      return { status: res.status, body: await res.json() };
+    };
+
+    const high = await get(`/tasks?projectId=${project.id}&priority=high,urgent`);
+    expect(high.body.tasks.map((t: { title: string }) => t.title).sort()).toEqual(['T1', 'T3']);
+
+    const first = await get(`/tasks?projectId=${project.id}&limit=2`);
+    expect(first.body.tasks).toHaveLength(2);
+    expect(first.body.nextCursor).toBeTruthy();
+    const second = await get(`/tasks?projectId=${project.id}&limit=2&cursor=${encodeURIComponent(first.body.nextCursor)}`);
+    // Tasks created in the same millisecond tie on createdAt and are ordered by id, so check paging, not titles
+    const ids = [...first.body.tasks, ...second.body.tasks].map((t: { id: string }) => t.id);
+    expect(new Set(ids).size).toBe(4);
+
+    expect((await get('/tasks?projectID=typo')).status).toBe(400);
+    expect((await get('/tasks?limit=0')).status).toBe(400);
+    expect((await get('/tasks?cursor=garbage')).status).toBe(400);
+
+    const feed = await get(`/activities?projectId=${project.id}&limit=3`);
+    expect(feed.body.activities).toHaveLength(3);
+    expect(feed.body.nextCursor).toBeTruthy();
+  });
 });
 

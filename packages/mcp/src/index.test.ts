@@ -100,7 +100,8 @@ describe('@critical-path/mcp', () => {
         { projectId: project.id, status: 'in_progress' },
         engine
       );
-      expect(filtered).toHaveLength(1);
+      expect(filtered.tasks).toHaveLength(1);
+      expect(filtered.nextCursor).toBeUndefined();
 
       // 7. Delete task
       const deleteTaskTool = TOOL_MAP.get('delete_task')!;
@@ -108,7 +109,7 @@ describe('@critical-path/mcp', () => {
       expect(delRes.success).toBe(true);
 
       const afterDelete = await listTasksTool.execute({ projectId: project.id }, engine);
-      expect(afterDelete).toHaveLength(0);
+      expect(afterDelete.tasks).toHaveLength(0);
     });
 
     it('calculates critical path and returns timeline ladder via MCP tools', async () => {

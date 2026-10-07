@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { StorageAdapter } from './index.js';
+import { decodeCursor, encodeCursor, pageSize, type ActivityQuery, type Page, type TaskQuery } from './query.js';
 import type {
   Project,
   Task,
@@ -287,6 +288,17 @@ export class SQLiteStore implements StorageAdapter {
     } catch {
       // Column may already exist
     }
+
+    // Indexes for filtered queries and keyset pagination
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_tasks_project_created ON tasks (projectId, createdAt, id);
+      CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks (parentId);
+      CREATE INDEX IF NOT EXISTS idx_activities_project_created ON activities (projectId, createdAt, id);
+      CREATE INDEX IF NOT EXISTS idx_activities_task_created ON activities (taskId, createdAt, id);
+      CREATE INDEX IF NOT EXISTS idx_comments_task ON comments (taskId);
+      CREATE INDEX IF NOT EXISTS idx_dependencies_task ON dependencies (taskId);
+      CREATE INDEX IF NOT EXISTS idx_dependencies_upstream ON dependencies (dependsOnTaskId);
+    `);
 
     for (const column of ['name TEXT', 'tenantId TEXT']) {
       try {
@@ -686,6 +698,55 @@ export class SQLiteStore implements StorageAdapter {
       rows = stmt.all() as any[];
     }
     return rows.map((r) => this.mapTask(r));
+  }
+
+  async queryTasks(query: TaskQuery): Promise<Page<Task>> {
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    const inList = (column: string, values: string[]) => {
+      where.push(`${column} IN (${values.map(() => '?').join(', ')})`);
+      params.push(...values);
+    };
+
+    if (query.projectId) {
+      where.push('projectId = ?');
+      params.push(query.projectId);
+    }
+    if (query.projectIds) {
+      if (query.projectIds.length === 0) return { items: [] };
+      inList('projectId', query.projectIds);
+    }
+    if (query.status?.length) inList('status', query.status);
+    if (query.priority?.length) inList('priority', query.priority);
+    for (const column of ['iterationId', 'deliverableId', 'containerId'] as const) {
+      if (query[column]) {
+        where.push(`${column} = ?`);
+        params.push(query[column]!);
+      }
+    }
+    if (query.parentId === null) where.push('parentId IS NULL');
+    else if (query.parentId) {
+      where.push('parentId = ?');
+      params.push(query.parentId);
+    }
+    if (query.assigneeId) {
+      where.push(
+        "(assigneeId = ? OR EXISTS (SELECT 1 FROM json_each(COALESCE(assignees, '[]')) WHERE json_extract(value, '$.id') = ?))"
+      );
+      params.push(query.assigneeId, query.assigneeId);
+    }
+    const after = decodeCursor(query.cursor);
+    if (after) {
+      where.push('(createdAt > ? OR (createdAt = ? AND id > ?))');
+      params.push(after[0], after[0], after[1]);
+    }
+
+    const size = pageSize(query.limit);
+    const sql = `SELECT * FROM tasks ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY createdAt ASC, id ASC LIMIT ?`;
+    const rows = this.db.prepare(sql).all(...params, size + 1) as any[];
+    const items = rows.slice(0, size).map((r) => this.mapTask(r));
+    const last = items[items.length - 1];
+    return { items, nextCursor: rows.length > size && last ? encodeCursor(last.createdAt, last.id) : undefined };
   }
 
   async getTask(id: string): Promise<Task | null> {
@@ -1122,6 +1183,38 @@ export class SQLiteStore implements StorageAdapter {
         details: r.details ? JSON.parse(r.details) : undefined
       })
     );
+  }
+
+  async queryActivities(query: ActivityQuery): Promise<Page<Activity>> {
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    if (query.projectId) {
+      where.push('projectId = ?');
+      params.push(query.projectId);
+    }
+    if (query.projectIds) {
+      if (query.projectIds.length === 0) return { items: [] };
+      where.push(`projectId IN (${query.projectIds.map(() => '?').join(', ')})`);
+      params.push(...query.projectIds);
+    }
+    if (query.taskId) {
+      where.push('taskId = ?');
+      params.push(query.taskId);
+    }
+    const after = decodeCursor(query.cursor);
+    if (after) {
+      where.push('(createdAt < ? OR (createdAt = ? AND id < ?))');
+      params.push(after[0], after[0], after[1]);
+    }
+
+    const size = pageSize(query.limit);
+    const sql = `SELECT * FROM activities ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY createdAt DESC, id DESC LIMIT ?`;
+    const rows = this.db.prepare(sql).all(...params, size + 1) as any[];
+    const items: Activity[] = rows
+      .slice(0, size)
+      .map((r) => dropNulls({ ...r, details: r.details ? JSON.parse(r.details) : undefined }));
+    const last = items[items.length - 1];
+    return { items, nextCursor: rows.length > size && last ? encodeCursor(last.createdAt, last.id) : undefined };
   }
 
   async logActivity(activity: Omit<Activity, 'id' | 'createdAt'>): Promise<Activity> {
