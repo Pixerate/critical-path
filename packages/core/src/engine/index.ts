@@ -101,6 +101,7 @@ import { buildStorageKey, normalizeUploadData } from '../storage/file-storage.js
 import { generateWebhookSecret } from '../webhooks/signature.js';
 import type { DomainEvent } from '../domain/events.js';
 import { calculateCPM, type CPMOptions } from '../domain/cpm.js';
+import { CreateTaskSchema } from '../schemas/index.js';
 import { buildTimelineLadder, aggregateConcreteEvidenceForTask } from '../domain/ladder.js';
 import {
   calculateTaskMetrics,
@@ -108,6 +109,9 @@ import {
   type MetricOptions
 } from '../domain/metrics.js';
 import { calculateWorkloadDistribution } from '../domain/workload.js';
+
+/** Every caller-settable task field, derived from the create schema so new fields are never dropped. */
+const CREATE_TASK_FIELDS = Object.keys(CreateTaskSchema.shape) as (keyof CreateTaskInput & keyof Task)[];
 
 export class CriticalPathEngine {
   public readonly config: CriticalPathConfig;
@@ -717,12 +721,16 @@ export class CriticalPathEngine {
     const project = await this.store.getProject(projectId);
     const workflow = await this.resolveProjectWorkflow(projectId);
 
+    // Merge hook output over the caller's input for every schema-known task field. Unknown keys
+    // (id, timestamps, identity fields, anything else) never reach the store.
+    const input: Partial<CreateTaskInput> = {};
+    for (const field of CREATE_TASK_FIELDS) {
+      const value = processedInput[field] ?? taskInput[field];
+      if (value !== undefined) (input as Record<string, unknown>)[field] = value;
+    }
+
     // Validate custom fields on the final (post-plugin) input, including required fields when none are given
-    validateCustomFieldValues(
-      project?.customFieldDefinitions,
-      processedInput.customFields ?? taskInput.customFields,
-      this.plugins.getCustomFieldTypes()
-    );
+    validateCustomFieldValues(project?.customFieldDefinitions, input.customFields, this.plugins.getCustomFieldTypes());
 
     const defaultStatus = workflow?.defaultStatusKey || 'todo';
     const initialStatus = processedInput.status || taskInput.status || defaultStatus;
@@ -730,55 +738,29 @@ export class CriticalPathEngine {
 
     // Derive initial lifecycle timestamps and semantic status
     const statusDef = resolveStatusDefinition(initialStatus, project?.statusDefinitions || workflow?.statuses);
-    const semanticStatus = processedInput.semanticStatus ?? taskInput.semanticStatus ?? statusDef.category;
-    const actualStartDate = processedInput.actualStartDate ?? taskInput.actualStartDate ?? (statusDef.category === 'in_progress' ? now : undefined);
-    const inProgressSince = processedInput.inProgressSince ?? taskInput.inProgressSince ?? (statusDef.category === 'in_progress' ? now : undefined);
-    const actualEndDate = processedInput.actualEndDate ?? taskInput.actualEndDate ?? ((statusDef.category === 'completed' || statusDef.category === 'canceled') ? now : undefined);
-    const completedAt = processedInput.completedAt ?? taskInput.completedAt ?? (statusDef.category === 'completed' ? now : undefined);
-
-    const isInitialBlocked = processedInput.isBlocked ?? taskInput.isBlocked ?? false;
-    const blockedSince = processedInput.blockedSince ?? taskInput.blockedSince ?? (isInitialBlocked && statusDef.category === 'in_progress' ? now : undefined);
-    const blockedDurationSeconds = processedInput.blockedDurationSeconds ?? taskInput.blockedDurationSeconds;
+    const inProgress = statusDef.category === 'in_progress';
+    const completed = statusDef.category === 'completed';
+    const isBlocked = input.isBlocked ?? false;
 
     const created = await this.store.createTask({
+      ...input,
       projectId,
       title: processedInput.title || taskInput.title,
-      description: processedInput.description ?? taskInput.description,
       status: initialStatus,
-      semanticStatus,
+      semanticStatus: input.semanticStatus ?? statusDef.category,
       priority: processedInput.priority || taskInput.priority || 'medium',
       taskType: processedInput.taskType || taskInput.taskType || 'task',
-      assigneeId: processedInput.assigneeId ?? taskInput.assigneeId,
-      assignees: processedInput.assignees ?? taskInput.assignees,
-      reporterId: processedInput.reporterId ?? taskInput.reporterId,
-      reviewerId: processedInput.reviewerId ?? taskInput.reviewerId,
-      iterationId: processedInput.iterationId ?? taskInput.iterationId,
-      teamId: processedInput.teamId ?? taskInput.teamId,
-      containerId: processedInput.containerId ?? taskInput.containerId,
-      deliverableId: processedInput.deliverableId ?? taskInput.deliverableId,
-      plannedStartDate: processedInput.plannedStartDate ?? taskInput.plannedStartDate,
-      actualStartDate,
-      actualEndDate,
-      completedAt,
-      dueDate: processedInput.dueDate ?? taskInput.dueDate,
-      estimatedHours: processedInput.estimatedHours ?? taskInput.estimatedHours,
-      allocation: processedInput.allocation ?? taskInput.allocation,
-      loggedHours: processedInput.loggedHours ?? taskInput.loggedHours ?? 0,
-      actualHours: processedInput.actualHours ?? taskInput.actualHours,
-      billableHours: processedInput.billableHours ?? taskInput.billableHours,
-      estimatedDurationMinutes: processedInput.estimatedDurationMinutes ?? taskInput.estimatedDurationMinutes,
-      actualDurationMinutes: processedInput.actualDurationMinutes ?? taskInput.actualDurationMinutes,
-      billableDurationMinutes: processedInput.billableDurationMinutes ?? taskInput.billableDurationMinutes,
-      actualDurationSeconds: processedInput.actualDurationSeconds ?? taskInput.actualDurationSeconds,
-      inProgressSince,
-      blockedDurationSeconds,
-      blockedSince,
-      progress: processedInput.progress ?? taskInput.progress ?? (statusDef.category === 'completed' ? 100 : 0),
-      isBlocked: isInitialBlocked,
-      blockedReason: processedInput.blockedReason ?? taskInput.blockedReason ?? null,
-      tags: processedInput.tags ?? taskInput.tags ?? [],
-      customFields: processedInput.customFields ?? taskInput.customFields ?? {},
-      parentId: processedInput.parentId ?? taskInput.parentId
+      actualStartDate: input.actualStartDate ?? (inProgress ? now : undefined),
+      actualEndDate: input.actualEndDate ?? (completed || statusDef.category === 'canceled' ? now : undefined),
+      completedAt: input.completedAt ?? (completed ? now : undefined),
+      loggedHours: input.loggedHours ?? 0,
+      inProgressSince: input.inProgressSince ?? (inProgress ? now : undefined),
+      blockedSince: input.blockedSince ?? (isBlocked && inProgress ? now : undefined),
+      progress: input.progress ?? (completed ? 100 : 0),
+      isBlocked,
+      blockedReason: input.blockedReason ?? null,
+      tags: input.tags ?? [],
+      customFields: input.customFields ?? {}
     });
 
     await this.plugins.runAfterTaskCreate(created);

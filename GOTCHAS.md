@@ -315,3 +315,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: Setting `allocation: 0.5` on a 16h task doubles its span to 32 working hours in every critical path result, in project mode as well. `durationHours` in the analysis no longer equals `estimatedHours`. Workload charts and the ladder still use the plain estimate.
 - **Root Cause**: Estimates are treated as effort, and elapsed time is effort ÷ allocation. Workload and ladder roll-ups measure effort, so they deliberately ignore allocation.
 - **Solution / Workaround**: Use `allocation` only for tasks that genuinely share the assignee's time. For a task that is simply long, raise `estimatedHours` instead. Each person's capacity is fixed at 100%; model part-time people with their schedule.
+
+### New Task Fields Silently Dropped by `engine.createTask`
+- **Area / Package**: `@critical-path/core`, `CriticalPathEngine.createTask`
+- **Symptom / Behavior**: A field accepted by `CreateTaskSchema` (e.g. `todos`, previously `allocation`) validates fine but is missing from the created task.
+- **Root Cause**: `createTask` built the stored task from a hand-written list of fields, so any schema field not added to that list was discarded.
+- **Solution / Workaround**: `createTask` now copies every key of `CreateTaskSchema.shape` (hook output over caller input) and only overrides computed/defaulted fields. When adding a task field, add it to `taskFields` in `packages/core/src/schemas/index.ts` and give it a sample value in `packages/core/src/engine/create-task.test.ts` (the test won't compile without one). `SQLiteStore` keeps non-column fields in its extra JSON and `FirebaseStore` writes the whole document, but run the round-trip test to confirm a new field survives.
