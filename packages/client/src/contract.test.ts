@@ -68,6 +68,12 @@ describe('client ↔ server contract', () => {
     expect((await client.getWebhooks()).map((w) => w.id)).toContain(webhook.id);
     expect(await client.deleteWebhook(webhook.id)).toBe(true);
 
+    const page = await client.queryTasks({ projectId: project.id, limit: 1, parentId: null });
+    expect(page.items).toHaveLength(1);
+    expect(page.nextCursor).toBeTruthy();
+    expect((await client.getTasks(project.id)).length).toBeGreaterThan(1);
+    expect((await client.getActivities({ projectId: project.id })).length).toBeGreaterThan(0);
+
     expect(await client.deleteProject(project.id)).toBe(true);
     expect(await client.deleteProject(project.id)).toBe(false);
   });

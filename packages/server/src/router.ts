@@ -393,9 +393,9 @@ export class CriticalPathRouter {
 
       if (!taskId) {
         if (method === 'GET') {
-          const projectId = url.searchParams.get('projectId') || undefined;
-          const tasks = await engine.getTasks(projectId);
-          return this.jsonResponse({ tasks });
+          const query = schemas.parsePayload(schemas.TaskListQuerySchema, Object.fromEntries(url.searchParams));
+          const page = await engine.queryTasks(query);
+          return this.jsonResponse({ tasks: page.items, nextCursor: page.nextCursor });
         }
         if (method === 'POST') {
           const body = await this.readBody(request, schemas.CreateTaskSchema);
@@ -647,10 +647,9 @@ export class CriticalPathRouter {
     // Activities API
     if (segments[0] === 'activities') {
       if (method === 'GET') {
-        const projectId = url.searchParams.get('projectId') || undefined;
-        const taskId = url.searchParams.get('taskId') || undefined;
-        const activities = await engine.getActivities({ projectId, taskId });
-        return this.jsonResponse({ activities });
+        const query = schemas.parsePayload(schemas.ActivityListQuerySchema, Object.fromEntries(url.searchParams));
+        const page = await engine.queryActivities(query);
+        return this.jsonResponse({ activities: page.items, nextCursor: page.nextCursor });
       }
     }
 

@@ -234,7 +234,7 @@ All endpoints return JSON responses.
 - `DELETE /api/critical-path/workflows/:id` - Delete workflow.
 
 ### Tasks
-- `GET /api/critical-path/tasks?projectId=:id` - List tasks (optionally filtered by `projectId`).
+- `GET /api/critical-path/tasks` - List tasks oldest first, paginated (`limit` up to 500, default 100; follow `nextCursor`). Filters: `projectId`, `status` and `priority` (comma-separated), `assigneeId` (also matches `assignees`), `iterationId`, `deliverableId`, `containerId`, `parentId` (`none` = top-level).
 - `POST /api/critical-path/tasks` - Create task.
 - `GET /api/critical-path/tasks/:id` - Get task by ID.
 - `PATCH /api/critical-path/tasks/:id` - Update task (enforces workflow transition rules; returns HTTP 400 on illegal transitions).
@@ -244,7 +244,7 @@ All endpoints return JSON responses.
 - `POST /api/critical-path/tasks/:id/dependencies` - Add dependency `{ dependsOnTaskId, type? }` (HTTP 409 if it would create a cycle, including indirect ones).
 
 ### Activity, Comments & Attachments
-- `GET /api/critical-path/activities?projectId=:id&taskId=:id` - Fetch audit stream.
+- `GET /api/critical-path/activities?projectId=:id&taskId=:id` - Fetch audit stream, newest first, paginated (`limit`, `cursor` → `nextCursor`).
 - `GET /api/critical-path/comments?taskId=:id` - Fetch task comments.
 - `POST /api/critical-path/comments` - Post comment to task.
 - `PATCH /api/critical-path/comments/:id` - Update comment content.

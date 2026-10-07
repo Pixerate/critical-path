@@ -1,6 +1,6 @@
 # Plan: Features the Docs Promise but the Code Lacks
 
-Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`.
+Status: **In progress** — items 1 and 2 and strict API defaults shipped; item 3 (RBAC and tenancy) on `feat/rbac-tenancy`, item 4 (webhooks) shipped; phase 3 item 5 (plugins) on `feat/plugin-system`, item 6 (cascades) on `feat/cascade-deletes`, item 7 (queries) on `feat/task-query`.
 
 Decisions (2026-10-07): breaking changes are acceptable pre-1.0; request bodies are strict and carry no identity; CORS is off by default (`requireAuth` stays opt-in); RBAC scopes projects by `tenantId`; field-level permissions are deferred; webhooks start with an in-process queue behind a pluggable interface. (AI-generated from a code audit on 2026-10-07; verify before acting).
 
@@ -186,6 +186,19 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 **Today**: only `projectId` is read.
 
 **Design**: support `status`, `assigneeId`, `priority`, `iterationId`, `deliverableId`, `parentId`, plus `limit`/`cursor` on tasks, activities and comments. Push filters into SQL/Firestore queries where indexes exist; add `getTasks(filter)` to the store interface with an in-JS fallback for adapters that only implement `getTasks(projectId)`.
+
+**Implemented**:
+- **New store methods:** `queryTasks` and `queryActivities` return `Page<T>` (`{ items, nextCursor }`) and use keyset cursors.
+- **Ordering:** tasks are oldest first and activities newest first, consistently across stores.
+- **Filters:** status, priority, assignee (including `assignees`), iteration, deliverable, container, parent (`null` means top-level) and `projectIds`.
+- **SQLite:** filters and pages in SQL, with new indexes.
+- **Firestore:** pushes down only the project filter.
+- **Engine:** the versions restrict results to readable projects.
+- **Server:** `GET /tasks` and `GET /activities` validate their query parameters (strict) and return `nextCursor`, with a default limit of 100 and a maximum of 500.
+- **Client:** `getTasks` and `getActivities` follow every page; new `queryTasks` and `queryActivities` return a single page.
+- **MCP:** `list_tasks` is paginated.
+- **Not paginated yet:** comments, which stay per-task.
+
 
 ---
 

@@ -164,7 +164,7 @@ handle.unregister();
 | `list_projects` | List all projects in the workspace | `{}` |
 | `get_project` | Get project details by ID | `{ id }` |
 | `create_project` | Create a new project workspace | `{ name, description?, key? }` |
-| `list_tasks` | List tasks with filters | `{ projectId?, status?, priority?, assigneeId? }` |
+| `list_tasks` | List tasks with filters, paginated (returns `{ tasks, nextCursor }`) | `{ projectId?, status?, priority?, assigneeId?, iterationId?, limit?, cursor? }` |
 | `get_task` | Get single task details | `{ id }` |
 | `create_task` | Create a new task (auto-scoped in WebMCP) | `{ projectId?, title, description?, priority?, status? }` |
 | `update_task` | Update task status, priority, or fields | `{ id, title?, status?, priority?, assigneeId? }` |

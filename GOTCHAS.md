@@ -219,3 +219,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: SQLite yields `NULL` columns as `null`. Firestore `set(..., { merge: true })` ignores fields that were stripped because they were `undefined`.
 - **Solution / Workaround**: `SQLiteStore` drops `null` values in every row mapper (`dropNulls`). `FirebaseStore` update methods write the complete merged record without `merge`, so cleared fields are removed. Custom adapters should behave the same way; `cascade.test.ts` exercises all three built-in adapters.
 
+### List Endpoints Are Paginated; Order Ties Break by Id
+- **Area / Package**: `@critical-path/server` (`GET /tasks`, `GET /activities`), `@critical-path/core` (`queryTasks`, `queryActivities`), `@critical-path/mcp` (`list_tasks`)
+- **Symptom / Behavior**: `GET /tasks` returns at most 100 tasks, and tasks created within the same millisecond come back in a different order than they were created.
+- **Root Cause**: Lists use keyset pagination ordered by `createdAt` then `id`. Ids are random, so they only break ties, not creation order within a millisecond.
+- **Solution / Workaround**: Follow `nextCursor` (the client's `getTasks` / `getActivities` already do), or raise `limit` up to 500. Don't rely on sub-millisecond creation order; sort by your own field (e.g. a fractional `orderIndex`) for user-defined ordering. `FirebaseStore` only pushes the project filter down to Firestore and filters the rest in memory, so very large projects should prefer SQLite or a custom adapter until Firestore composite-index queries are added.
+

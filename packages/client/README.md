@@ -29,7 +29,10 @@ const client = new CriticalPathClient({
 const projects = await client.getProjects();
 
 // Fetch tasks for a project
-const tasks = await client.getTasks('proj_1');
+const tasks = await client.getTasks('proj_1'); // every task, following pagination
+
+// One page at a time, with filters
+const { items, nextCursor } = await client.queryTasks({ projectId: 'proj_1', status: ['todo', 'in_progress'], limit: 50 });
 
 // Create a new task
 const newTask = await client.createTask({

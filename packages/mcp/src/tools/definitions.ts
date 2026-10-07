@@ -102,30 +102,35 @@ export const listTasksTool = defineTool<{
   status?: string;
   priority?: string;
   assigneeId?: string;
+  iterationId?: string;
+  limit?: number;
+  cursor?: string;
 }>({
   name: 'list_tasks',
   title: 'List Tasks',
-  description: 'List tasks, optionally filtered by project, status, priority, or assignee.',
+  description:
+    'List tasks (oldest first), optionally filtered by project, status, priority, assignee or iteration. Returns { tasks, nextCursor }; pass nextCursor back as cursor to get the next page.',
   zodSchema: z.object({
     projectId: z.string().optional().describe('Filter by project ID'),
     status: z.string().optional().describe('Filter by task status key'),
     priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().describe('Filter by priority'),
-    assigneeId: z.string().optional().describe('Filter by assignee ID')
+    assigneeId: z.string().optional().describe('Filter by assignee ID'),
+    iterationId: z.string().optional().describe('Filter by iteration (sprint) ID'),
+    limit: z.number().int().min(1).max(500).optional().describe('Page size (default 100)'),
+    cursor: z.string().optional().describe('nextCursor from a previous call')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
-    const projectId = args.projectId || ambientContext?.projectId;
-    let tasks = await target.getTasks(projectId);
-    if (args.status) {
-      tasks = tasks.filter((t) => t.status === args.status);
-    }
-    if (args.priority) {
-      tasks = tasks.filter((t) => t.priority === args.priority);
-    }
-    if (args.assigneeId) {
-      tasks = tasks.filter((t) => t.assigneeId === args.assigneeId);
-    }
-    return tasks;
+    const page = await target.queryTasks({
+      projectId: args.projectId || ambientContext?.projectId,
+      status: args.status ? [args.status] : undefined,
+      priority: args.priority ? [args.priority] : undefined,
+      assigneeId: args.assigneeId,
+      iterationId: args.iterationId,
+      limit: args.limit,
+      cursor: args.cursor
+    });
+    return { tasks: page.items, nextCursor: page.nextCursor };
   }
 });
 

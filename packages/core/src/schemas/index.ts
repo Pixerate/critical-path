@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import { ValidationError, type ValidationIssue } from '../domain/errors.js';
 import { DOMAIN_EVENT_NAMES } from '../domain/events.js';
+import { MAX_PAGE_SIZE } from '../store/query.js';
 
 /**
  * Parses `data` with `schema`, returning the cleaned value (unknown keys stripped, defaults
@@ -324,6 +325,35 @@ export const LogTimeSchema = strictObject({
   loggedAt: isoString.optional()
 });
 
+// --- List queries (URL search parameters) ---
+
+const csv = z
+  .string()
+  .transform((value) => value.split(',').map((part) => part.trim()).filter(Boolean));
+const pageLimit = z.coerce.number().int().min(1).max(MAX_PAGE_SIZE);
+
+/** `GET /tasks` query parameters. `status` and `priority` are comma-separated; `parentId=none` means top-level. */
+export const TaskListQuerySchema = strictObject({
+  projectId: nonEmpty.optional(),
+  status: csv.optional(),
+  priority: csv.optional(),
+  assigneeId: nonEmpty.optional(),
+  iterationId: nonEmpty.optional(),
+  deliverableId: nonEmpty.optional(),
+  containerId: nonEmpty.optional(),
+  parentId: nonEmpty.transform((value) => (value === 'none' ? null : value)).optional(),
+  limit: pageLimit.optional(),
+  cursor: nonEmpty.optional()
+});
+
+/** `GET /activities` query parameters. */
+export const ActivityListQuerySchema = strictObject({
+  projectId: nonEmpty.optional(),
+  taskId: nonEmpty.optional(),
+  limit: pageLimit.optional(),
+  cursor: nonEmpty.optional()
+});
+
 // --- Webhooks ---
 
 export const CreateWebhookSchema = strictObject({
@@ -367,5 +397,6 @@ export type UploadAttachmentBody = z.input<typeof UploadAttachmentSchema>;
 export type PresignAttachmentBody = z.input<typeof PresignAttachmentSchema>;
 export type LogTimeBody = z.input<typeof LogTimeSchema>;
 export type CreateWebhookBody = z.input<typeof CreateWebhookSchema>;
+export type TaskListQueryParams = z.input<typeof TaskListQuerySchema>;
 export type UpdateWebhookBody = z.input<typeof UpdateWebhookSchema>;
 

@@ -58,7 +58,7 @@ graph TD
 | `list_projects` | List all projects with optional query filter | `query`, `limit` |
 | `get_project` | Get detailed project information by ID or slug | `id` |
 | `create_project` | Create a new project workspace | `name`, `key`, `description` |
-| `list_tasks` | List tasks filtered by project, status, priority, or assignee | `projectId`, `status`, `assigneeId` |
+| `list_tasks` | List tasks filtered by project, status, priority, assignee or iteration; paginated (`{ tasks, nextCursor }`) | `projectId`, `status`, `assigneeId`, `iterationId`, `limit`, `cursor` |
 | `get_task` | Fetch full task details including dependencies | `id` |
 | `create_task` | Create a new task within a project | `projectId`, `title`, `status`, `priority` |
 | `update_task` | Update title, status, priority, description, or custom fields | `id`, `status`, `priority`, `title` |

@@ -39,7 +39,7 @@ export const ROUTES: RouteDoc[] = [
   { method: 'get', path: '/projects/{projectId}/ladder', summary: 'Timeline ladder of abstraction', tag: 'Analysis', query: ['level', 'containerId', 'iterationId'], responseKey: 'ladder' },
   { method: 'get', path: '/projects/{projectId}/workload', summary: 'Project workload distribution', tag: 'Analysis', query: ['startDate', 'endDate', 'interval', 'groupBy', 'metric', 'defaultWeeklyCapacityHours'], responseKey: 'workload' },
 
-  { method: 'get', path: '/tasks', summary: 'List tasks', tag: 'Tasks', query: ['projectId'], responseKey: 'tasks' },
+  { method: 'get', path: '/tasks', summary: 'List tasks (filtered, paginated oldest first; follow nextCursor)', tag: 'Tasks', query: ['projectId', 'status', 'priority', 'assigneeId', 'iterationId', 'deliverableId', 'containerId', 'parentId', 'limit', 'cursor'], responseKey: 'tasks' },
   { method: 'post', path: '/tasks', summary: 'Create a task', tag: 'Tasks', body: schemas.CreateTaskSchema, responseKey: 'task', status: 201 },
   { method: 'get', path: '/tasks/{taskId}', summary: 'Get a task', tag: 'Tasks', responseKey: 'task' },
   { method: 'patch', path: '/tasks/{taskId}', summary: 'Update a task (enforces workflow transitions)', tag: 'Tasks', body: schemas.UpdateTaskSchema, responseKey: 'task' },
@@ -82,7 +82,7 @@ export const ROUTES: RouteDoc[] = [
   { method: 'patch', path: '/iterations/{iterationId}', summary: 'Update an iteration', tag: 'Iterations', body: schemas.UpdateIterationSchema, responseKey: 'iteration' },
   { method: 'delete', path: '/iterations/{iterationId}', summary: 'Delete an iteration', tag: 'Iterations' },
 
-  { method: 'get', path: '/activities', summary: 'Activity (audit) stream', tag: 'Activity', query: ['projectId', 'taskId'], responseKey: 'activities' },
+  { method: 'get', path: '/activities', summary: 'Activity (audit) stream, newest first (follow nextCursor)', tag: 'Activity', query: ['projectId', 'taskId', 'limit', 'cursor'], responseKey: 'activities' },
 
   { method: 'get', path: '/comments', summary: 'List comments for a task', tag: 'Comments', query: ['taskId!'], responseKey: 'comments' },
   { method: 'post', path: '/comments', summary: 'Create a comment', tag: 'Comments', body: schemas.CreateCommentSchema, responseKey: 'comment', status: 201 },
