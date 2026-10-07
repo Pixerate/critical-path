@@ -98,6 +98,8 @@ Remove a dependency involving the task. Publishes `dependency.removed`.
 ### `GET /projects/:projectId/critical-path`
 Calculates and returns the critical path analysis for the specified project.
 
+**Query**: `calendars=project` (default: one project calendar) or `calendars=assignee` (each task on its assignee's or team's schedule). Other values return `400`.
+
 **Response**:
 ```json
 {

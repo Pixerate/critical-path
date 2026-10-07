@@ -35,7 +35,7 @@ export const ROUTES: RouteDoc[] = [
   { method: 'get', path: '/projects/{projectId}', summary: 'Get a project', tag: 'Projects', responseKey: 'project' },
   { method: 'patch', path: '/projects/{projectId}', summary: 'Update a project', tag: 'Projects', body: schemas.UpdateProjectSchema, responseKey: 'project' },
   { method: 'delete', path: '/projects/{projectId}', summary: 'Delete a project and its tasks', tag: 'Projects' },
-  { method: 'get', path: '/projects/{projectId}/critical-path', summary: 'Critical path (CPM) analysis', tag: 'Analysis', responseKey: 'analysis' },
+  { method: 'get', path: '/projects/{projectId}/critical-path', summary: 'Critical path (CPM) analysis (calendars=assignee schedules each task on its assignee or team calendar)', tag: 'Analysis', query: ['calendars'], responseKey: 'analysis' },
   { method: 'get', path: '/projects/{projectId}/ladder', summary: 'Timeline ladder of abstraction', tag: 'Analysis', query: ['level', 'containerId', 'iterationId'], responseKey: 'ladder' },
   { method: 'get', path: '/projects/{projectId}/workload', summary: 'Project workload distribution', tag: 'Analysis', query: ['startDate', 'endDate', 'interval', 'groupBy', 'metric', 'defaultWeeklyCapacityHours'], responseKey: 'workload' },
 

@@ -2316,7 +2316,13 @@ export class CriticalPathEngine {
     }
     const schedule = options.schedule || project?.schedule || this.config.defaultSchedule;
     const projectStartDate = options.projectStartDate || project?.startDate;
-    return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate });
+    const calendars = options.calendars ?? this.config.criticalPathCalendars ?? 'project';
+    if (calendars !== 'project' && calendars !== 'assignee') {
+      throw new ValidationError(`Unknown calendars mode "${calendars}"; use "project" or "assignee".`);
+    }
+    if (calendars === 'project') return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate });
+    const [users, teams] = await Promise.all([options.users ?? this.getUsers(), options.teams ?? this.store.getTeams()]);
+    return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate, calendars, users, teams });
   }
 
   async getTimelineLadder(

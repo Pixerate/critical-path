@@ -170,6 +170,39 @@ function getDayWorkingWindows(d: Date, schedule: WorkSchedule): Array<{ start: n
   return ranges;
 }
 
+const utcDay = (d: Date, offsetDays = 0, minuteOfDay = 0) =>
+  new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + offsetDays) + minuteOfDay * 60_000);
+
+/**
+ * Returns the first working instant at or after `input`: `input` itself if it falls inside a
+ * working window, otherwise the start of the next window (skipping non-working days and holidays).
+ */
+export function nextWorkingTime(input: Date | string, schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE): Date {
+  const start = parseDate(input);
+  for (let day = 0; day < 3650; day++) {
+    const date = utcDay(start, day);
+    const minute = day === 0 ? (start.getTime() - date.getTime()) / 60_000 : 0;
+    const window = getDayWorkingWindows(date, schedule).find((w) => w.end > minute);
+    if (window) return minute >= window.start ? start : utcDay(date, 0, window.start);
+  }
+  return start;
+}
+
+/**
+ * Returns the last working instant at or before `input`: `input` itself if it falls inside (or at
+ * the end of) a working window, otherwise the end of the previous window.
+ */
+export function previousWorkingTime(input: Date | string, schedule: WorkSchedule = DEFAULT_WORK_SCHEDULE): Date {
+  const end = parseDate(input);
+  for (let day = 0; day < 3650; day++) {
+    const date = utcDay(end, -day);
+    const minute = day === 0 ? (end.getTime() - date.getTime()) / 60_000 : 24 * 60;
+    const window = [...getDayWorkingWindows(date, schedule)].reverse().find((w) => w.start < minute);
+    if (window) return minute <= window.end ? end : utcDay(date, 0, window.end);
+  }
+  return end;
+}
+
 /**
  * Advances a start date forward by a given number of working hours,
  * skipping non-working days, holidays, and non-working hours.

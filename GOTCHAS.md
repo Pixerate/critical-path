@@ -253,7 +253,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `@critical-path/core` (`users` config, `getUsers`, workload)
 - **Symptom / Behavior**: Workload charts show raw user ids and a 40h default capacity.
 - **Root Cause**: Critical Path has no user table. Names, `weeklyCapacityHours` and per-user `schedule` come from the `users` engine option (plus `initialData.users`). Before this option existed, `initialData.users` was ignored.
-- **Solution / Workaround**: Pass `users: User[]` or `users: (actor) => Promise<User[]>` to load them from your auth system, per tenant if needed. Critical-path (CPM) date projections still use one project-wide calendar, not per-assignee schedules.
+- **Solution / Workaround**: Pass `users: User[]` or `users: (actor) => Promise<User[]>` to load them from your auth system, per tenant if needed. Critical-path (CPM) uses these schedules only with `calendars: 'assignee'` (per call or `criticalPathCalendars` on the engine); the default is one project-wide calendar.
 
 ### Stores Return Copies; In-Memory Copies Use `structuredClone`
 - **Area / Package**: `@critical-path/core` (`InMemoryStore`, `InMemoryFirestoreMock`, custom adapters)
@@ -291,3 +291,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: "Release & Publish Packages" fails with `409 Conflict ... Cannot publish over previously staged` for one package, yet `npm view <pkg> version` shows the new version as `latest`, with provenance and its git tag.
 - **Root Cause**: npm stages and then finalizes publishes. The registry can answer 409 while a publish is still finalizing (seen on 2026-10-07 for `@critical-path/mcp@0.11.10`, which appeared about 30 seconds later).
 - **Solution / Workaround**: Before re-running, check `npm view @critical-path/<pkg>@<version> dist-tags dist.attestations` and `git ls-remote --tags origin`. If the version and tag exist, nothing is missing. Otherwise re-run the workflow; `changeset publish` skips versions that are already published.
+
+### Assignee-Calendar CPM Works in Dates, in UTC
+- **Area / Package**: `@critical-path/core` (`calculateCPM`, `calculateCriticalPath`, `calendars: 'assignee'`)
+- **Symptom / Behavior**: In assignee mode, a project without `startDate` gets dates from today, and results change from day to day. Slack differs between tasks with the same span. A London `09:00–17:00` and a New York `09:00–17:00` schedule produce identical dates.
+- **Root Cause**: Working-hour offsets are only comparable on one calendar, so assignee mode schedules on real dates and needs an anchor. Without a project start it uses today at UTC midnight. Slack is counted in each task's own calendar. Every calendar is evaluated in UTC (`WorkSchedule.timezone` is informational), matching the rest of the calendar engine.
+- **Solution / Workaround**: Set `project.startDate` (or pass `projectStartDate`) for stable results. To model time zones today, shift the schedule's hours to their UTC equivalents. Numeric offsets (`earlyStart` and the others) are project-calendar hours from the start; use the `*Date` fields for per-task timing.

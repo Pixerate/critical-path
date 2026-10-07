@@ -346,7 +346,12 @@ const cpm = await engine.calculateCriticalPath('proj_123', {
 
 console.log('Project End Date (skipping weekends & holidays):', cpm.projectEndDate);
 console.log('Total Working Hours on Critical Path:', cpm.totalWorkingHours);
+
+// Schedule each task on its assignee's (or team's) calendar instead, using the `users` directory
+const byAssignee = await engine.calculateCriticalPath('proj_123', { calendars: 'assignee' });
 ```
+
+With `calendars: 'assignee'` (or `criticalPathCalendars: 'assignee'` on the engine), each task uses its assignee's schedule, then its team's, then the project calendar. Passes run on dates, slack is measured in each task's calendar, and calendars are evaluated in UTC.
 
 ### 9. Fractional Lexical Indexing (Kanban Reordering)
 

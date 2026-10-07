@@ -146,7 +146,43 @@ for (const taskSchedule of cpm.tasks) {
 }
 ```
 
-If a 16-hour task begins on Friday at 09:00, it works 7 hours Friday, skips Saturday and Sunday, and completes on Monday at 17:00.
+If a 16-hour task begins on Friday at 09:00, it works 8 hours Friday, skips Saturday and Sunday, and completes on Monday at 17:00.
+
+### Per-assignee calendars
+
+By default every task is scheduled on the project calendar. With `calendars: 'assignee'`, each task runs on its own calendar:
+
+1. the assignee's `schedule` (from the `users` directory)
+2. otherwise the schedule of the task's team (`task.teamId`)
+3. otherwise the project calendar (the project schedule, then `defaultSchedule`)
+
+```ts
+const engine = new CriticalPathEngine({
+  users: [
+    { id: 'alice', name: 'Alice', email: 'alice@example.com', role: 'contributor', createdAt, schedule: fourDayWeek },
+    { id: 'bob', name: 'Bob', email: 'bob@example.com', role: 'contributor', createdAt }
+  ],
+  criticalPathCalendars: 'assignee' // engine default; or pass { calendars: 'assignee' } per call
+});
+
+const cpm = await engine.calculateCriticalPath(projectId, { calendars: 'assignee' });
+```
+
+Suppose Bob's task finishes Thursday at 17:00 and Alice, who does not work Fridays, picks up the next task. Her task starts Monday at 09:00, and everything after it moves with it. A single project calendar would have started it on Friday.
+
+How the results differ from project mode:
+
+- **Dates are exact per task.** Each task starts at the next working moment on its own calendar after its predecessors finish. Each `scheduleId` names the calendar used (when the schedule has an `id`).
+- **Slack is in the task's own working hours.** A Monday–Thursday assignee has less slack across the same span than a Monday–Friday one.
+- **Numeric offsets** (`earlyStart`, `earlyFinish`, `lateStart`, `lateFinish`, `totalDurationHours`) are working hours from the project start, counted in the project calendar.
+- **A start date is required.** It uses `projectStartDate` or the project's `startDate`, falling back to today (UTC midnight).
+
+Limitations:
+
+- All calendars are evaluated in UTC; `WorkSchedule.timezone` is informational, so "09:00" means 09:00 UTC for everyone.
+- This is not resource levelling: one person's parallel tasks are still scheduled at the same time.
+
+Over HTTP use `GET /projects/:projectId/critical-path?calendars=assignee`; in the client, `calculateCriticalPath(projectId, { calendars: 'assignee' })`; in MCP, the `calendars` argument of `calculate_critical_path`.
 
 ---
 

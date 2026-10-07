@@ -422,6 +422,18 @@ describe('@critical-path/server Router Tests', () => {
         body: typeof body === 'string' ? body : JSON.stringify(body)
       });
 
+    it('passes the calendars query to critical path analysis and rejects unknown modes', async () => {
+      const fourDay = { days: [0, 1, 2, 3, 4, 5, 6].map((d) => ({ dayOfWeek: d, isWorkingDay: d >= 1 && d <= 4, hours: [{ start: '09:00', end: '17:00' }] })) };
+      const router = new CriticalPathRouter({ users: [{ id: 'alice', name: 'Alice', email: 'a@example.com', role: 'contributor', createdAt: '2026-10-01T00:00:00.000Z', schedule: fourDay }] });
+      const proj = await router.engine.createProject({ name: 'Cal', startDate: '2026-10-08T09:00:00.000Z' }); // Thursday
+      await router.engine.createTask({ projectId: proj.id, title: 'A', estimatedHours: 16, assigneeId: 'alice' });
+      const get = async (query: string) => router.handleRequest(new Request(`${base}/projects/${proj.id}/critical-path${query}`));
+
+      expect((await (await get('')).json()).analysis.projectEndDate).toBe('2026-10-09T17:00:00.000Z');
+      expect((await (await get('?calendars=assignee')).json()).analysis.projectEndDate).toBe('2026-10-12T17:00:00.000Z');
+      expect((await get('?calendars=bogus')).status).toBe(400);
+    });
+
     it('rejects dependency cycles created over HTTP with 409', async () => {
       const router = new CriticalPathRouter();
       const proj = await router.engine.createProject({ key: 'CYC', name: 'Cycle' });

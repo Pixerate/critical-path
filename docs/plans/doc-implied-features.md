@@ -248,6 +248,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - **`store`:** must be an adapter instance. Strings now throw with guidance instead of silently falling back to memory. We chose not to construct `SQLiteStore` from a string, so browser bundles don't depend on it.
 - **New `users` engine option:** an array, or `(actor) => users`, acting as an app-owned user directory merged with `initialData.users`. `getUsers()` is exposed, and `getWorkloadDistribution` now uses user names, capacity and schedules.
 - **Phase 5 README fix:** the README says schedules resolve per assignee for CPM. Only workload capacity does; CPM uses one project-wide calendar, and real multi-calendar CPM would need an algorithm change.
+- **Multi-calendar CPM (done):** opt-in `calendars: 'assignee'` (per call, `criticalPathCalendars` engine default, `?calendars=` query, MCP argument). Decisions (2026-10-07): assignee → task team → project calendar order (matching workload); opt-in, with project mode unchanged; anchor on the project start or today; UTC only, with time zones as a follow-up. Passes run on dates; slack is measured in the task calendar. Follow-ups: time-zone-aware calendars; resource levelling.
 
 ---
 

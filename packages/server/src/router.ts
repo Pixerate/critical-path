@@ -349,7 +349,8 @@ export class CriticalPathRouter {
         }
       } else if (subResource === 'critical-path') {
         if (method === 'GET') {
-          const analysis = await engine.calculateCriticalPath(projectId);
+          const calendars = (url.searchParams.get('calendars') || undefined) as 'project' | 'assignee' | undefined;
+          const analysis = await engine.calculateCriticalPath(projectId, { calendars });
           return this.jsonResponse({ analysis });
         }
       } else if (subResource === 'ladder' || subResource === 'timeline-ladder') {

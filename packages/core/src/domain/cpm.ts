@@ -3,9 +3,19 @@ import type {
   TaskDependency,
   TaskCriticalPathSchedule,
   CriticalPathAnalysis,
-  WorkSchedule
+  WorkSchedule,
+  User,
+  Team
 } from '../types/index.js';
-import { DEFAULT_WORK_SCHEDULE, addWorkingHours, parseDate } from './calendar.js';
+import {
+  DEFAULT_WORK_SCHEDULE,
+  addWorkingHours,
+  subtractWorkingHours,
+  getWorkingHoursBetween,
+  nextWorkingTime,
+  previousWorkingTime,
+  parseDate
+} from './calendar.js';
 
 export function getTaskDurationHours(task: Task): number {
   if (typeof task.estimatedHours === 'number' && task.estimatedHours >= 0) {
@@ -23,39 +33,47 @@ export function getTaskDurationHours(task: Task): number {
 
 export interface CPMOptions {
   projectStartDate?: string | Date;
+  /** The project calendar. Default: `DEFAULT_WORK_SCHEDULE`. */
   schedule?: WorkSchedule;
+  /**
+   * `'project'` (default) schedules every task on the project calendar. `'assignee'` schedules
+   * each task on its own calendar: the assignee's schedule, then the task's team schedule, then
+   * the project calendar. Assignee mode works in dates, so without `projectStartDate` it starts
+   * today (UTC midnight).
+   */
+  calendars?: 'project' | 'assignee';
+  /** Users whose `schedule` applies to tasks they are assigned (assignee mode). */
+  users?: User[];
+  /** Teams whose `schedule` applies to tasks with that `teamId` (assignee mode). */
+  teams?: Team[];
 }
 
-/**
- * Calculates the Critical Path Method (CPM) schedule for a set of tasks and their dependencies.
- * - Forward Pass: computes earlyStart and earlyFinish (in working hours and calendar dates)
- * - Backward Pass: computes lateStart, lateFinish, and totalSlack
- * - Respects working days, working hours, and holidays via WorkSchedule
- * - Identifies critical tasks (totalSlack === 0) that dictate the minimum project duration.
- */
-export function calculateCPM(
-  projectId: string,
-  tasks: Task[],
-  dependencies: TaskDependency[],
-  options: CPMOptions = {}
-): CriticalPathAnalysis {
-  const calculatedAt = new Date().toISOString();
-  const schedule = options.schedule || DEFAULT_WORK_SCHEDULE;
-  const projectStartDate = options.projectStartDate ? parseDate(options.projectStartDate) : undefined;
+/** The calendar a task runs on in assignee mode: assignee, then task team, then project. */
+export function resolveTaskSchedule(
+  task: Task,
+  context: { users?: User[]; teams?: Team[]; schedule?: WorkSchedule }
+): WorkSchedule {
+  return (
+    (task.assigneeId && context.users?.find((u) => u.id === task.assigneeId)?.schedule) ||
+    (task.teamId && context.teams?.find((t) => t.id === task.teamId)?.schedule) ||
+    context.schedule ||
+    DEFAULT_WORK_SCHEDULE
+  );
+}
 
-  if (tasks.length === 0) {
-    return {
-      projectId,
-      calculatedAt,
-      totalDurationHours: 0,
-      totalWorkingHours: 0,
-      projectStartDate: projectStartDate ? projectStartDate.toISOString() : undefined,
-      projectEndDate: projectStartDate ? projectStartDate.toISOString() : undefined,
-      criticalTaskIds: [],
-      tasks: []
-    };
-  }
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
+interface TaskGraph {
+  taskMap: Map<string, Task>;
+  taskIds: string[];
+  /** prerequisites[v]: tasks that must finish before v starts. */
+  prerequisites: Map<string, Set<string>>;
+  /** successors[u]: tasks that can only start after u finishes. */
+  successors: Map<string, Set<string>>;
+  topoOrder: string[];
+}
+
+function buildGraph(tasks: Task[], dependencies: TaskDependency[]): TaskGraph {
   const taskMap = new Map<string, Task>(tasks.map((t) => [t.id, t]));
   const taskIds = Array.from(taskMap.keys());
 
@@ -124,6 +142,146 @@ export function calculateCPM(
         topoOrder.push(id);
       }
     }
+  }
+
+  return { taskMap, taskIds, prerequisites, successors, topoOrder };
+}
+
+/**
+ * Assignee-calendar CPM. Passes run on dates, because working-hour offsets mean different
+ * instants on different calendars:
+ * - forward: start = latest predecessor finish, moved to the task calendar's next working time;
+ *   finish = start + duration in the task calendar
+ * - backward: finish = earliest successor late start, moved back to the task calendar's previous
+ *   working time; start = finish - duration
+ * - slack = working hours between early and late finish in the task calendar
+ * Numeric offsets (`earlyStart`, ..., `totalDurationHours`) are project-calendar working hours from
+ * the project start.
+ */
+function calculateCalendarCPM(
+  projectId: string,
+  calculatedAt: string,
+  { taskMap, taskIds, prerequisites, successors, topoOrder }: TaskGraph,
+  options: CPMOptions
+): CriticalPathAnalysis {
+  const projectSchedule = options.schedule || DEFAULT_WORK_SCHEDULE;
+  const today = new Date();
+  const projectStart = options.projectStartDate
+    ? parseDate(options.projectStartDate)
+    : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const calendarOf = new Map(taskIds.map((id) => [id, resolveTaskSchedule(taskMap.get(id)!, options)]));
+  const durationOf = new Map(taskIds.map((id) => [id, getTaskDurationHours(taskMap.get(id)!)]));
+
+  const earlyStart = new Map<string, Date>();
+  const earlyFinish = new Map<string, Date>();
+  for (const id of topoOrder) {
+    let ready = projectStart;
+    for (const p of prerequisites.get(id)!) {
+      const finish = earlyFinish.get(p);
+      if (finish && finish > ready) ready = finish;
+    }
+    const calendar = calendarOf.get(id)!;
+    const es = nextWorkingTime(ready, calendar);
+    earlyStart.set(id, es);
+    earlyFinish.set(id, addWorkingHours(es, durationOf.get(id)!, calendar));
+  }
+
+  let projectEnd = projectStart;
+  for (const ef of earlyFinish.values()) if (ef > projectEnd) projectEnd = ef;
+
+  const lateStart = new Map<string, Date>();
+  const lateFinish = new Map<string, Date>();
+  for (let i = topoOrder.length - 1; i >= 0; i--) {
+    const id = topoOrder[i];
+    let due = projectEnd;
+    for (const s of successors.get(id)!) {
+      const start = lateStart.get(s);
+      if (start && start < due) due = start;
+    }
+    const calendar = calendarOf.get(id)!;
+    const lf = previousWorkingTime(due, calendar);
+    lateFinish.set(id, lf);
+    lateStart.set(id, subtractWorkingHours(lf, durationOf.get(id)!, calendar));
+  }
+
+  const offset = (date: Date) =>
+    date >= projectStart
+      ? getWorkingHoursBetween(projectStart, date, projectSchedule)
+      : -getWorkingHoursBetween(date, projectStart, projectSchedule);
+
+  const schedules: TaskCriticalPathSchedule[] = [];
+  const criticalTaskIds: string[] = [];
+  for (const id of taskIds) {
+    const calendar = calendarOf.get(id)!;
+    const ef = earlyFinish.get(id)!;
+    const lf = lateFinish.get(id)!;
+    const slack = round2(lf >= ef ? getWorkingHoursBetween(ef, lf, calendar) : -getWorkingHoursBetween(lf, ef, calendar));
+    const isCritical = slack <= 0.001;
+    if (isCritical) criticalTaskIds.push(id);
+    schedules.push({
+      taskId: id,
+      earlyStart: round2(offset(earlyStart.get(id)!)),
+      earlyFinish: round2(offset(ef)),
+      lateStart: round2(offset(lateStart.get(id)!)),
+      lateFinish: round2(offset(lf)),
+      totalSlack: slack,
+      isCritical,
+      durationHours: durationOf.get(id)!,
+      slackWorkingHours: slack,
+      earlyStartDate: earlyStart.get(id)!.toISOString(),
+      earlyFinishDate: ef.toISOString(),
+      lateStartDate: lateStart.get(id)!.toISOString(),
+      lateFinishDate: lf.toISOString(),
+      ...(calendar.id ? { scheduleId: calendar.id } : {})
+    });
+  }
+
+  const totalHours = round2(offset(projectEnd));
+  return {
+    projectId,
+    calculatedAt,
+    totalDurationHours: totalHours,
+    totalWorkingHours: totalHours,
+    projectStartDate: projectStart.toISOString(),
+    projectEndDate: projectEnd.toISOString(),
+    criticalTaskIds,
+    tasks: schedules
+  };
+}
+
+/**
+ * Calculates the Critical Path Method (CPM) schedule for a set of tasks and their dependencies.
+ * - Forward Pass: computes earlyStart and earlyFinish (in working hours and calendar dates)
+ * - Backward Pass: computes lateStart, lateFinish, and totalSlack
+ * - Respects working days, working hours, and holidays via WorkSchedule
+ * - Identifies critical tasks (totalSlack === 0) that dictate the minimum project duration.
+ */
+export function calculateCPM(
+  projectId: string,
+  tasks: Task[],
+  dependencies: TaskDependency[],
+  options: CPMOptions = {}
+): CriticalPathAnalysis {
+  const calculatedAt = new Date().toISOString();
+  const schedule = options.schedule || DEFAULT_WORK_SCHEDULE;
+  const projectStartDate = options.projectStartDate ? parseDate(options.projectStartDate) : undefined;
+
+  if (tasks.length === 0) {
+    return {
+      projectId,
+      calculatedAt,
+      totalDurationHours: 0,
+      totalWorkingHours: 0,
+      projectStartDate: projectStartDate ? projectStartDate.toISOString() : undefined,
+      projectEndDate: projectStartDate ? projectStartDate.toISOString() : undefined,
+      criticalTaskIds: [],
+      tasks: []
+    };
+  }
+
+  const { taskMap, taskIds, prerequisites, successors, topoOrder } = buildGraph(tasks, dependencies);
+  if (options.calendars === 'assignee') {
+    return calculateCalendarCPM(projectId, calculatedAt, { taskMap, taskIds, prerequisites, successors, topoOrder }, options);
   }
 
   // --- FORWARD PASS ---

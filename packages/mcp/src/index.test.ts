@@ -142,6 +142,11 @@ describe('@critical-path/mcp', () => {
       const cpmResult = await cpmTool.execute({ projectId: project.id }, engine);
       expect(cpmResult.totalDurationHours).toBe(10);
       expect(cpmResult.criticalTaskIds).toEqual([t1.id, t2.id]);
+      expect(cpmResult.projectStartDate).toBeUndefined();
+      // Assignee calendars work in dates, so they anchor on a start date (today here)
+      const byAssignee = await cpmTool.execute({ projectId: project.id, calendars: 'assignee' }, engine);
+      expect(byAssignee.projectStartDate).toBeDefined();
+      expect(byAssignee.totalDurationHours).toBe(10);
 
       // 2. get_timeline_ladder tool
       const ladderTool = TOOL_MAP.get('get_timeline_ladder')!;

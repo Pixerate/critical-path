@@ -78,6 +78,15 @@ describe('client ↔ server contract', () => {
     expect(await client.deleteProject(project.id)).toBe(false);
   });
 
+  it('requests assignee-calendar critical path analysis', async () => {
+    const client = connect(router, 'alice');
+    const project = await client.createProject({ name: 'Calendars', startDate: '2026-10-05T09:00:00.000Z' });
+    await client.createTask({ projectId: project.id, title: 'Plan', estimatedHours: 8 });
+    expect((await client.calculateCriticalPath(project.id)).tasks[0].scheduleId).toBeUndefined();
+    const analysis = await client.calculateCriticalPath(project.id, { calendars: 'assignee' });
+    expect(analysis.projectEndDate).toBe('2026-10-05T17:00:00.000Z');
+  });
+
   it('surfaces validation errors for fields the server rejects', async () => {
     const client = connect(router);
     const project = await client.createProject({ name: 'Strict' });
