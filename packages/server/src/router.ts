@@ -1,4 +1,4 @@
-import { CriticalPathEngine, type AuthorType, type CriticalPathConfig, type PluginRoute } from '@critical-path/core';
+import { CriticalPathEngine, ValidationError, type AuthorType, type CriticalPathConfig, type LevelingPriority, type PluginRoute } from '@critical-path/core';
 import * as schemas from '@critical-path/core/schemas';
 import { buildOpenApiDocument } from './openapi.js';
 
@@ -350,7 +350,16 @@ export class CriticalPathRouter {
       } else if (subResource === 'critical-path') {
         if (method === 'GET') {
           const calendars = (url.searchParams.get('calendars') || undefined) as 'project' | 'assignee' | undefined;
-          const analysis = await engine.calculateCriticalPath(projectId, { calendars });
+          const level = url.searchParams.get('levelResources');
+          if (level !== null && level !== 'true' && level !== 'false') {
+            throw new ValidationError('levelResources must be "true" or "false".');
+          }
+          const levelingPriority = (url.searchParams.get('levelingPriority') || undefined) as LevelingPriority | undefined;
+          const analysis = await engine.calculateCriticalPath(projectId, {
+            calendars,
+            ...(level !== null ? { levelResources: level === 'true' } : {}),
+            levelingPriority
+          });
           return this.jsonResponse({ analysis });
         }
       } else if (subResource === 'ladder' || subResource === 'timeline-ladder') {

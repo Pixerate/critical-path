@@ -85,6 +85,14 @@ describe('client ↔ server contract', () => {
     expect((await client.calculateCriticalPath(project.id)).tasks[0].scheduleId).toBeUndefined();
     const analysis = await client.calculateCriticalPath(project.id, { calendars: 'assignee' });
     expect(analysis.projectEndDate).toBe('2026-10-05T17:00:00.000Z');
+
+    await client.createTask({ projectId: project.id, title: 'Plan', estimatedHours: 8 });
+    await client.createTask({ projectId: project.id, title: 'Build', estimatedHours: 8, assigneeId: 'alice' });
+    await client.createTask({ projectId: project.id, title: 'Ship', estimatedHours: 8, assigneeId: 'alice' });
+    const leveled = await client.calculateCriticalPath(project.id, { calendars: 'assignee', levelResources: true, levelingPriority: 'order' });
+    expect(leveled.leveled).toBe(true);
+    expect(leveled.unleveledProjectEndDate).toBe('2026-10-05T17:00:00.000Z');
+    expect(leveled.projectEndDate).toBe('2026-10-06T17:00:00.000Z');
   });
 
   it('surfaces validation errors for fields the server rejects', async () => {

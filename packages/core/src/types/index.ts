@@ -567,6 +567,11 @@ export interface CriticalPathConfig {
    * the default) or `'assignee'` (each task on its assignee's or team's schedule).
    */
   criticalPathCalendars?: 'project' | 'assignee';
+  /**
+   * Default for `calculateCriticalPath`'s `levelResources`: schedule each assignee on one task at
+   * a time. Requires `criticalPathCalendars: 'assignee'` (or `calendars: 'assignee'` per call).
+   */
+  criticalPathLevelResources?: boolean;
   initialData?: {
     projects?: Project[];
     tasks?: Task[];
@@ -644,6 +649,10 @@ export interface TaskCriticalPathSchedule {
   slackWorkingHours?: number;
   /** In assignee-calendar mode, the `id` of the schedule this task was planned on (if it has one). */
   scheduleId?: string;
+  /** With resource levelling: working hours (task calendar) this task was delayed to wait for its assignee. */
+  levelingDelayHours?: number;
+  /** With resource levelling: the task this one last waited for, when its assignee was busy. */
+  waitingOn?: string;
 }
 
 export interface CriticalPathAnalysis {
@@ -655,6 +664,10 @@ export interface CriticalPathAnalysis {
   projectEndDate?: string;
   criticalTaskIds: string[];
   tasks: TaskCriticalPathSchedule[];
+  /** True when resource levelling was applied. */
+  leveled?: boolean;
+  /** With resource levelling: the end date before levelling, for comparison. */
+  unleveledProjectEndDate?: string;
 }
 
 export interface ConcreteEvidenceSummary {

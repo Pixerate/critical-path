@@ -349,12 +349,23 @@ export class CriticalPathClient {
     return this.deleteRequest(`/projects/${encodeURIComponent(id)}`);
   }
 
-  /** `calendars: 'assignee'` schedules each task on its assignee's or team's calendar. */
+  /**
+   * `calendars: 'assignee'` schedules each task on its assignee's or team's calendar;
+   * `levelResources: true` (assignee mode) also limits each assignee to one task at a time.
+   */
   async calculateCriticalPath(
     projectId: string,
-    options: { calendars?: 'project' | 'assignee' } = {}
+    options: {
+      calendars?: 'project' | 'assignee';
+      levelResources?: boolean;
+      levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
+    } = {}
   ): Promise<CriticalPathAnalysis> {
-    const query = options.calendars ? `?calendars=${options.calendars}` : '';
+    const params = new URLSearchParams();
+    if (options.calendars) params.set('calendars', options.calendars);
+    if (options.levelResources !== undefined) params.set('levelResources', String(options.levelResources));
+    if (options.levelingPriority) params.set('levelingPriority', options.levelingPriority);
+    const query = params.size ? `?${params}` : '';
     const res = await this.request<{ analysis: CriticalPathAnalysis }>(
       `/projects/${encodeURIComponent(projectId)}/critical-path${query}`
     );

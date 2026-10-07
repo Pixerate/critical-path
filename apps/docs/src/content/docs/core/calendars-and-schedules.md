@@ -190,12 +190,43 @@ How the results differ from project mode:
 - **Numeric offsets** (`earlyStart`, `earlyFinish`, `lateStart`, `lateFinish`, `totalDurationHours`) are working hours from the project start, counted in the project calendar.
 - **A start date is required.** It uses `projectStartDate` or the project's `startDate`, falling back to today (UTC midnight).
 
-Limitations:
-
-- Each calendar is evaluated in its own `timezone`, so work handed from London to New York continues at the New York assignee's next working moment.
-- This is not resource levelling: one person's parallel tasks are still scheduled at the same time.
+Each calendar is evaluated in its own `timezone`, so work handed from London to New York continues at the New York assignee's next working moment.
 
 Over HTTP use `GET /projects/:projectId/critical-path?calendars=assignee`; in the client, `calculateCriticalPath(projectId, { calendars: 'assignee' })`; in MCP, the `calendars` argument of `calculate_critical_path`.
+
+### Resource levelling
+
+Without levelling, CPM assumes unlimited people: three independent tasks for Bob all start on Monday. With `levelResources: true` (assignee mode only), each assignee works on **one task at a time**:
+
+```ts
+const cpm = await engine.calculateCriticalPath(projectId, {
+  calendars: 'assignee',
+  levelResources: true,
+  levelingPriority: 'slack' // default
+});
+
+cpm.unleveledProjectEndDate; // the end date before levelling
+cpm.projectEndDate;          // the achievable end date
+for (const t of cpm.tasks) {
+  if (t.levelingDelayHours) console.log(`${t.taskId} waits ${t.levelingDelayHours}h for ${t.waitingOn}`);
+}
+```
+
+Tasks are placed one at a time, in priority order, at the earliest moment their predecessors have finished **and** their assignee is free for the whole task on their own calendar. A short task can fill a gap before later work.
+
+- **Priority rule** (`levelingPriority`), deciding which ready task gets the assignee first:
+  - `'slack'` (default): least unlevelled slack, then task `priority`;
+  - `'priority'`: task `priority` (urgent → none), then slack;
+  - `'dueDate'`: earliest `dueDate`, then slack;
+  - `'order'`: creation order.
+
+  Remaining ties break by creation order, so results are deterministic.
+- **Slack after levelling:** each assignee's tasks are chained in the order they were scheduled. Slack and `isCritical` therefore reflect both dependencies and people: a task with plenty of dependency slack is critical if delaying it would push back the same person's next task.
+- **Per task:** `levelingDelayHours` (working hours on the task's calendar) and `waitingOn` (the task it last waited for).
+- **Not constrained:** unassigned tasks (including team-only tasks) and zero-duration milestones.
+- **Not done:** tasks are never split or reassigned; there is no partial allocation (50% of a person); only tasks in this project are considered, so other projects' work for the same person is ignored. The result is a good, deterministic heuristic schedule, not a guaranteed optimum.
+
+Enable it by default with `criticalPathLevelResources: true` (together with `criticalPathCalendars: 'assignee'`). Over HTTP: `?calendars=assignee&levelResources=true&levelingPriority=priority`.
 
 ---
 

@@ -326,7 +326,12 @@ export const addCommentTool = defineTool<{ taskId: string; content: string }>({
   }
 });
 
-export const calculateCriticalPathTool = defineTool<{ projectId?: string; calendars?: 'project' | 'assignee' }>({
+export const calculateCriticalPathTool = defineTool<{
+  projectId?: string;
+  calendars?: 'project' | 'assignee';
+  levelResources?: boolean;
+  levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
+}>({
   name: 'calculate_critical_path',
   title: 'Calculate Critical Path',
   description: 'Calculate Critical Path Method (CPM) schedule, early/late start and finish, total slack, and critical bottlenecks for a project.',
@@ -335,7 +340,15 @@ export const calculateCriticalPathTool = defineTool<{ projectId?: string; calend
     calendars: z
       .enum(['project', 'assignee'])
       .optional()
-      .describe("'assignee' schedules each task on its assignee's or team's working calendar; default uses the project calendar")
+      .describe("'assignee' schedules each task on its assignee's or team's working calendar; default uses the project calendar"),
+    levelResources: z
+      .boolean()
+      .optional()
+      .describe("With calendars 'assignee': delay tasks so each assignee works on one task at a time"),
+    levelingPriority: z
+      .enum(['slack', 'priority', 'dueDate', 'order'])
+      .optional()
+      .describe('Which ready task gets an assignee first when levelling (default: least slack, then task priority)')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
@@ -343,7 +356,8 @@ export const calculateCriticalPathTool = defineTool<{ projectId?: string; calend
     if (!projectId) {
       throw new Error('projectId is required to calculate critical path.');
     }
-    return (target as any).calculateCriticalPath(projectId, args.calendars ? { calendars: args.calendars } : undefined);
+    const { calendars, levelResources, levelingPriority } = args;
+    return (target as any).calculateCriticalPath(projectId, { calendars, levelResources, levelingPriority });
   }
 });
 

@@ -1009,9 +1009,14 @@ console.log('Project finishes on:', cpm.projectEndDate);
 // Per-assignee calendars: each task uses its assignee's schedule (from `users`), then its team's,
 // then the project calendar. Also available as `criticalPathCalendars: 'assignee'` on the engine.
 const byAssignee = await engine.calculateCriticalPath('proj_123', { calendars: 'assignee' });
+
+// Resource levelling: each assignee works on one task at a time
+const leveled = await engine.calculateCriticalPath('proj_123', { calendars: 'assignee', levelResources: true });
 ```
 
-In assignee mode the passes run on real dates, slack is counted in each task's own calendar, numeric offsets are project-calendar hours from the start, and a project without a start date starts today. Each calendar is evaluated in its own `timezone`. It does not level resources.
+In assignee mode the passes run on real dates, slack is counted in each task's own calendar, numeric offsets are project-calendar hours from the start, and a project without a start date starts today. Each calendar is evaluated in its own `timezone`.
+
+With `levelResources: true`, tasks are placed in priority order (`levelingPriority`: `'slack'` by default, or `'priority'`, `'dueDate'`, `'order'`) at the earliest time their predecessors are done and their assignee is free. Each assignee's tasks are then chained so slack reflects people as well as dependencies. Tasks report `levelingDelayHours` and `waitingOn`; the analysis reports `leveled` and `unleveledProjectEndDate`. Tasks are not split or reassigned, unassigned tasks are unconstrained, and other projects are not considered. The engine default is `criticalPathLevelResources`.
 
 ---
 
