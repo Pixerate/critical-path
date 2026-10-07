@@ -395,6 +395,21 @@ describe('@critical-path/client Tests', () => {
       isEngaged: true
     });
   });
-});
 
+  it('resolves delete methods to false on 404 and still throws other errors', async () => {
+    let status = 404;
+    const mockFetch = async () =>
+      new Response(JSON.stringify({ error: status === 404 ? 'Not found' : 'Internal Server Error' }), {
+        status,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    const client = new CriticalPathClient({ baseUrl: 'http://localhost/api', fetch: mockFetch as typeof fetch });
+
+    expect(await client.deleteTask('missing')).toBe(false);
+    expect(await client.deleteComment('missing')).toBe(false);
+
+    status = 500;
+    await expect(client.deleteTask('t1')).rejects.toThrow('Internal Server Error');
+  });
+});
 

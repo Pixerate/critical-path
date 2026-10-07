@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SQLiteStore } from './sqlite.js';
 
 describe('SQLiteStore', () => {
@@ -192,5 +195,24 @@ describe('SQLiteStore', () => {
 
     const remaining = await store.getWorkflows();
     expect(remaining).toHaveLength(0);
+  });
+});
+
+describe('SQLiteStore outside the vitest runtime', () => {
+  const distEntry = fileURLToPath(new URL('../../dist/index.js', import.meta.url));
+
+  // vitest injects `require` into ESM modules, which once hid an `eval("require(...)")` failure
+  // that broke `new SQLiteStore({ filename })` in plain Node. Run the built package in a real Node process.
+  it.skipIf(!existsSync(distEntry))('constructs from a filename in a plain Node ESM process', () => {
+    const script = `
+      const { SQLiteStore } = await import(${JSON.stringify(pathToFileURL(distEntry).href)});
+      const store = new SQLiteStore({ filename: ':memory:' });
+      const project = await store.createProject({ key: 'SMOKE', name: 'Smoke' });
+      process.stdout.write(project.key);
+    `;
+    const output = execFileSync(process.execPath, ['--input-type=module', '--no-warnings', '-e', script], {
+      encoding: 'utf8'
+    });
+    expect(output).toBe('SMOKE');
   });
 });

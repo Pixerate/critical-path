@@ -17,6 +17,28 @@ export interface ToolDefinition<TParams = any, TResult = any> {
   execute: (args: TParams, target: BackendContext, ambientContext?: { projectId?: string }) => Promise<TResult>;
 }
 
+export class ToolArgumentError extends Error {
+  constructor(toolName: string, details: string) {
+    super(`Invalid arguments for tool "${toolName}": ${details}`);
+    this.name = 'ToolArgumentError';
+  }
+}
+
+/**
+ * Validates raw tool arguments against the tool's zod schema. Unknown keys are stripped,
+ * so callers cannot pass fields the tool does not declare.
+ */
+export function parseToolArgs<TParams>(tool: ToolDefinition<TParams>, args: unknown): TParams {
+  const result = tool.zodSchema.safeParse(args ?? {});
+  if (!result.success) {
+    const details = result.error.issues
+      .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+      .join('; ');
+    throw new ToolArgumentError(tool.name, details);
+  }
+  return result.data as TParams;
+}
+
 // Helper to normalize calling engine vs client
 export async function resolveBackend(target: BackendContext) {
   const isEngine = 'store' in target && typeof (target as any).store === 'object';

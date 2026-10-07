@@ -56,6 +56,7 @@ import {
   TaskDeletedEvent,
   ProjectCreatedEvent,
   ProjectUpdatedEvent,
+  ProjectDeletedEvent,
   WorkflowCreatedEvent,
   WorkflowUpdatedEvent,
   WorkflowDeletedEvent,
@@ -80,6 +81,7 @@ import {
 import { validateAttachmentUrl, AttachmentValidationError } from '../domain/entities.js';
 import { validateCustomFieldValues } from '../domain/custom-fields.js';
 import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
+import { ValidationError, NotFoundError } from '../domain/errors.js';
 import { calculateCPM, type CPMOptions } from '../domain/cpm.js';
 import { buildTimelineLadder, aggregateConcreteEvidenceForTask } from '../domain/ladder.js';
 import {
@@ -338,6 +340,46 @@ export class CriticalPathEngine {
       this.dispatchWebhook('project.updated', { project: updated });
     }
     return updated;
+  }
+
+  /**
+   * Deletes a project and its tasks. Each task goes through `deleteTask`, so plugin
+   * hooks run and `task.deleted` events fire before `project.deleted` is published.
+   */
+  async deleteProject(id: string): Promise<boolean> {
+    const existing = await this.store.getProject(id);
+    if (!existing) return false;
+
+    const tasks = await this.store.getTasks(id);
+    const deletedTaskIds: string[] = [];
+    for (const task of tasks) {
+      if (await this.deleteTask(task.id)) {
+        deletedTaskIds.push(task.id);
+      }
+    }
+
+    const deleted = await this.store.deleteProject(id);
+    if (deleted) {
+      const now = new Date().toISOString();
+      const event: ProjectDeletedEvent = {
+        id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+        name: 'project.deleted',
+        aggregateId: id,
+        aggregateType: 'Project',
+        occurredAt: now,
+        payload: { projectId: id, name: existing.name, deletedTaskIds }
+      };
+      await this.events.publish(event);
+
+      await this.store.logActivity({
+        projectId: id,
+        actorId: 'system',
+        action: 'project.deleted',
+        details: { name: existing.name, deletedTaskCount: deletedTaskIds.length }
+      });
+      this.dispatchWebhook('project.deleted', { projectId: id, name: existing.name, deletedTaskIds });
+    }
+    return deleted;
   }
 
   // --- Tasks ---
@@ -916,14 +958,9 @@ export class CriticalPathEngine {
 
   // --- Task Dependencies & Graph ---
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
-    const existingDependencies = await this.store.getDependencies(dep.taskId);
-    const allProjectDeps = [
-      ...existingDependencies,
-      ...(await this.store.getDependencies(dep.dependsOnTaskId))
-    ];
-
     // Enforce Directed Acyclic Graph (DAG) Invariant
-    const cycleCheck = detectDependencyCycle(allProjectDeps, dep);
+    const reachableDeps = await this.collectUpstreamDependencies(dep.dependsOnTaskId);
+    const cycleCheck = detectDependencyCycle(reachableDeps, dep);
     if (cycleCheck.hasCycle) {
       throw new CircularDependencyError(dep.taskId, dep.dependsOnTaskId, cycleCheck.cyclePath);
     }
@@ -942,6 +979,37 @@ export class CriticalPathEngine {
     await this.events.publish(event);
 
     return created;
+  }
+
+  /**
+   * Collects every dependency edge reachable upstream from `startTaskId`. A new edge
+   * `taskId -> dependsOnTaskId` creates a cycle exactly when `taskId` is reachable from
+   * `dependsOnTaskId`, so this is the full set of edges the cycle check needs.
+   */
+  private async collectUpstreamDependencies(startTaskId: string): Promise<TaskDependency[]> {
+    const edges = new Map<string, TaskDependency>();
+    const visited = new Set<string>();
+    let frontier = [startTaskId];
+
+    while (frontier.length > 0) {
+      const next: string[] = [];
+      const results = await Promise.all(frontier.map((id) => this.store.getDependencies(id)));
+      frontier.forEach((id) => visited.add(id));
+
+      for (const deps of results) {
+        for (const d of deps) {
+          // getDependencies returns edges in both directions; follow only outgoing ones.
+          if (!visited.has(d.taskId)) continue;
+          edges.set(d.id, d);
+          if (!visited.has(d.dependsOnTaskId) && !next.includes(d.dependsOnTaskId)) {
+            next.push(d.dependsOnTaskId);
+          }
+        }
+      }
+      frontier = next;
+    }
+
+    return Array.from(edges.values());
   }
 
   async getTaskDependencyGraph(taskId: string): Promise<TaskDependencyGraph> {
@@ -996,8 +1064,8 @@ export class CriticalPathEngine {
 
   // --- Time Tracking ---
   async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt' | 'userId'> & { userId?: string; loggedAt?: string }): Promise<TimeEntry> {
-    if (entry.hours <= 0) {
-      throw new Error('Logged hours must be a positive number.');
+    if (!Number.isFinite(entry.hours) || entry.hours <= 0) {
+      throw new ValidationError('Logged hours must be a positive number.');
     }
 
     const task = await this.store.getTask(entry.taskId);
@@ -1288,7 +1356,7 @@ export class CriticalPathEngine {
   async readAttachmentText(id: string): Promise<string> {
     const attachment = await this.getAttachment(id);
     if (!attachment) {
-      throw new Error(`Attachment with id "${id}" not found.`);
+      throw new NotFoundError(`Attachment with id "${id}" not found.`);
     }
 
     if (attachment.storageKey && this.fileStorage && typeof this.fileStorage.download === 'function') {
@@ -1661,7 +1729,7 @@ export class CriticalPathEngine {
   ): Promise<TimelineLadder> {
     const project = await this.store.getProject(projectId);
     if (!project) {
-      throw new Error(`Project with ID "${projectId}" not found.`);
+      throw new NotFoundError(`Project with ID "${projectId}" not found.`);
     }
 
     let tasks = await this.store.getTasks(projectId);

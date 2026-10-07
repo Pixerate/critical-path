@@ -105,3 +105,26 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: JavaScript floats suffer IEEE 754 precision exhaustion. Furthermore, naive decimal string midpointing produces trailing zeros or length mismatches that fail standard string sorting (`'a0' < 'a'`).
 - **Solution / Workaround**: Use `generateKeyBetween(a, b)` from `@critical-path/core`. It utilizes Base-62 digits (`0-9A-Za-z`) with variable-length integer prefix encoding, guaranteeing strictly monotonic lexicographical ordering without rounding errors or array shifts.
 
+### `eval("require(...)")` Works Under Vitest but Fails in Plain Node ESM
+- **Area / Package**: `@critical-path/core`, `SQLiteStore`, `@critical-path/mcp` CLI (`--db`)
+- **Symptom / Behavior**: `new SQLiteStore({ filename })` throws `Failed to load node:sqlite module: require is not defined` in a real Node process, while every unit test passes.
+- **Root Cause**: The packages are `"type": "module"`, so `require` does not exist at runtime. Vitest transforms modules and injects a `require` into scope, hiding the failure in tests.
+- **Solution / Workaround**: Load Node built-ins with `process.getBuiltinModule('node:sqlite')` (Node 22.3+). It is synchronous, needs no `require`, and keeps `node:*` imports out of browser bundles of core. `sqlite.test.ts` includes a smoke test that runs the built `dist/` in a child Node process, so this class of bug is caught outside vitest. Run `pnpm run build` before tests to exercise it.
+
+### Next.js Route Exports Must Be Functions
+- **Area / Package**: `@critical-path/server`, `createNextHandler`, Next.js App Router
+- **Symptom / Behavior**: `export { handler as GET, ... }` fails at request time when `handler` is an object rather than a function.
+- **Root Cause**: `createNextHandler` previously returned a plain `{ GET, POST, ... }` object, while the docs and scaffolder exported the whole object as each method.
+- **Solution / Workaround**: `createNextHandler` now returns a callable handler that also has `GET`, `POST`, `PUT`, `PATCH`, `DELETE` and `OPTIONS` properties, so both `export { handler as GET }` and `export const { GET, POST } = createNextHandler(...)` work. The example app tests now invoke the exported handlers instead of only checking they are defined.
+
+### MCP Tool `zodSchema` and `inputSchema` Must Stay in Sync
+- **Area / Package**: `@critical-path/mcp`, `tools/definitions.ts`
+- **Symptom / Behavior**: A tool argument advertised to the model is silently dropped before the tool runs.
+- **Root Cause**: Tool arguments are parsed with `zodSchema` (via `parseToolArgs`), which strips undeclared keys. `inputSchema` is a hand-written JSON Schema copy shown to clients. If a field is added to one and not the other, it is either rejected or stripped.
+- **Solution / Workaround**: Update both schemas together. `src/tools/definitions.test.ts` asserts that their property names and required fields match for every tool.
+
+### Fractional Index Keys Must Treat Missing Digits as `'0'`
+- **Area / Package**: `@critical-path/core`, `fractional-index.ts`
+- **Symptom / Behavior**: Repeatedly inserting directly after the same item (e.g. dragging cards to "second place") produced, after about six inserts, a key that sorted after its upper bound, duplicating earlier keys and scrambling order.
+- **Root Cause**: The midpoint helper fell back to appending `'V'` when the lower suffix was shorter than the upper one and their next digits were adjacent (e.g. between `""` and `"1"`).
+- **Solution / Workaround**: The midpoint compares digits with missing lower digits treated as `'0'` (the standard fractional-indexing approach), so `between("a0", "a01")` yields `"a00V"`. `generateKeyBetween(a, b)` now throws a `RangeError` when `a >= b` instead of returning an out-of-range key.

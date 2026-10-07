@@ -30,6 +30,9 @@ const handler = createNextHandler({
 });
 
 export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE, handler as OPTIONS };
+
+// Equivalent: the handler also exposes one property per method
+// export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler({ ... });
 ```
 
 ---
@@ -50,6 +53,40 @@ export const PATCH = handler.PATCH;
 export const DELETE = handler.DELETE;
 export const OPTIONS = handler.OPTIONS;
 ```
+
+---
+
+## ⚠️ Error Responses
+
+| Status | When |
+| :--- | :--- |
+| `400` | Malformed JSON, `ValidationError`, workflow transition or custom field validation failures |
+| `404` | Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ "success": true }`) |
+| `409` | `CircularDependencyError` (body includes `cyclePath`) |
+| `500` | Unexpected errors. The body is always `{ "error": "Internal Server Error" }`; the real error is logged with `console.error`. |
+
+`OPTIONS` preflight requests return `204` with CORS headers.
+
+### Reporting & Exposing Unexpected Errors
+
+Both adapters (and `new CriticalPathRouter(config, options)`) accept router options as a second argument:
+
+```ts
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(
+  { store },
+  {
+    // Called only for unexpected (500) errors. Return a Response to replace the default.
+    onError: (error, request) => {
+      Sentry.captureException(error, { extra: { url: request.url } });
+    },
+    // Include real error messages in 500 responses.
+    // Defaults to true only when NODE_ENV === 'development'.
+    exposeErrors: false
+  }
+);
+```
+
+Without `onError`, unexpected errors are logged with `console.error`. Expected errors (400, 404, 409) always include their message and never reach `onError`.
 
 ---
 

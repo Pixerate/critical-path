@@ -1,5 +1,5 @@
 import type { CriticalPathClient } from '@critical-path/client';
-import { ALL_TOOLS, TOOL_MAP, type ToolDefinition } from '../tools/definitions.js';
+import { ALL_TOOLS, parseToolArgs, type ToolDefinition } from '../tools/definitions.js';
 
 export interface WebMcpToolRegistration {
   name: string;
@@ -113,7 +113,7 @@ export function registerWebMcpTools(options: RegisterWebMcpOptions): WebMcpRegis
       annotations: toolDef.annotations,
       execute: async (input: any) => {
         const ambientContext = options.projectId ? { projectId: options.projectId } : undefined;
-        const result = await toolDef.execute(input, options.client, ambientContext);
+        const result = await toolDef.execute(parseToolArgs(toolDef, input), options.client, ambientContext);
         options.onToolExecuted?.(toolDef.name, input, result);
         return result;
       }

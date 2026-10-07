@@ -134,6 +134,11 @@ export interface ProjectUpdatedEvent extends DomainEvent<{ project: Project; pre
   readonly aggregateType: 'Project';
 }
 
+export interface ProjectDeletedEvent extends DomainEvent<{ projectId: string; name: string; deletedTaskIds: string[] }> {
+  readonly name: 'project.deleted';
+  readonly aggregateType: 'Project';
+}
+
 export interface WorkflowCreatedEvent extends DomainEvent<{ workflow: Workflow }> {
   readonly name: 'workflow.created';
   readonly aggregateType: 'Workflow';
@@ -207,6 +212,7 @@ export type CriticalPathDomainEvent =
   | TaskDependencyAddedEvent
   | ProjectCreatedEvent
   | ProjectUpdatedEvent
+  | ProjectDeletedEvent
   | WorkflowCreatedEvent
   | WorkflowUpdatedEvent
   | WorkflowDeletedEvent

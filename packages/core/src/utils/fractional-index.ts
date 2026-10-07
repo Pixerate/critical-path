@@ -108,40 +108,35 @@ export function getIntegerPart(key: string): string {
 }
 
 /**
- * Computes a fractional midpoint suffix between suffixA and suffixB.
+ * Computes a fractional suffix strictly between suffixes `a` and `b` (a < result < b).
+ * Missing digits in `a` are treated as '0', so `a` may be shorter than `b`.
+ * `b === null` means there is no upper bound.
  */
 function midpointSuffix(a: string, b: string | null): string {
-  let i = 0;
-  while (i < a.length && b !== null && i < b.length && a[i] === b[i]) {
-    i++;
-  }
-
-  const common = a.slice(0, i);
-  const charA = i < a.length ? a[i] : null;
-  const charB = b !== null && i < b.length ? b[i] : null;
-
-  const digitA = charA !== null ? BASE_62.indexOf(charA) : 0;
-  const digitB = charB !== null ? BASE_62.indexOf(charB) : BASE_62.length;
-
-  if (digitB - digitA > 1) {
-    const mid = Math.floor((digitA + digitB) / 2);
-    return common + BASE_62[mid];
-  }
-
-  if (charA !== null) {
-    const restA = a.slice(i + 1);
-    const restB = b !== null && i < b.length && charA === charB ? b.slice(i + 1) : null;
-    return common + charA + midpointSuffix(restA, restB);
-  }
-
-  if (b !== null && i < b.length) {
-    if (digitB === 0) {
-      const restB = b.slice(i + 1);
-      return common + '0' + midpointSuffix('', restB);
+  if (b !== null) {
+    let n = 0;
+    while (n < b.length && (a[n] ?? '0') === b[n]) {
+      n++;
+    }
+    if (n > 0) {
+      return b.slice(0, n) + midpointSuffix(a.slice(n), b.slice(n));
     }
   }
 
-  return common + 'V';
+  const digitA = a.length > 0 ? BASE_62.indexOf(a[0]) : 0;
+  const digitB = b !== null ? BASE_62.indexOf(b[0]) : BASE_62.length;
+
+  if (digitB - digitA > 1) {
+    return BASE_62[Math.floor((digitA + digitB) / 2)];
+  }
+
+  // Adjacent digits: if b has more digits, its first digit alone already sits between a and b.
+  if (b !== null && b.length > 1) {
+    return b[0];
+  }
+
+  // Otherwise keep a's digit and subdivide the remainder with no upper bound.
+  return BASE_62[digitA] + midpointSuffix(a.slice(1), null);
 }
 
 /**
@@ -185,8 +180,7 @@ export function generateKeyBetween(
 
   // Both a and b are present
   if (a! >= b!) {
-    // Graceful fallback for inverted or equal keys
-    return a! + 'V';
+    throw new RangeError(`generateKeyBetween: lower bound "${a}" must sort before upper bound "${b}"`);
   }
 
   const intA = getIntegerPart(a!);

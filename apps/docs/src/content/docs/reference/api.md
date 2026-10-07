@@ -39,10 +39,10 @@ Create a new project.
 Retrieve single project by ID.
 
 ### `PATCH /projects/:projectId`
-Update project fields.
+Update project fields. `id`, `createdAt` and `updatedAt` in the body are ignored. Returns `404` if the project does not exist.
 
 ### `DELETE /projects/:projectId`
-Delete a project and its associated tasks and dependencies.
+Delete a project and its tasks. Each task deletion runs plugin hooks and publishes `task.deleted`, then `project.deleted` is published and dispatched to webhooks.
 
 ---
 
@@ -98,13 +98,26 @@ Calculates and returns the critical path analysis for the specified project.
 }
 ```
 
-### `POST /dependencies`
-Create a dependency between two tasks.
+### `POST /tasks/:taskId/dependencies`
+Declare that `:taskId` depends on another task. Returns `409` if the dependency would create a cycle (including indirect cycles such as A → B → C → A).
 ```json
 {
-  "projectId": "proj-123",
-  "sourceTaskId": "task-1",
-  "targetTaskId": "task-2",
-  "type": "finish_to_start"
+  "dependsOnTaskId": "task-1",
+  "type": "blocking"
 }
 ```
+
+---
+
+## Errors
+
+Errors are returned as JSON with an `error` message and, where useful, extra detail fields.
+
+| Status | When |
+| :--- | :--- |
+| `400` | Malformed JSON body, `ValidationError`, invalid workflow transition (`fromStatus`, `toStatus`), custom field validation failure (`fieldKey`), invalid attachment |
+| `404` | Unknown route, missing resource (`NotFoundError`), or `DELETE` of a resource that does not exist |
+| `409` | Dependency would create a cycle (`cyclePath`) |
+| `500` | Unexpected server error. The message is `Internal Server Error` unless the router's `exposeErrors` option is on (default: only when `NODE_ENV === 'development'`). The error is passed to the `onError` option, or logged with `console.error`. |
+
+`OPTIONS` requests are answered with `204` and CORS headers.

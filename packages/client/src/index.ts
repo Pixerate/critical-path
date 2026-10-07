@@ -98,6 +98,13 @@ export interface ClientOptions {
   fetch?: typeof fetch;
 }
 
+class NotFoundResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NotFoundResponseError';
+  }
+}
+
 export class CriticalPathClient {
   private baseUrl: string;
   private headers: Record<string, string>;
@@ -107,6 +114,20 @@ export class CriticalPathClient {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.headers = options.headers || {};
     this.customFetch = options.fetch || globalThis.fetch;
+  }
+
+  /**
+   * Sends a DELETE and resolves to `false` when the resource does not exist (HTTP 404),
+   * so delete methods keep their boolean contract instead of throwing.
+   */
+  private async deleteRequest(endpoint: string): Promise<boolean> {
+    try {
+      const res = await this.request<{ success: boolean }>(endpoint, { method: 'DELETE' });
+      return res.success;
+    } catch (err) {
+      if (err instanceof NotFoundResponseError) return false;
+      throw err;
+    }
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -128,7 +149,7 @@ export class CriticalPathClient {
       } catch {
         // Fallback to HTTP error
       }
-      throw new Error(errorMsg);
+      throw response.status === 404 ? new NotFoundResponseError(errorMsg) : new Error(errorMsg);
     }
 
     return response.json();
@@ -162,10 +183,7 @@ export class CriticalPathClient {
   }
 
   async deleteWorkflow(id: string): Promise<boolean> {
-    const res = await this.request<{ success: boolean }>(`/workflows/${id}`, {
-      method: 'DELETE'
-    });
-    return res.success;
+    return this.deleteRequest(`/workflows/${id}`);
   }
 
   // Projects
@@ -359,10 +377,7 @@ export class CriticalPathClient {
   }
 
   async deleteTask(id: string): Promise<boolean> {
-    const res = await this.request<{ success: boolean }>(`/tasks/${id}`, {
-      method: 'DELETE'
-    });
-    return res.success;
+    return this.deleteRequest(`/tasks/${id}`);
   }
 
   async getTaskDependencies(taskId: string): Promise<TaskDependencyGraph> {
@@ -413,10 +428,7 @@ export class CriticalPathClient {
   }
 
   async deleteTeam(id: string): Promise<boolean> {
-    const res = await this.request<{ success: boolean }>(`/teams/${id}`, {
-      method: 'DELETE'
-    });
-    return res.success;
+    return this.deleteRequest(`/teams/${id}`);
   }
 
   // Containers
@@ -442,10 +454,7 @@ export class CriticalPathClient {
   }
 
   async deleteContainer(id: string): Promise<boolean> {
-    const res = await this.request<{ success: boolean }>(`/containers/${id}`, {
-      method: 'DELETE'
-    });
-    return res.success;
+    return this.deleteRequest(`/containers/${id}`);
   }
 
   // Deliverables
@@ -481,10 +490,7 @@ export class CriticalPathClient {
   }
 
   async deleteDeliverable(id: string): Promise<boolean> {
-    const res = await this.request<{ success: boolean }>(`/deliverables/${id}`, {
-      method: 'DELETE'
-    });
-    return res.success;
+    return this.deleteRequest(`/deliverables/${id}`);
   }
 
   // Iterations
@@ -510,10 +516,7 @@ export class CriticalPathClient {
   }
 
   async deleteIteration(id: string): Promise<boolean> {
-    const res = await this.request<{ success: boolean }>(`/iterations/${id}`, {
-      method: 'DELETE'
-    });
-    return res.success;
+    return this.deleteRequest(`/iterations/${id}`);
   }
 
   // Activity Stream
@@ -554,10 +557,7 @@ export class CriticalPathClient {
   }
 
   async deleteComment(id: string): Promise<boolean> {
-    const res = await this.request<{ success: boolean }>(`/comments/${encodeURIComponent(id)}`, {
-      method: 'DELETE'
-    });
-    return res.success;
+    return this.deleteRequest(`/comments/${encodeURIComponent(id)}`);
   }
 
   async addCommentReaction(commentId: string, reaction: { emoji: string; userId: string }): Promise<Comment> {
@@ -620,10 +620,7 @@ export class CriticalPathClient {
   }
 
   async deleteAttachment(id: string): Promise<boolean> {
-    const res = await this.request<{ success: boolean }>(`/attachments/${encodeURIComponent(id)}`, {
-      method: 'DELETE'
-    });
-    return res.success;
+    return this.deleteRequest(`/attachments/${encodeURIComponent(id)}`);
   }
 
   async getPresignedAttachmentUploadUrl(options: PresignedUrlOptions): Promise<PresignedUploadResult> {

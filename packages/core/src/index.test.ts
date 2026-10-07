@@ -3,6 +3,30 @@ import { CriticalPathEngine, deriveTaskLifecycleState, DEFAULT_VFX_WORKFLOW } fr
 import type { CriticalPathPlugin } from './types/index.js';
 
 describe('CriticalPathEngine Core Tests', () => {
+  it('deletes a project with its tasks and publishes deletion events', async () => {
+    const engine = new CriticalPathEngine();
+    const proj = await engine.createProject({ key: 'DEL', name: 'Doomed Project' });
+    const keep = await engine.createProject({ key: 'KEEP', name: 'Survivor' });
+    const t1 = await engine.createTask({ projectId: proj.id, title: 'One' });
+    const t2 = await engine.createTask({ projectId: proj.id, title: 'Two' });
+    const other = await engine.createTask({ projectId: keep.id, title: 'Other' });
+
+    const published: string[] = [];
+    engine.events.subscribe('*', (event) => {
+      published.push(event.name);
+    });
+
+    expect(await engine.deleteProject(proj.id)).toBe(true);
+    expect(await engine.getProject(proj.id)).toBeNull();
+    expect(await engine.getTask(t1.id)).toBeNull();
+    expect(await engine.getTask(t2.id)).toBeNull();
+    expect(await engine.getTask(other.id)).not.toBeNull();
+    expect(published.filter((n) => n === 'task.deleted')).toHaveLength(2);
+    expect(published.at(-1)).toBe('project.deleted');
+
+    expect(await engine.deleteProject(proj.id)).toBe(false);
+  });
+
   it('creates projects and tasks with activity logs', async () => {
     const engine = new CriticalPathEngine();
 

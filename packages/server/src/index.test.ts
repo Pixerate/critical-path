@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CriticalPathRouter } from './router.js';
+import { createNextHandler } from './adapters/next.js';
+import { InMemoryStore } from '@critical-path/core';
 
 describe('@critical-path/server Router Tests', () => {
   it('handles project creation and retrieval over HTTP Fetch Requests', async () => {
@@ -409,6 +411,203 @@ describe('@critical-path/server Router Tests', () => {
     expect(data.success).toBe(true);
     expect(data.status).toBe('Executing compilation step');
     expect(typeof data.timestamp).toBe('number');
+  });
+
+  describe('engine invariants and error mapping', () => {
+    const base = 'http://localhost:3000/api/critical-path';
+    const post = (path: string, body: unknown) =>
+      new Request(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: typeof body === 'string' ? body : JSON.stringify(body)
+      });
+
+    it('rejects dependency cycles created over HTTP with 409', async () => {
+      const router = new CriticalPathRouter();
+      const proj = await router.engine.createProject({ key: 'CYC', name: 'Cycle' });
+      const a = await router.engine.createTask({ projectId: proj.id, title: 'A' });
+      const b = await router.engine.createTask({ projectId: proj.id, title: 'B' });
+
+      const first = await router.handleRequest(post(`/tasks/${a.id}/dependencies`, { dependsOnTaskId: b.id }));
+      expect(first.status).toBe(201);
+
+      const cyclic = await router.handleRequest(post(`/tasks/${b.id}/dependencies`, { dependsOnTaskId: a.id }));
+      expect(cyclic.status).toBe(409);
+      expect((await cyclic.json()).cyclePath).toBeDefined();
+
+      const missing = await router.handleRequest(post(`/tasks/${b.id}/dependencies`, {}));
+      expect(missing.status).toBe(400);
+    });
+
+    it('validates time entries and rolls hours up to the task', async () => {
+      const router = new CriticalPathRouter();
+      const proj = await router.engine.createProject({ key: 'TIME', name: 'Time' });
+      const task = await router.engine.createTask({ projectId: proj.id, title: 'Timed' });
+
+      const negative = await router.handleRequest(post('/time-entries', { taskId: task.id, hours: -3 }));
+      expect(negative.status).toBe(400);
+
+      const ok = await router.handleRequest(post('/time-entries', { taskId: task.id, hours: 2 }));
+      expect(ok.status).toBe(201);
+      expect((await router.engine.getTask(task.id))?.loggedHours).toBe(2);
+    });
+
+    it('deletes projects through the engine, removing their tasks', async () => {
+      const router = new CriticalPathRouter();
+      const proj = await router.engine.createProject({ key: 'GONE', name: 'Gone' });
+      const task = await router.engine.createTask({ projectId: proj.id, title: 'Child' });
+
+      const res = await router.handleRequest(new Request(`${base}/projects/${proj.id}`, { method: 'DELETE' }));
+      expect(res.status).toBe(200);
+      expect(await router.engine.getTask(task.id)).toBeNull();
+    });
+
+    it('returns 400 for malformed JSON and hides internal error messages', async () => {
+      const router = new CriticalPathRouter();
+      const bad = await router.handleRequest(post('/projects', '{not json'));
+      expect(bad.status).toBe(400);
+
+      router.engine.getProjects = async () => {
+        throw new Error('SQLITE_CORRUPT: secret internals');
+      };
+      const originalError = console.error;
+      console.error = () => {};
+      try {
+        const res = await router.handleRequest(new Request(`${base}/projects`));
+        expect(res.status).toBe(500);
+        expect((await res.json()).error).toBe('Internal Server Error');
+      } finally {
+        console.error = originalError;
+      }
+    });
+
+    it('answers CORS preflight requests', async () => {
+      const router = new CriticalPathRouter();
+      const res = await router.handleRequest(new Request(`${base}/tasks`, { method: 'OPTIONS' }));
+      expect(res.status).toBe(204);
+      expect(res.headers.get('Access-Control-Allow-Methods')).toContain('PATCH');
+    });
+  });
+
+  it('createNextHandler supports both callable and destructured exports', async () => {
+    const handler = createNextHandler({});
+    const { GET } = handler;
+    const req = () => new Request('http://localhost:3000/api/critical-path/projects');
+
+    expect((await handler(req())).status).toBe(200);
+    expect((await GET(req())).status).toBe(200);
+  });
+
+  it('updates projects via PATCH without allowing id or timestamp overrides', async () => {
+    const router = new CriticalPathRouter();
+    const proj = await router.engine.createProject({ key: 'UPD', name: 'Before' });
+    const patch = (id: string, body: unknown) =>
+      router.handleRequest(
+        new Request(`http://localhost:3000/api/critical-path/projects/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        })
+      );
+
+    const res = await patch(proj.id, { name: 'After', id: 'hijacked', createdAt: '1999-01-01T00:00:00.000Z' });
+    expect(res.status).toBe(200);
+    const { project } = await res.json();
+    expect(project.id).toBe(proj.id);
+    expect(project.name).toBe('After');
+    expect(project.createdAt).toBe(proj.createdAt);
+
+    expect((await patch('missing', { name: 'x' })).status).toBe(404);
+  });
+
+  it('returns 404 when deleting a resource that does not exist', async () => {
+    const router = new CriticalPathRouter();
+    for (const path of ['projects', 'tasks', 'workflows', 'comments', 'attachments', 'deliverables', 'teams', 'containers', 'iterations']) {
+      const res = await router.handleRequest(
+        new Request(`http://localhost:3000/api/critical-path/${path}/missing`, { method: 'DELETE' })
+      );
+      expect(res.status, path).toBe(404);
+    }
+  });
+
+  describe('unexpected error handling options', () => {
+    const failingRouter = (options: ConstructorParameters<typeof CriticalPathRouter>[1]) => {
+      const router = new CriticalPathRouter(undefined, options);
+      router.engine.getProjects = async () => {
+        throw new Error('SQLITE_CORRUPT: secret internals');
+      };
+      return router;
+    };
+    const listProjects = () => new Request('http://localhost:3000/api/critical-path/projects');
+
+    it('passes unexpected errors and the request to onError instead of console.error', async () => {
+      const seen: Array<{ message: string; url: string }> = [];
+      const router = failingRouter({
+        onError: (err, request) => {
+          seen.push({ message: (err as Error).message, url: request.url });
+        }
+      });
+
+      const res = await router.handleRequest(listProjects());
+      expect(res.status).toBe(500);
+      expect((await res.json()).error).toBe('Internal Server Error');
+      expect(seen).toEqual([{ message: 'SQLITE_CORRUPT: secret internals', url: listProjects().url }]);
+    });
+
+    it('lets onError replace the response', async () => {
+      const router = failingRouter({
+        onError: () => new Response(JSON.stringify({ error: 'Try again later' }), { status: 503 })
+      });
+      const res = await router.handleRequest(listProjects());
+      expect(res.status).toBe(503);
+    });
+
+    it('does not call onError for expected client errors', async () => {
+      let calls = 0;
+      const router = new CriticalPathRouter(undefined, { onError: () => void calls++ });
+      const res = await router.handleRequest(
+        new Request('http://localhost:3000/api/critical-path/projects', { method: 'POST', body: '{bad' })
+      );
+      expect(res.status).toBe(400);
+      expect(calls).toBe(0);
+    });
+
+    it('exposes real messages only when exposeErrors is enabled', async () => {
+      const exposed = failingRouter({ exposeErrors: true, onError: () => {} });
+      expect((await (await exposed.handleRequest(listProjects())).json()).error).toBe('SQLITE_CORRUPT: secret internals');
+
+      const hidden = failingRouter({ exposeErrors: false, onError: () => {} });
+      expect((await (await hidden.handleRequest(listProjects())).json()).error).toBe('Internal Server Error');
+    });
+
+    it('defaults exposeErrors from NODE_ENV === development', async () => {
+      const original = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'development';
+        const dev = failingRouter({ onError: () => {} });
+        expect((await (await dev.handleRequest(listProjects())).json()).error).toContain('SQLITE_CORRUPT');
+
+        process.env.NODE_ENV = 'production';
+        const prod = failingRouter({ onError: () => {} });
+        expect((await (await prod.handleRequest(listProjects())).json()).error).toBe('Internal Server Error');
+      } finally {
+        process.env.NODE_ENV = original;
+      }
+    });
+
+    it('passes options through createNextHandler', async () => {
+      const store = new InMemoryStore();
+      store.getProjects = async () => {
+        throw new Error('adapter failure');
+      };
+      const errors: unknown[] = [];
+      const handler = createNextHandler({ store }, { exposeErrors: true, onError: (err) => void errors.push(err) });
+
+      const res = await handler(listProjects());
+      expect(res.status).toBe(500);
+      expect((await res.json()).error).toBe('adapter failure');
+      expect(errors).toHaveLength(1);
+    });
   });
 });
 

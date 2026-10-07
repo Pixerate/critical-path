@@ -250,6 +250,28 @@ describe('Domain-Driven Design (DDD) Enhancements Suite', () => {
         })
       ).rejects.toThrow(CircularDependencyError);
     });
+
+    it('detects cycles longer than the immediate neighbours in engine.addDependency', async () => {
+      const engine = new CriticalPathEngine();
+      const project = await engine.createProject({ name: 'Long Cycle' });
+      const [a, b, c, d] = await Promise.all(
+        ['A', 'B', 'C', 'D'].map((title) => engine.createTask({ projectId: project.id, title }))
+      );
+
+      await engine.addDependency({ taskId: a.id, dependsOnTaskId: b.id, type: 'blocking' });
+      await engine.addDependency({ taskId: b.id, dependsOnTaskId: c.id, type: 'blocking' });
+      await engine.addDependency({ taskId: c.id, dependsOnTaskId: d.id, type: 'blocking' });
+
+      // D -> A closes A -> B -> C -> D -> A
+      await expect(
+        engine.addDependency({ taskId: d.id, dependsOnTaskId: a.id, type: 'blocking' })
+      ).rejects.toThrow(CircularDependencyError);
+
+      // A diamond is not a cycle: A -> D is fine because D does not reach A
+      await expect(
+        engine.addDependency({ taskId: a.id, dependsOnTaskId: d.id, type: 'blocking' })
+      ).resolves.toMatchObject({ taskId: a.id, dependsOnTaskId: d.id });
+    });
   });
 
   describe('Rich Domain Aggregates (TaskEntity & ProjectEntity)', () => {
