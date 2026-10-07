@@ -43,6 +43,20 @@ npx @critical-path/mcp --api http://localhost:3000/api/critical-path
 npx @critical-path/mcp
 ```
 
+For APIs protected with `requireAuth`, set `CRITICAL_PATH_API_TOKEN` (sent as `Authorization: Bearer <token>`) or pass `--header "Name: value"` (repeatable). Prefer the environment variable for secrets, since command-line flags are visible in process lists. The CLI warns when credentials would be sent over plain `http` to a non-local host.
+
+```json
+{
+  "mcpServers": {
+    "critical-path": {
+      "command": "npx",
+      "args": ["-y", "@critical-path/mcp", "--api", "https://app.example.com/api/critical-path"],
+      "env": { "CRITICAL_PATH_API_TOKEN": "<token>" }
+    }
+  }
+}
+```
+
 ### Claude Desktop Configuration
 
 Add the following to your `claude_desktop_config.json`:

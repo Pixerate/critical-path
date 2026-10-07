@@ -84,7 +84,24 @@ const handler = createNextHandler({
 export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE, handler as OPTIONS };
 ```
 
-### 3. Generating a Custom Critical Path Plugin
+### 3. Authenticated Route Handler (Request Context)
+
+```ts
+import { createNextHandler } from '@critical-path/server';
+import { SQLiteStore } from '@critical-path/core';
+
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(
+  { store: new SQLiteStore({ filename: 'app.db' }) },
+  {
+    getContext: async (request) => resolveUser(request), // { userId } or null
+    requireAuth: true
+  }
+);
+```
+
+Never trust identity fields (`actorId`, `authorId`, `userId`) from request bodies; attribute mutations with `getContext` or `engine.withActor(actor)`.
+
+### 4. Generating a Custom Critical Path Plugin
 
 ```ts
 import type { CriticalPathPlugin } from '@critical-path/core';

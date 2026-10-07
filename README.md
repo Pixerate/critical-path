@@ -165,7 +165,7 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 - [ ] **Import/Export Tools**: Jira/Trello migration importers *(Planned)*
 
 ### Security & Compliance
-- [x] **Authentication**: Route handler auth hooks and session propagation
+- [x] **Authentication**: Route handler `getContext` / `requireAuth` hooks with per-request actor attribution (`engine.withActor`)
 - [x] **Data Encryption**: Full TLS/HTTPS support across API edge runtimes
 - [x] **Audit Logging**: Structured mutation logging in `Activity` stream
 - [x] **Vulnerability Policy**: Standard `SECURITY.md` reporting workflow

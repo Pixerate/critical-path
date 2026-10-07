@@ -23,3 +23,19 @@ export default {
   },
 };
 ```
+
+`createUniversalHandler(config, options)` accepts the same router options as the framework adapters:
+
+```typescript
+const handleRequest = createUniversalHandler(
+  { store },
+  {
+    basePath: '/api/pm',
+    getContext: async (request) => {
+      const user = await verifyBearerToken(request.headers.get('Authorization'));
+      return user ? { userId: user.id } : null;
+    },
+    requireAuth: true,
+  }
+);
+```

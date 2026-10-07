@@ -56,11 +56,42 @@ export const OPTIONS = handler.OPTIONS;
 
 ---
 
+## 🔐 Authentication, CORS & Mount Path
+
+Router options are the second argument to `createNextHandler`, `createSvelteKitHandler`, `createUniversalHandler` and `new CriticalPathRouter(config, options)`:
+
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `getContext(request)` | none | Resolve the caller (`{ userId, userName?, actorType?, ...extra }`). With a `userId`, every mutation is attributed to that user and identity fields in bodies (`actorId`, `authorId`, `userId`, `uploaderId`) are ignored. For SvelteKit it receives the `RequestEvent`, so `event.locals` is available. |
+| `requireAuth` | `false` | Return `401` unless `getContext` yields a `userId`. `OPTIONS` preflight is always allowed. |
+| `basePath` | strip up to first `/critical-path` | Exact mount path, e.g. `/api/pm`. Requests outside it return `404`. |
+| `cors` | `{ origins: '*' }` | `{ origins: string[] \| '*', credentials?, allowHeaders?, maxAge? }`, or `false` for no CORS headers. `credentials` cannot be combined with `'*'`. |
+| `onError`, `exposeErrors` | see below | Unexpected error reporting. |
+
+```ts
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(
+  { store },
+  {
+    getContext: async () => {
+      const session = await auth();
+      return session?.user ? { userId: session.user.id } : null;
+    },
+    requireAuth: true,
+    cors: { origins: ['https://app.example.com'], credentials: true }
+  }
+);
+```
+
+For other Fetch runtimes (Workers, Deno, Bun, Hono), use `createUniversalHandler(config, options)`, which returns `(request) => Promise<Response>`.
+
+---
+
 ## ⚠️ Error Responses
 
 | Status | When |
 | :--- | :--- |
 | `400` | Malformed JSON, `ValidationError`, workflow transition or custom field validation failures |
+| `401` | `requireAuth` is set and no user was resolved |
 | `404` | Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ "success": true }`) |
 | `409` | `CircularDependencyError` (body includes `cyclePath`) |
 | `500` | Unexpected errors. The body is always `{ "error": "Internal Server Error" }`; the real error is logged with `console.error`. |

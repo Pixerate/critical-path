@@ -32,7 +32,7 @@ export {
 
 ## Authentication & Context Injection
 
-You can inject request context, such as the authenticated user ID or tenant ID:
+Pass router options as the second argument. `getContext` resolves the caller for each request; when it returns a `userId`, every mutation in that request is attributed to that user (activity log, comment authors, reactions, time entries, uploads), and identity fields in request bodies such as `actorId` or `authorId` are ignored.
 
 ```typescript
 import { createNextHandler } from '@critical-path/server';
@@ -41,14 +41,27 @@ import { auth } from '@/lib/auth'; // Your auth solution
 
 const store = new SQLiteStore({ filename: 'app.db' });
 
-const handler = createNextHandler({
-  store,
-  getContext: async (req) => {
-    const session = await auth();
-    return {
-      userId: session?.user?.id,
-      tenantId: session?.user?.tenantId,
-    };
-  },
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createNextHandler(
+  { store },
+  {
+    getContext: async () => {
+      const session = await auth();
+      return session?.user ? { userId: session.user.id, userName: session.user.name ?? undefined } : null;
+    },
+    requireAuth: true, // 401 when getContext returns no userId
+  }
+);
+```
+
+Extra fields you return (for example `tenantId` or `roles`) are carried on the context for upcoming authorization hooks.
+
+### CORS and Mount Path
+
+```typescript
+createNextHandler({ store }, {
+  basePath: '/api/critical-path',
+  cors: { origins: ['https://app.example.com'], credentials: true },
 });
 ```
+
+`cors` defaults to `{ origins: '*' }` without credentials; pass `false` to send no CORS headers (same-origin apps).

@@ -30,18 +30,21 @@ export const OPTIONS = handler;
 
 ## Using with Locals & Session
 
+`getContext` receives the SvelteKit `RequestEvent`, so you can read the user your `hooks.server.ts` placed on `locals`:
+
 ```typescript
 import { createSvelteKitHandler } from '@critical-path/server';
 import { SQLiteStore } from '@critical-path/core';
 
 const store = new SQLiteStore({ filename: 'app.db' });
 
-const handler = createSvelteKitHandler({
-  store,
-  getContext: async (event) => {
-    return {
-      userId: event.locals.user?.id,
-    };
-  },
-});
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } = createSvelteKitHandler(
+  { store },
+  {
+    getContext: (event) => (event.locals.user ? { userId: event.locals.user.id } : null),
+    requireAuth: true,
+  }
+);
 ```
+
+When a `userId` is resolved, all mutations in the request are attributed to that user and identity fields in request bodies are ignored. The other router options (`basePath`, `cors`, `onError`, `exposeErrors`) are accepted here too.
