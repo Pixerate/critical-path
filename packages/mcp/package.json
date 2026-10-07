@@ -19,16 +19,16 @@
   },
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./server": {
-      "import": "./dist/server/index.js",
-      "types": "./dist/server/index.d.ts"
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
     },
     "./web": {
-      "import": "./dist/web/index.js",
-      "types": "./dist/web/index.d.ts"
+      "types": "./dist/web/index.d.ts",
+      "import": "./dist/web/index.js"
     }
   },
   "scripts": {
@@ -50,5 +50,9 @@
   },
   "engines": {
     "node": ">=24.0.0"
-  }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*"
+  ]
 }

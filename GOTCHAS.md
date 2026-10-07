@@ -267,3 +267,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: SvelteKit 3 takes options via `sveltekit({ adapter, ... })` in `vite.config.ts`, replaced `$lib` with `#lib`, and ships its tsconfig as `$app/tsconfig`. Its CLI prints with `util.styleText('grey')`, which Node 25 rejects; Node 24 (used by CI) is fine. Vitest 3 cannot load the SvelteKit 3 plugin (it needs Vite 8), so the demo has a plugin-free `vitest.config.ts` for its API tests.
 - **Solution / Workaround**: Use Node 24 locally (`nvm use 24`), or preload a shim that maps `'grey'` to `'gray'` in `util.styleText` (`NODE_OPTIONS="--import ./grey-shim.mjs"`).
 
+### Published Packages Contain Only `dist` (Without Tests)
+- **Area / Package**: all `packages/*`
+- **Symptom / Behavior**: A new file needed at runtime is missing from the published package, or source maps point at `src/` files that are not published.
+- **Root Cause**: Each package sets `"files": ["dist", "!dist/**/*.test.*"]`, so only build output (minus compiled tests) is published. Anything outside `dist/` must be listed explicitly.
+- **Solution / Workaround**: Emit runtime assets into `dist/` (as `create-critical-path` does with its templates) or add them to `files`. Check with `npm pack --dry-run` in the package directory.
+

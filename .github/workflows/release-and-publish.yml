@@ -5,6 +5,11 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+# Merges in quick succession must release one after another, not race to version and push.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Build & Publish Changed Packages to NPM

@@ -13,16 +13,16 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./next": {
-      "import": "./dist/adapters/next.js",
-      "types": "./dist/adapters/next.d.ts"
+      "types": "./dist/adapters/next.d.ts",
+      "import": "./dist/adapters/next.js"
     },
     "./sveltekit": {
-      "import": "./dist/adapters/sveltekit.js",
-      "types": "./dist/adapters/sveltekit.d.ts"
+      "types": "./dist/adapters/sveltekit.d.ts",
+      "import": "./dist/adapters/sveltekit.js"
     }
   },
   "scripts": {
@@ -41,5 +41,9 @@
   },
   "engines": {
     "node": ">=24.0.0"
-  }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*"
+  ]
 }
