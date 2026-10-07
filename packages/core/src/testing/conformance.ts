@@ -85,6 +85,7 @@ const fullTask = (projectId: string): Omit<Task, 'id' | 'createdAt' | 'updatedAt
   actualStartDate: '2026-10-02T09:00:00.000Z',
   dueDate: '2026-10-10',
   estimatedHours: 8,
+  allocation: 0.5,
   loggedHours: 2,
   actualHours: 2,
   billableHours: 1,

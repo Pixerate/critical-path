@@ -221,12 +221,30 @@ Tasks are placed one at a time, in priority order, at the earliest moment their 
   - `'order'`: creation order.
 
   Remaining ties break by creation order, so results are deterministic.
-- **Slack after levelling:** each assignee's tasks are chained in the order they were scheduled. Slack and `isCritical` therefore reflect both dependencies and people: a task with plenty of dependency slack is critical if delaying it would push back the same person's next task.
+- **Slack after levelling:** any two tasks of one assignee that cannot run side by side are linked in the order they were scheduled. Slack and `isCritical` therefore reflect both dependencies and people: a task with plenty of dependency slack is critical if delaying it would push back the same person's next task.
 - **Per task:** `levelingDelayHours` (working hours on the task's calendar) and `waitingOn` (the task it last waited for).
 - **Not constrained:** unassigned tasks (including team-only tasks) and zero-duration milestones.
-- **Not done:** tasks are never split or reassigned; there is no partial allocation (50% of a person); only tasks in this project are considered, so other projects' work for the same person is ignored. The result is a good, deterministic heuristic schedule, not a guaranteed optimum.
+- **Not done:** tasks are never split or reassigned, and only tasks in this project are considered, so other projects' work for the same person is ignored. The result is a good, deterministic heuristic schedule, not a guaranteed optimum.
 
 Enable it by default with `criticalPathLevelResources: true` (together with `criticalPathCalendars: 'assignee'`). Over HTTP: `?calendars=assignee&levelResources=true&levelingPriority=priority`.
+
+### Partial allocation
+
+A task can take only part of its assignee's time with `allocation` (greater than 0, up to 1; default 1):
+
+```ts
+await engine.createTask({ projectId, title: 'API review', estimatedHours: 16, allocation: 0.5, assigneeId: 'bob' });
+```
+
+- **Estimates are effort.** A 16-hour task at 0.5 spans 32 working hours. This applies to every critical path calculation, in project and assignee mode, with or without levelling. `durationHours` in the results is that elapsed span, and each such task reports its `allocation`.
+- **Levelling uses capacity.** Each assignee has 100% to give at any moment. Two 50% tasks run side by side; a third waits until one finishes. A 100% task waits until the assignee is completely free. Tasks that cannot run together (allocations summing above 100%) are linked in scheduled order for slack; compatible ones are not.
+- **Over-allocation report.** Assignee-mode results include `overallocations`: each period where someone is booked above 100%, with the total and the tasks involved. It is empty after levelling.
+
+  ```ts
+  { assigneeId: 'bob', start: '2026-10-05T09:00:00.000Z', end: '2026-10-05T17:00:00.000Z', allocation: 1.5, taskIds: ['a', 'b'] }
+  ```
+- **Capacity per person is fixed at 100%.** Model part-time people with their work schedule (fewer hours), not a lower capacity.
+- **Workload charts** still spread estimated effort over the task's planned dates and do not use `allocation`.
 
 ---
 

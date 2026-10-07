@@ -150,6 +150,12 @@ describe('@critical-path/mcp', () => {
       const leveled = await cpmTool.execute({ projectId: project.id, calendars: 'assignee', levelResources: true }, engine);
       expect(leveled.leveled).toBe(true);
 
+      const scratch = await TOOL_MAP.get('create_project')!.execute({ name: 'Allocation', key: 'ALC' }, engine);
+      const halfTime = await TOOL_MAP.get('create_task')!.execute({ projectId: scratch.id, title: 'Half', estimatedHours: 4, allocation: 0.5 }, engine);
+      expect(halfTime.allocation).toBe(0.5);
+      const updated = await TOOL_MAP.get('update_task')!.execute({ id: halfTime.id, allocation: 0.25 }, engine);
+      expect(updated.allocation).toBe(0.25);
+
       // 2. get_timeline_ladder tool
       const ladderTool = TOOL_MAP.get('get_timeline_ladder')!;
       const ladderResult = await ladderTool.execute({ projectId: project.id, level: 'all' }, engine);

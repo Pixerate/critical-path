@@ -221,6 +221,12 @@ export interface Task {
   dueDate?: string;
   // Duration & Effort (in hours and/or minutes)
   estimatedHours?: number;
+  /**
+   * Share of the assignee's time this task takes, in (0, 1]. Default 1. Estimates are effort, so a
+   * 16h task at 0.5 spans 32 working hours in critical path analysis, and levelling lets the
+   * assignee run tasks side by side while their total stays at or below 1.
+   */
+  allocation?: number;
   loggedHours?: number;
   actualHours?: number;
   billableHours?: number;
@@ -653,6 +659,18 @@ export interface TaskCriticalPathSchedule {
   levelingDelayHours?: number;
   /** With resource levelling: the task this one last waited for, when its assignee was busy. */
   waitingOn?: string;
+  /** The task's `allocation` when below 1 (`durationHours` is then effort / allocation). */
+  allocation?: number;
+}
+
+/** A period in which an assignee's tasks together need more than 100% of them. */
+export interface Overallocation {
+  assigneeId: string;
+  start: string;
+  end: string;
+  /** Total allocation in the period, e.g. 1.5 for 150%. */
+  allocation: number;
+  taskIds: string[];
 }
 
 export interface CriticalPathAnalysis {
@@ -668,6 +686,8 @@ export interface CriticalPathAnalysis {
   leveled?: boolean;
   /** With resource levelling: the end date before levelling, for comparison. */
   unleveledProjectEndDate?: string;
+  /** Assignee mode: periods where an assignee is booked above 100% (empty after levelling). */
+  overallocations?: Overallocation[];
 }
 
 export interface ConcreteEvidenceSummary {

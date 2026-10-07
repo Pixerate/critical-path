@@ -30,7 +30,8 @@ interface Task {
   reporterId?: string;
   sprintId?: string;
   dueDate?: string;            // ISO-8601 string (e.g. 2026-09-15T00:00:00Z)
-  estimatedHours?: number;     // Used for Critical Path calculations
+  estimatedHours?: number;     // Effort, used for Critical Path calculations
+  allocation?: number;         // Share of the assignee's time, (0, 1], default 1
   loggedHours?: number;
   tags?: string[];
   customFields?: Record<string, unknown>;
