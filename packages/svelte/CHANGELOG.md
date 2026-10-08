@@ -1,5 +1,14 @@
 # @critical-path/svelte
 
+## 0.18.11
+
+### Patch Changes
+
+- Updated dependencies [3c08dd9]
+  - @critical-path/core@0.45.0
+  - @critical-path/client@0.23.0
+  - @critical-path/mcp@0.15.0
+
 ## 0.18.10
 
 ### Patch Changes
