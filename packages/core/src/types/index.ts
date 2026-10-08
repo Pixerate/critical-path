@@ -583,6 +583,8 @@ export interface CriticalPathConfig {
    * a time. Requires `criticalPathCalendars: 'assignee'` (or `calendars: 'assignee'` per call).
    */
   criticalPathLevelResources?: boolean;
+  /** Most tasks `calculatePortfolioCriticalPath` analyses in one call. Default 5000. */
+  portfolioTaskLimit?: number;
   initialData?: {
     projects?: Project[];
     tasks?: Task[];
@@ -698,6 +700,18 @@ export interface CriticalPathAnalysis {
   unleveledProjectEndDate?: string;
   /** Assignee mode: periods where an assignee is booked above 100% (empty after levelling). */
   overallocations?: Overallocation[];
+}
+
+/** Critical path analysis across several projects (`calculatePortfolioCriticalPath`). */
+export interface PortfolioCriticalPathAnalysis {
+  calculatedAt: string;
+  /** One analysis per project, in request order. Each lists the over-allocations involving its tasks. */
+  projects: CriticalPathAnalysis[];
+  /** The latest project end. */
+  projectEndDate?: string;
+  leveled?: boolean;
+  /** Every over-allocation across the included projects. */
+  overallocations: Overallocation[];
 }
 
 export interface ConcreteEvidenceSummary {

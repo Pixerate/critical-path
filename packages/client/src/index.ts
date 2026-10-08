@@ -55,6 +55,7 @@ import type {
   TaskDerivedStatus,
   TaskLifecycleState,
   CriticalPathAnalysis,
+  PortfolioCriticalPathAnalysis,
   TimelineLadder,
   TimelineLadderOptions,
   TaskLadderView,
@@ -87,6 +88,7 @@ export type {
   TaskDerivedStatus,
   TaskLifecycleState,
   CriticalPathAnalysis,
+  PortfolioCriticalPathAnalysis,
   TimelineLadder,
   TimelineLadderOptions,
   TaskLadderView,
@@ -353,23 +355,23 @@ export class CriticalPathClient {
    * `calendars: 'assignee'` schedules each task on its assignee's or team's calendar;
    * `levelResources: true` (assignee mode) also limits each assignee to one task at a time.
    */
-  async calculateCriticalPath(
-    projectId: string,
-    options: {
-      calendars?: 'project' | 'assignee';
-      levelResources?: boolean;
-      levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
-    } = {}
-  ): Promise<CriticalPathAnalysis> {
-    const params = new URLSearchParams();
-    if (options.calendars) params.set('calendars', options.calendars);
-    if (options.levelResources !== undefined) params.set('levelResources', String(options.levelResources));
-    if (options.levelingPriority) params.set('levelingPriority', options.levelingPriority);
-    const query = params.size ? `?${params}` : '';
+  async calculateCriticalPath(projectId: string, options: CriticalPathQueryOptions = {}): Promise<CriticalPathAnalysis> {
     const res = await this.request<{ analysis: CriticalPathAnalysis }>(
-      `/projects/${encodeURIComponent(projectId)}/critical-path${query}`
+      `/projects/${encodeURIComponent(projectId)}/critical-path${criticalPathQuery(options)}`
     );
     return res.analysis;
+  }
+
+  /**
+   * Critical path across several projects: `projectIds`, or every project you can read. With
+   * `calendars: 'assignee'` and `levelResources: true`, people and team pools are shared across
+   * them; `projectOrder` ranks projects for levelling.
+   */
+  async calculatePortfolioCriticalPath(
+    options: CriticalPathQueryOptions & { projectIds?: string[]; projectOrder?: string[] } = {}
+  ): Promise<PortfolioCriticalPathAnalysis> {
+    const res = await this.request<{ portfolio: PortfolioCriticalPathAnalysis }>(`/portfolio/critical-path${criticalPathQuery(options)}`);
+    return res.portfolio;
   }
 
   async getTimelineLadder(
@@ -902,3 +904,20 @@ export class CriticalPathClient {
 }
 
 export type { CommentReaction };
+
+/** Options shared by the critical path methods. */
+export interface CriticalPathQueryOptions {
+  calendars?: 'project' | 'assignee';
+  levelResources?: boolean;
+  levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
+}
+
+function criticalPathQuery(options: CriticalPathQueryOptions & { projectIds?: string[]; projectOrder?: string[] }): string {
+  const params = new URLSearchParams();
+  if (options.projectIds) params.set('projectIds', options.projectIds.join(','));
+  if (options.projectOrder) params.set('projectOrder', options.projectOrder.join(','));
+  if (options.calendars) params.set('calendars', options.calendars);
+  if (options.levelResources !== undefined) params.set('levelResources', String(options.levelResources));
+  if (options.levelingPriority) params.set('levelingPriority', options.levelingPriority);
+  return params.size ? `?${params}` : '';
+}

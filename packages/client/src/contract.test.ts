@@ -93,6 +93,9 @@ describe('client ↔ server contract', () => {
     expect(leveled.leveled).toBe(true);
     expect(leveled.unleveledProjectEndDate).toBe('2026-10-05T17:00:00.000Z');
     expect(leveled.projectEndDate).toBe('2026-10-06T17:00:00.000Z');
+
+    const portfolio = await client.calculatePortfolioCriticalPath({ projectIds: [project.id], calendars: 'assignee', levelResources: true });
+    expect(portfolio.projects[0].projectEndDate).toBe(leveled.projectEndDate);
   });
 
   it('surfaces validation errors for fields the server rejects', async () => {

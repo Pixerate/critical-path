@@ -224,7 +224,7 @@ Tasks are placed one at a time, in priority order, at the earliest moment their 
 - **Slack after levelling:** any two tasks of one assignee that cannot run side by side are linked in the order they were scheduled. Slack and `isCritical` therefore reflect both dependencies and people: a task with plenty of dependency slack is critical if delaying it would push back the same person's next task.
 - **Per task:** `levelingDelayHours` (working hours on the task's calendar) and `waitingOn` (the task it last waited for).
 - **Not constrained:** tasks with neither an assignee nor a team pool (see [team capacity](#team-capacity)), and zero-duration milestones.
-- **Not done:** tasks are never split or reassigned, and only tasks in this project are considered, so other projects' work for the same person is ignored. The result is a good, deterministic heuristic schedule, not a guaranteed optimum.
+- **Not done:** tasks are never split or reassigned. Only tasks in this project are considered; use [portfolio analysis](#across-projects-portfolio) to count people's work in other projects. The result is a good, deterministic heuristic schedule, not a guaranteed optimum.
 
 Enable it by default with `criticalPathLevelResources: true` (together with `criticalPathCalendars: 'assignee'`). Over HTTP: `?calendars=assignee&levelResources=true&levelingPriority=priority`.
 
@@ -262,6 +262,35 @@ await engine.createTeam({ name: 'Agency', memberIds: [], headcount: 2 });       
 - **Slack:** a delayed task is linked to the task whose finish freed its slot, as are tasks whose combined allocation exceeds the pool. Slack is exact along those chains but can be generous elsewhere in a busy pool.
 - **Over-allocation report:** entries have `teamId` (instead of `assigneeId`) and `capacity` when a pool is booked above its headcount, counting team tasks and members' own tasks.
 
+
+### Finished tasks
+
+Completed and canceled tasks (by `semanticStatus`, or the default `done` / `canceled` statuses) take **no time** in critical path analysis and occupy nobody when levelling. Their successors can start at the project start, and dates reflect only the remaining work.
+
+### Across projects (portfolio)
+
+Levelling one project ignores what its people are doing elsewhere. `calculatePortfolioCriticalPath` analyses several projects at once:
+
+```ts
+const portfolio = await engine.calculatePortfolioCriticalPath({
+  projectIds: ['proj_website', 'proj_app'], // default: every project the caller can read
+  calendars: 'assignee',
+  levelResources: true,
+  projectOrder: ['proj_app'] // optional: the app gets people first; unlisted projects come last
+});
+
+portfolio.projects;        // one CriticalPathAnalysis per project, in request order
+portfolio.projectEndDate;  // the latest end
+portfolio.overallocations; // across all included projects
+```
+
+- **Shared people and teams.** With levelling, each person and team pool has one capacity across all included projects, so nobody is booked above it in total. `waitingOn` can point at a task in another project.
+- **Per-project dates.** Each project's tasks start no earlier than that project's `startDate` and use its calendar; `projectStartDate` and `schedule` are fallbacks for projects without them. Slack is measured against each task's own project end.
+- **Dependencies between projects** are honoured: a task waiting on a task in another included project starts after it. Single-project analysis ignores such dependencies.
+- **Access.** Only projects the caller can read are included. Without `projectIds`, unreadable projects are left out entirely, so their work is not counted and nothing about them is revealed (results can be optimistic). An unreadable or unknown id in `projectIds` is rejected (`403` / `404`).
+- **Size.** Runs above `portfolioTaskLimit` tasks (engine config, default 5000) are rejected; pass fewer `projectIds`.
+
+Over HTTP: `GET /portfolio/critical-path?projectIds=a,b&calendars=assignee&levelResources=true&projectOrder=b`. Client: `calculatePortfolioCriticalPath(options)`. MCP: `calculate_portfolio_critical_path`.
 ---
 
 ## 4. Calendar-Aware Workload Distribution

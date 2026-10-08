@@ -23,6 +23,7 @@ const CLIENT_METHOD_FOR_ROUTE: Record<string, keyof CriticalPathClient> = {
   'PATCH /projects/{projectId}': 'updateProject',
   'DELETE /projects/{projectId}': 'deleteProject',
   'GET /projects/{projectId}/critical-path': 'calculateCriticalPath',
+  'GET /portfolio/critical-path': 'calculatePortfolioCriticalPath',
   'GET /projects/{projectId}/ladder': 'getTimelineLadder',
   'GET /projects/{projectId}/workload': 'getWorkloadDistribution',
   'GET /tasks': 'queryTasks',
