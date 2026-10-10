@@ -160,6 +160,19 @@ export interface StorageAdapter
    * calls on `tx` part of the transaction, and should keep unrelated concurrent calls out of it.
    */
   transaction?<T>(fn: (tx: StorageAdapter) => Promise<T>): Promise<T>;
+  /**
+   * Optional. Atomically adds to a task's hour totals (fields left out are unchanged; missing
+   * totals count as 0) and returns the updated task, or `null` if it does not exist. The engine
+   * uses it for `logTime` so concurrent logs cannot overwrite each other.
+   */
+  incrementTaskHours?(taskId: string, deltas: TaskHourDeltas): Promise<Task | null>;
+}
+
+/** Amounts to add to a task's hour totals. */
+export interface TaskHourDeltas {
+  loggedHours?: number;
+  actualHours?: number;
+  billableHours?: number;
 }
 
 /**
@@ -635,6 +648,17 @@ export class InMemoryStore implements StorageAdapter, WebhookOutboxStore {
 
   async deleteWebhook(id: string): Promise<boolean> {
     return this.webhooks.delete(id);
+  }
+
+  // Synchronous body, so concurrent calls cannot interleave.
+  async incrementTaskHours(taskId: string, deltas: TaskHourDeltas): Promise<Task | null> {
+    const task = this.tasks.get(taskId);
+    if (!task) return null;
+    for (const [field, delta] of Object.entries(deltas) as Array<[keyof TaskHourDeltas, number | undefined]>) {
+      if (delta) task[field] = (task[field] ?? 0) + delta;
+    }
+    task.updatedAt = new Date().toISOString();
+    return task;
   }
 
   // Webhook outbox

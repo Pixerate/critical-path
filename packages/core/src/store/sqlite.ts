@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { AsyncLocalStorage } from 'node:async_hooks';
-import type { ProjectFilter, StorageAdapter } from './index.js';
+import type { ProjectFilter, StorageAdapter, TaskHourDeltas } from './index.js';
 import { decodeCursor, encodeCursor, pageSize, type ActivityQuery, type Page, type TaskQuery } from './query.js';
 import type {
   Project,
@@ -1460,6 +1460,19 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
   async deleteWebhook(id: string): Promise<boolean> {
     const result = this.db.prepare('DELETE FROM webhooks WHERE id = ?').run(id);
     return Number(result.changes) > 0;
+  }
+
+  // --- Hour totals ---
+  async incrementTaskHours(taskId: string, deltas: TaskHourDeltas): Promise<Task | null> {
+    // One UPDATE statement, so concurrent increments cannot overwrite each other.
+    const result = this.db
+      .prepare(
+        `UPDATE tasks SET loggedHours = COALESCE(loggedHours, 0) + ?, actualHours = COALESCE(actualHours, 0) + ?,
+           billableHours = CASE WHEN ? = 0 THEN billableHours ELSE COALESCE(billableHours, 0) + ? END, updatedAt = ?
+         WHERE id = ?`
+      )
+      .run(deltas.loggedHours ?? 0, deltas.actualHours ?? 0, deltas.billableHours ?? 0, deltas.billableHours ?? 0, new Date().toISOString(), taskId);
+    return Number(result.changes) > 0 ? this.getTask(taskId) : null;
   }
 
   // --- Webhook outbox ---

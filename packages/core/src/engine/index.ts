@@ -215,6 +215,9 @@ export class CriticalPathEngine {
     return !!this.actor && !this.authorizationBypassed && (!!this.config.authorize || !!this.actor.tenantId);
   }
 
+  /** Tenants of events published inside a transaction, resolved before the data changed. */
+  private readonly eventTenants = new WeakMap<object, string | undefined>();
+
   /** Effects deferred until the enclosing store transaction commits; set on transaction views. */
   private readonly pendingEffects?: Array<() => unknown>;
 
@@ -244,10 +247,25 @@ export class CriticalPathEngine {
     const result = await this.store.transaction(async (tx) => {
       effects.length = 0; // an adapter may retry fn
       const view = Object.create(this) as CriticalPathEngine;
+      // Events are delivered after commit, when deleted records can no longer say which tenant
+      // they belonged to, so each event's tenant is resolved now, inside the transaction.
+      const bus = this.events;
+      const events = new Proxy(bus, {
+        get: (t, property) => {
+          if (property === 'publish') {
+            return async (event: DomainEvent) => {
+              this.eventTenants.set(event, await view.resolveEventTenant(event));
+              effects.push(() => bus.publish(event));
+            };
+          }
+          const value = Reflect.get(t, property);
+          return typeof value === 'function' ? value.bind(t) : value;
+        }
+      });
       Object.defineProperties(view, {
         store: { value: tx },
         pendingEffects: { value: effects },
-        events: { value: defer(this.events, ['publish']) },
+        events: { value: events },
         plugins: { value: defer(this.plugins, ['runAfterTaskCreate', 'runAfterTaskUpdate', 'runAfterTaskDelete']) },
         fileStorage: { value: this.fileStorage && defer(this.fileStorage, ['delete']) }
       });
@@ -603,7 +621,17 @@ export class CriticalPathEngine {
     const existing = await this.getProject(id);
     if (!existing) return null;
     await this.requireProjectAccess('project.update', id);
-    if ('members' in updates) await this.requireProjectAccess('project.manage_members', id);
+    if ('members' in updates) {
+      await this.requireProjectAccess('project.manage_members', id);
+      // Managers may manage members but not admins: granting, revoking or changing an admin entry
+      // needs project.manage_admins, so nobody can promote themselves above their own role.
+      const admins = (members?: Project['members']) =>
+        new Set((members ?? []).filter((m) => m.role === 'admin').map((m) => (m.userId !== undefined ? `user:${m.userId}` : `team:${m.teamId}`)));
+      const [before, after] = [admins(existing.members), admins(updates.members)];
+      if (before.size !== after.size || [...before].some((key) => !after.has(key))) {
+        await this.requireProjectAccess('project.manage_admins', id);
+      }
+    }
     validateCustomFieldDefinitions(updates.customFieldDefinitions, this.plugins.getCustomFieldTypes());
     updates = this.withoutTenant(updates);
 
@@ -747,6 +775,7 @@ export class CriticalPathEngine {
 
     // Validate custom fields on the final (post-plugin) input, including required fields when none are given
     validateCustomFieldValues(project?.customFieldDefinitions, input.customFields, this.plugins.getCustomFieldTypes());
+    await this.assertValidParent(input.parentId, projectId);
 
     const defaultStatus = workflow?.defaultStatusKey || 'todo';
     const initialStatus = processedInput.status || taskInput.status || defaultStatus;
@@ -854,6 +883,9 @@ export class CriticalPathEngine {
         { ...existing.customFields, ...processedUpdates.customFields },
         this.plugins.getCustomFieldTypes()
       );
+    }
+    if (processedUpdates.parentId && processedUpdates.parentId !== existing.parentId) {
+      await this.assertValidParent(processedUpdates.parentId, existing.projectId, id);
     }
 
     const now = new Date().toISOString();
@@ -1212,13 +1244,18 @@ export class CriticalPathEngine {
     return this.inTransaction((engine) => engine.deleteTaskNow(id, options));
   }
 
-  private async deleteTaskNow(id: string, options: { subtasks?: 'delete' | 'detach' } = {}): Promise<boolean> {
+  /** `deleting`: tasks already being deleted in this cascade, so a stored parent cycle cannot recurse forever. */
+  private async deleteTaskNow(
+    id: string,
+    options: { subtasks?: 'delete' | 'detach' } = {},
+    deleting = new Set<string>()
+  ): Promise<boolean> {
     const existing = await this.getTask(id);
     if (!existing) return false;
     await this.requireProjectAccess('task.delete', existing.projectId);
 
     await this.plugins.runBeforeTaskDelete(id, existing);
-    await this.deleteTaskChildren(existing, options.subtasks ?? 'delete');
+    await this.deleteTaskChildren(existing, options.subtasks ?? 'delete', deleting);
     const deleted = await this.store.deleteTask(id);
 
     if (deleted) {
@@ -1250,14 +1287,36 @@ export class CriticalPathEngine {
     return deleted;
   }
 
+  /**
+   * Rejects a `parentId` that is missing, in another project, the task itself, or one of its
+   * descendants (which would create a cycle).
+   */
+  private async assertValidParent(parentId: string | undefined, projectId: string, taskId?: string): Promise<void> {
+    if (!parentId) return;
+    if (parentId === taskId) throw new ValidationError('A task cannot be its own parent.');
+    const parent = await this.store.getTask(parentId);
+    if (!parent || parent.projectId !== projectId) {
+      throw new ValidationError(`Parent task "${parentId}" was not found in this project.`);
+    }
+    if (!taskId) return;
+    const seen = new Set<string>([parentId]);
+    for (let ancestor = parent.parentId; ancestor && !seen.has(ancestor); ) {
+      if (ancestor === taskId) throw new ValidationError(`Task "${parentId}" is a subtask of this task, so it cannot be its parent.`);
+      seen.add(ancestor);
+      ancestor = (await this.store.getTask(ancestor))?.parentId;
+    }
+  }
+
   /** Removes records owned by a task; the task's deletion was already authorized. */
-  private async deleteTaskChildren(task: Task, subtasks: 'delete' | 'detach'): Promise<void> {
+  private async deleteTaskChildren(task: Task, subtasks: 'delete' | 'detach', deleting: Set<string>): Promise<void> {
     const cascade = this.elevated();
 
-    const children = (await this.store.getTasks(task.projectId)).filter((t) => t.parentId === task.id);
+    // Parent cycles stored before parents were validated: skip tasks this cascade is already deleting.
+    deleting.add(task.id);
+    const children = (await this.store.getTasks(task.projectId)).filter((t) => t.parentId === task.id && !deleting.has(t.id));
     for (const child of children) {
       if (subtasks === 'delete') {
-        await cascade.deleteTask(child.id, { subtasks });
+        await cascade.deleteTaskNow(child.id, { subtasks }, deleting);
       } else {
         await this.store.updateTask(child.id, { parentId: undefined });
       }
@@ -1436,14 +1495,17 @@ export class CriticalPathEngine {
       await this.requireProjectAccess('time.log', task.projectId);
     }
     if (task) {
-      const newLoggedHours = (task.loggedHours || 0) + entry.hours;
-      const newActualHours = (task.actualHours || 0) + entry.hours;
-      const newBillableHours = entry.isBillable !== false ? (task.billableHours || 0) + entry.hours : task.billableHours;
-      await this.store.updateTask(task.id, {
-        loggedHours: newLoggedHours,
-        actualHours: newActualHours,
-        billableHours: newBillableHours
-      });
+      const deltas = { loggedHours: entry.hours, actualHours: entry.hours, ...(entry.isBillable !== false ? { billableHours: entry.hours } : {}) };
+      if (this.store.incrementTaskHours) {
+        await this.store.incrementTaskHours(task.id, deltas);
+      } else {
+        // Read-modify-write: adapters without incrementTaskHours can lose concurrent logs.
+        await this.store.updateTask(task.id, {
+          loggedHours: (task.loggedHours || 0) + entry.hours,
+          actualHours: (task.actualHours || 0) + entry.hours,
+          billableHours: deltas.billableHours !== undefined ? (task.billableHours || 0) + entry.hours : task.billableHours
+        });
+      }
     }
 
     const fullEntry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string } = {
@@ -2715,6 +2777,7 @@ export class CriticalPathEngine {
 
   /** Finds the tenant an event belongs to, from the entity in its payload or its project. */
   private async resolveEventTenant(event: DomainEvent): Promise<string | undefined> {
+    if (this.eventTenants.has(event)) return this.eventTenants.get(event);
     const p = event.payload as Record<string, any>;
     const owner = p.project ?? p.workflow ?? p.team;
     if (owner) return owner.tenantId ?? undefined;
