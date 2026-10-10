@@ -102,6 +102,7 @@ Calculates and returns the critical path analysis for the specified project.
 - `calendars=project` (default: one project calendar) or `calendars=assignee` (each task on its assignee's or team's schedule).
 - `levelResources=true|false`: with `calendars=assignee`, limits each assignee to one task at a time.
 - `levelingPriority=slack|priority|dueDate|order`.
+- `effort=estimate|remaining`: `remaining` schedules only `estimate - loggedHours` for in-progress tasks.
 
 Invalid values, or `levelResources=true` without assignee calendars, return `400`.
 
@@ -131,7 +132,8 @@ Critical path analysis across several projects. People, team pools and dependenc
 **Query**:
 - `projectIds=a,b`: projects to include. Default: every project the caller can read; unreadable projects are left out. An unreadable or unknown id returns `403` / `404`.
 - `projectOrder=b,a`: project priority for levelling.
-- `calendars`, `levelResources`, `levelingPriority`: as for the single-project route.
+- `includeHiddenWork=true`: also count every other project's work in the tenant toward capacity; unreadable tasks appear as `"hidden"`. Requires `workspace.manage` (`403` otherwise).
+- `calendars`, `levelResources`, `levelingPriority`, `effort`: as for the single-project route.
 
 Runs above the engine's `portfolioTaskLimit` (default 5000 tasks) return `400`.
 

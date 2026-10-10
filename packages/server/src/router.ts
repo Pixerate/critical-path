@@ -780,10 +780,15 @@ export class CriticalPathRouter {
     // Critical path across projects
     if (segments[0] === 'portfolio' && segments[1] === 'critical-path' && segments.length === 2 && method === 'GET') {
       const list = (name: string) => url.searchParams.get(name)?.split(',').map((v) => v.trim()).filter(Boolean);
+      const hidden = url.searchParams.get('includeHiddenWork');
+      if (hidden !== null && hidden !== 'true' && hidden !== 'false') {
+        throw new ValidationError('includeHiddenWork must be "true" or "false".');
+      }
       const portfolio = await engine.calculatePortfolioCriticalPath({
         ...criticalPathQuery(url),
         projectIds: list('projectIds'),
-        projectOrder: list('projectOrder')
+        projectOrder: list('projectOrder'),
+        includeHiddenWork: hidden === 'true'
       });
       return this.jsonResponse({ portfolio });
     }
@@ -951,5 +956,6 @@ function criticalPathQuery(url: URL) {
     throw new ValidationError('levelResources must be "true" or "false".');
   }
   const levelingPriority = (url.searchParams.get('levelingPriority') || undefined) as LevelingPriority | undefined;
-  return { calendars, ...(level !== null ? { levelResources: level === 'true' } : {}), levelingPriority };
+  const effort = (url.searchParams.get('effort') || undefined) as 'estimate' | 'remaining' | undefined;
+  return { calendars, ...(level !== null ? { levelResources: level === 'true' } : {}), levelingPriority, effort };
 }

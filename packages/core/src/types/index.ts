@@ -583,6 +583,11 @@ export interface CriticalPathConfig {
    * a time. Requires `criticalPathCalendars: 'assignee'` (or `calendars: 'assignee'` per call).
    */
   criticalPathLevelResources?: boolean;
+  /**
+   * Default `effort` for critical path analysis: `'estimate'` (full estimates) or `'remaining'`
+   * (in-progress tasks schedule only `estimate - loggedHours`).
+   */
+  criticalPathEffort?: 'estimate' | 'remaining';
   /** Most tasks `calculatePortfolioCriticalPath` analyses in one call. Default 5000. */
   portfolioTaskLimit?: number;
   initialData?: {

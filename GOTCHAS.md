@@ -338,4 +338,10 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `@critical-path/core` (`calculatePortfolioCriticalPath`), `GET /portfolio/critical-path`
 - **Symptom / Behavior**: A levelled portfolio shows someone free even though they are busy on another project. Requesting that project by id fails with `403`/`404`. Large workspaces fail with "above the limit".
 - **Root Cause**: Without `projectIds`, unreadable projects are left out entirely, so their work is not counted and nothing about them leaks. Results can therefore be optimistic for people who work on projects you cannot see. Runs are capped at `portfolioTaskLimit` (default 5000 tasks).
-- **Solution / Workaround**: Run portfolio analysis as an actor who can read every relevant project (for example, a service account with viewer access), or accept the optimistic result. Pass `projectIds` to stay under the limit, or raise `portfolioTaskLimit` if the server can afford it.
+- **Solution / Workaround**: Pass `includeHiddenWork: true` as an actor with `workspace.manage`: unreadable projects then count toward capacity and appear only as `'hidden'`. Alternatively, run as an actor who can read every relevant project (for example, a service account with viewer access), or accept the optimistic result. Pass `projectIds` to stay under the limit, or raise `portfolioTaskLimit` if the server can afford it.
+
+### `effort: 'remaining'` Trusts Logged Hours
+- **Area / Package**: `@critical-path/core` (`getTaskScheduledHours`, `criticalPathEffort`)
+- **Symptom / Behavior**: With `effort: 'remaining'`, an in-progress task with lots of logged time finishes immediately, pulling dates in, while one with nothing logged keeps its full estimate.
+- **Root Cause**: Remaining effort is `max(0, estimate - loggedHours)` for in-progress tasks only; logged time that was not really progress still counts.
+- **Solution / Workaround**: Use it where time tracking is reliable. Keep `'estimate'` (the default) otherwise, or re-estimate tasks that run over.

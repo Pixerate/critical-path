@@ -267,6 +267,10 @@ await engine.createTeam({ name: 'Agency', memberIds: [], headcount: 2 });       
 
 Completed and canceled tasks (by `semanticStatus`, or the default `done` / `canceled` statuses) take **no time** in critical path analysis and occupy nobody when levelling. Their successors can start at the project start, and dates reflect only the remaining work.
 
+### Remaining effort
+
+By default every unfinished task is scheduled for its full estimate. With `effort: 'remaining'` (or `criticalPathEffort: 'remaining'` on the engine), in-progress tasks are scheduled for what is left: `max(0, estimate - loggedHours)`, divided by `allocation`. A 16-hour task with 10 hours logged takes 6 more. Tasks that have not started use their full estimate even if time was logged against them, and an in-progress task logged at or over its estimate takes no further time. This relies on logged hours being accurate, so it is opt-in. Over HTTP: `?effort=remaining`.
+
 ### Across projects (portfolio)
 
 Levelling one project ignores what its people are doing elsewhere. `calculatePortfolioCriticalPath` analyses several projects at once:
@@ -288,7 +292,8 @@ portfolio.overallocations; // across all included projects
 - **Per-project dates.** Each project's tasks start no earlier than that project's `startDate` and use its calendar; `projectStartDate` and `schedule` are fallbacks for projects without them. Slack is measured against each task's own project end.
 - **Dependencies between projects** are honoured: a task waiting on a task in another included project starts after it. Single-project analysis ignores such dependencies.
 - **Access.** Only projects the caller can read are included. Without `projectIds`, unreadable projects are left out entirely, so their work is not counted and nothing about them is revealed (results can be optimistic). An unreadable or unknown id in `projectIds` is rejected (`403` / `404`).
-- **Size.** Runs above `portfolioTaskLimit` tasks (engine config, default 5000) are rejected; pass fewer `projectIds`.
+- **Hidden work.** With `includeHiddenWork: true`, every other project in the caller's tenant, including ones they cannot read, counts toward people's and teams' capacity without appearing in the results. Tasks from unreadable projects appear only as `'hidden'` (in `waitingOn` and over-allocation task lists); tasks from readable background projects keep their ids. Over-allocations are reported only when they involve a task in the results. This requires `workspace.manage`. With the default role policy, the people who have that permission are superusers, who can already read every project, so it matters with a custom `canManageWorkspace` (for example, a planner role) or your own policy.
+- **Size.** Runs above `portfolioTaskLimit` tasks (engine config, default 5000, counting hidden work) are rejected; pass fewer `projectIds`.
 
 Over HTTP: `GET /portfolio/critical-path?projectIds=a,b&calendars=assignee&levelResources=true&projectOrder=b`. Client: `calculatePortfolioCriticalPath(options)`. MCP: `calculate_portfolio_critical_path`.
 ---

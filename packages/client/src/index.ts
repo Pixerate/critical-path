@@ -368,7 +368,7 @@ export class CriticalPathClient {
    * them; `projectOrder` ranks projects for levelling.
    */
   async calculatePortfolioCriticalPath(
-    options: CriticalPathQueryOptions & { projectIds?: string[]; projectOrder?: string[] } = {}
+    options: CriticalPathQueryOptions & { projectIds?: string[]; projectOrder?: string[]; includeHiddenWork?: boolean } = {}
   ): Promise<PortfolioCriticalPathAnalysis> {
     const res = await this.request<{ portfolio: PortfolioCriticalPathAnalysis }>(`/portfolio/critical-path${criticalPathQuery(options)}`);
     return res.portfolio;
@@ -910,14 +910,20 @@ export interface CriticalPathQueryOptions {
   calendars?: 'project' | 'assignee';
   levelResources?: boolean;
   levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
+  /** `'remaining'`: in-progress tasks schedule only `estimate - loggedHours`. */
+  effort?: 'estimate' | 'remaining';
 }
 
-function criticalPathQuery(options: CriticalPathQueryOptions & { projectIds?: string[]; projectOrder?: string[] }): string {
+function criticalPathQuery(
+  options: CriticalPathQueryOptions & { projectIds?: string[]; projectOrder?: string[]; includeHiddenWork?: boolean }
+): string {
   const params = new URLSearchParams();
+  if (options.includeHiddenWork) params.set('includeHiddenWork', 'true');
   if (options.projectIds) params.set('projectIds', options.projectIds.join(','));
   if (options.projectOrder) params.set('projectOrder', options.projectOrder.join(','));
   if (options.calendars) params.set('calendars', options.calendars);
   if (options.levelResources !== undefined) params.set('levelResources', String(options.levelResources));
   if (options.levelingPriority) params.set('levelingPriority', options.levelingPriority);
+  if (options.effort) params.set('effort', options.effort);
   return params.size ? `?${params}` : '';
 }

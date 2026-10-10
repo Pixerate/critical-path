@@ -344,9 +344,11 @@ export const addCommentTool = defineTool<{ taskId: string; content: string }>({
 export const calculatePortfolioCriticalPathTool = defineTool<{
   projectIds?: string[];
   projectOrder?: string[];
+  includeHiddenWork?: boolean;
   calendars?: 'project' | 'assignee';
   levelResources?: boolean;
   levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
+  effort?: 'estimate' | 'remaining';
 }>({
   name: 'calculate_portfolio_critical_path',
   title: 'Calculate Portfolio Critical Path',
@@ -355,12 +357,20 @@ export const calculatePortfolioCriticalPathTool = defineTool<{
   zodSchema: z.object({
     projectIds: z.array(z.string()).optional().describe('Projects to include (default: every project you can read)'),
     projectOrder: z.array(z.string()).optional().describe('Project ids in priority order for levelling; unlisted projects come last'),
+    includeHiddenWork: z
+      .boolean()
+      .optional()
+      .describe("Also count other projects' work (even unreadable ones, shown only as 'hidden') toward people's capacity. Requires workspace.manage"),
     calendars: z.enum(['project', 'assignee']).optional().describe("'assignee' schedules each task on its assignee's or team's calendar"),
     levelResources: z.boolean().optional().describe("With calendars 'assignee': share people and team pools across the projects"),
     levelingPriority: z
       .enum(['slack', 'priority', 'dueDate', 'order'])
       .optional()
-      .describe('Which ready task gets an assignee first when levelling (default: least slack, then task priority)')
+      .describe('Which ready task gets an assignee first when levelling (default: least slack, then task priority)'),
+    effort: z
+      .enum(['estimate', 'remaining'])
+      .optional()
+      .describe("'remaining' schedules only estimate minus logged hours for in-progress tasks (default: full estimates)")
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target) => (target as any).calculatePortfolioCriticalPath(args)
@@ -371,6 +381,7 @@ export const calculateCriticalPathTool = defineTool<{
   calendars?: 'project' | 'assignee';
   levelResources?: boolean;
   levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
+  effort?: 'estimate' | 'remaining';
 }>({
   name: 'calculate_critical_path',
   title: 'Calculate Critical Path',
@@ -388,7 +399,11 @@ export const calculateCriticalPathTool = defineTool<{
     levelingPriority: z
       .enum(['slack', 'priority', 'dueDate', 'order'])
       .optional()
-      .describe('Which ready task gets an assignee first when levelling (default: least slack, then task priority)')
+      .describe('Which ready task gets an assignee first when levelling (default: least slack, then task priority)'),
+    effort: z
+      .enum(['estimate', 'remaining'])
+      .optional()
+      .describe("'remaining' schedules only estimate minus logged hours for in-progress tasks (default: full estimates)")
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
@@ -396,8 +411,8 @@ export const calculateCriticalPathTool = defineTool<{
     if (!projectId) {
       throw new Error('projectId is required to calculate critical path.');
     }
-    const { calendars, levelResources, levelingPriority } = args;
-    return (target as any).calculateCriticalPath(projectId, { calendars, levelResources, levelingPriority });
+    const { calendars, levelResources, levelingPriority, effort } = args;
+    return (target as any).calculateCriticalPath(projectId, { calendars, levelResources, levelingPriority, effort });
   }
 });
 

@@ -452,6 +452,15 @@ describe('@critical-path/server Router Tests', () => {
       expect((await (await portfolioUrl('')).json()).portfolio.projects).toHaveLength(2);
       expect((await portfolioUrl('?projectIds=missing')).status).toBe(404);
       expect((await portfolioUrl('?levelResources=true')).status).toBe(400);
+      expect((await portfolioUrl('?includeHiddenWork=maybe')).status).toBe(400);
+      // Background work from the other project still pushes this one out, but only this one is returned
+      const withOther = (await (await portfolioUrl(`?projectIds=${proj.id}&calendars=assignee&levelResources=true&includeHiddenWork=true&projectOrder=${other.id}`)).json()).portfolio;
+      expect(withOther.projects.map((p: { projectId: string }) => p.projectId)).toEqual([proj.id]);
+      // Alice: C (other project) Thu, A Mon-Tue (no Fridays), B Wed
+      expect(withOther.projects[0].projectEndDate).toBe('2026-10-14T17:00:00.000Z');
+      expect(withOther.projects[0].tasks.find((t: { waitingOn?: string }) => t.waitingOn)?.waitingOn).toBeDefined();
+      expect((await get('?effort=remaining')).status).toBe(200);
+      expect((await get('?effort=guess')).status).toBe(400);
     });
 
     it('rejects dependency cycles created over HTTP with 409', async () => {
