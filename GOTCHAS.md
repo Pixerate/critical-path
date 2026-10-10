@@ -345,3 +345,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: With `effort: 'remaining'`, an in-progress task with lots of logged time finishes immediately, pulling dates in, while one with nothing logged keeps its full estimate.
 - **Root Cause**: Remaining effort is `max(0, estimate - loggedHours)` for in-progress tasks only; logged time that was not really progress still counts.
 - **Solution / Workaround**: Use it where time tracking is reliable. Keep `'estimate'` (the default) otherwise, or re-estimate tasks that run over.
+
+### The Router Only Dispatches Exact Routes and JSON Bodies
+- **Area / Package**: `@critical-path/server` (`CriticalPathRouter`)
+- **Symptom / Behavior**: A request that used to work now gets `404`, `405` or `415`. Typical causes: a path with an extra segment, a method the route doesn't support, or a POST/PATCH sent without `Content-Type: application/json` (for example `fetch(url, { method: 'POST', body: JSON.stringify(x) })`, which sends `text/plain`).
+- **Root Cause**: Built-in routes used to match on leading segments, so `DELETE /tasks/:id/anything` fell through to `DELETE /tasks/:id` and deleted the task. Bodies were parsed as JSON whatever their type, which allowed cross-site form posts. Now only paths in `ROUTES` (openapi.ts) or `ROUTE_ALIASES` reach handlers, and non-empty bodies must be JSON.
+- **Solution / Workaround**: Send `Content-Type: application/json` (the client SDK always does). When adding a built-in route, add it to `ROUTES`, otherwise the router returns `404` for it. Plugin routes are matched first and are unaffected.

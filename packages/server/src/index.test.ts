@@ -392,26 +392,87 @@ describe('@critical-path/server Router Tests', () => {
     expect(globalWorkloadData.workload.buckets.length).toBeGreaterThan(0);
   });
 
-  it('handles agent status updates via POST /status', async () => {
-    const router = new CriticalPathRouter();
-    const req = new Request('http://localhost:3000/api/critical-path/status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        status: 'Executing compilation step',
-        taskId: 't-123',
-        projectId: 'p-456',
-        details: 'compiling typescript files',
-        isEngaged: true
-      })
+  it('publishes agent status for tasks the caller can update, in their tenant only', async () => {
+    const router = new CriticalPathRouter(undefined, {
+      getContext: (request) => ({ userId: request.headers.get('x-user') ?? 'anon', tenantId: request.headers.get('x-tenant') ?? undefined })
     });
+    const acme = router.engine.withActor({ userId: 'a', tenantId: 'acme' });
+    const project = await acme.createProject({ name: 'Acme' });
+    const task = await acme.createTask({ projectId: project.id, title: 'Build' });
+    const events: Array<{ name: string; id: string; payload: Record<string, unknown> }> = [];
+    router.engine.events.subscribe('agent.status_updated', (e) => void events.push(e as never));
 
-    const res = await router.handleRequest(req);
+    const post = (body: unknown, tenant = 'acme') =>
+      router.handleRequest(
+        new Request('http://localhost:3000/api/critical-path/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-user': 'agent-1', 'x-tenant': tenant },
+          body: JSON.stringify(body)
+        })
+      );
+
+    const res = await post({ status: 'Executing compilation step', taskId: task.id, details: 'compiling', isEngaged: true });
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.success).toBe(true);
-    expect(data.status).toBe('Executing compilation step');
+    expect(data).toMatchObject({ success: true, status: 'Executing compilation step' });
     expect(typeof data.timestamp).toBe('number');
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      name: 'agent.status_updated',
+      payload: { taskId: task.id, projectId: project.id, details: 'compiling', actorId: 'agent-1', tenantId: 'acme' }
+    });
+    expect(events[0].id).toMatch(/^evt_/);
+
+    // Another tenant cannot target this project, and nothing is published
+    expect((await post({ status: 'pwned', projectId: project.id }, 'globex')).status).toBe(404);
+    expect((await post({ status: 'pwned', taskId: task.id }, 'globex')).status).toBe(404);
+    // Strict body: a target is required, unknown fields and bad types are rejected
+    expect((await post({ status: 'idle' })).status).toBe(400);
+    expect((await post({ status: 'x', projectId: project.id, actorId: 'someone' })).status).toBe(400);
+    expect((await post(null)).status).toBe(400);
+    expect(events).toHaveLength(1);
+  });
+
+  it('serves only exact routes: unknown sub-paths are 404 and wrong methods 405', async () => {
+    const router = new CriticalPathRouter();
+    const base = 'http://localhost/api/critical-path';
+    const project = await router.engine.createProject({ name: 'P' });
+    const task = await router.engine.createTask({ projectId: project.id, title: 'T' });
+    const send = (method: string, path: string, body?: unknown) =>
+      router.handleRequest(
+        new Request(`${base}${path}`, { method, ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) })
+      );
+
+    expect((await send('DELETE', `/tasks/${task.id}/time-entries/e1`)).status).toBe(404);
+    expect(await router.engine.getTask(task.id)).not.toBeNull();
+    expect((await send('PATCH', `/projects/${project.id}/members`, { name: 'Renamed' })).status).toBe(404);
+    expect((await router.engine.getProject(project.id))?.name).toBe('P');
+    expect((await send('GET', '/activities/zzz')).status).toBe(404);
+    expect((await send('GET', `/projects/${project.id}/extra/deep`)).status).toBe(404);
+
+    const wrongMethod = await send('DELETE', '/projects');
+    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethod.headers.get('Allow')).toBe('GET, POST');
+    expect((await send('PUT', `/projects/${project.id}`, { name: 'Put' })).status).toBe(200); // PUT is an alias for PATCH
+
+    // Aliases still work
+    for (const path of ['/openapi.json', `/projects/${project.id}/timeline-ladder`, `/projects/${project.id}/workload-distribution`, `/tasks/${task.id}/state`, `/tasks/${task.id}/allowed-transitions`]) {
+      expect((await send('GET', path)).status, path).toBe(200);
+    }
+  });
+
+  it('rejects non-JSON request bodies with 415', async () => {
+    const router = new CriticalPathRouter();
+    const post = (body: string, type?: string) =>
+      router.handleRequest(
+        new Request('http://localhost/api/critical-path/projects', { method: 'POST', body, ...(type ? { headers: { 'Content-Type': type } } : {}) })
+      );
+    // A cross-site form can send text/plain or form data without a CORS preflight
+    expect((await post(JSON.stringify({ name: 'csrf' }))).status).toBe(415);
+    expect((await post('name=csrf', 'application/x-www-form-urlencoded')).status).toBe(415);
+    expect((await post(JSON.stringify({ name: 'ok' }), 'application/json; charset=utf-8')).status).toBe(201);
+    expect((await post(JSON.stringify({ name: 'vendor' }), 'application/vnd.api+json')).status).toBe(201);
+    expect(await router.engine.getProjects()).toHaveLength(2);
   });
 
   describe('engine invariants and error mapping', () => {
@@ -615,7 +676,7 @@ describe('@critical-path/server Router Tests', () => {
       let calls = 0;
       const router = new CriticalPathRouter(undefined, { onError: () => void calls++ });
       const res = await router.handleRequest(
-        new Request('http://localhost:3000/api/critical-path/projects', { method: 'POST', body: '{bad' })
+        new Request('http://localhost:3000/api/critical-path/projects', { method: 'POST', body: '{bad', headers: { 'Content-Type': 'application/json' } })
       );
       expect(res.status).toBe(400);
       expect(calls).toBe(0);
@@ -1089,7 +1150,7 @@ describe('@critical-path/server Router Tests', () => {
     expect(streamed.status).toBe(413);
 
     const small = await router.handleRequest(
-      new Request('http://localhost/api/critical-path/projects', { method: 'POST', body: JSON.stringify({ name: 'ok' }) })
+      new Request('http://localhost/api/critical-path/projects', { method: 'POST', body: JSON.stringify({ name: 'ok' }), headers: { 'Content-Type': 'application/json' } })
     );
     expect(small.status).toBe(201);
   });

@@ -1,6 +1,6 @@
 import { CriticalPathEngine, ValidationError, type AuthorType, type CriticalPathConfig, type LevelingPriority, type PluginRoute } from '@critical-path/core';
 import * as schemas from '@critical-path/core/schemas';
-import { buildOpenApiDocument } from './openapi.js';
+import { buildOpenApiDocument, ROUTES } from './openapi.js';
 
 /** Actor for requests when no `getContext` is configured or it resolves no user. */
 export const ANONYMOUS_ACTOR = Object.freeze({ userId: 'anonymous', username: 'Anonymous', actorType: 'user' as const });
@@ -37,6 +37,42 @@ export interface CorsOptions {
   allowHeaders?: string[];
   /** Seconds browsers may cache preflight results. */
   maxAge?: number;
+}
+
+class UnsupportedMediaTypeError extends Error {
+  constructor() {
+    super('Request bodies must be JSON (Content-Type: application/json).');
+    this.name = 'UnsupportedMediaTypeError';
+  }
+}
+
+/** Routes served under other names than in the OpenAPI document. */
+const ROUTE_ALIASES: Array<{ method: string; path: string }> = [
+  { method: 'get', path: '/openapi.json' },
+  { method: 'get', path: '/projects/{projectId}/timeline-ladder' },
+  { method: 'get', path: '/projects/{projectId}/workload-distribution' },
+  { method: 'get', path: '/tasks/{taskId}/state' },
+  { method: 'get', path: '/tasks/{taskId}/allowed-transitions' }
+];
+
+const BUILT_IN_ROUTES = [...ROUTES, ...ROUTE_ALIASES].map((r) => ({
+  method: r.method.toUpperCase(),
+  pattern: r.path.split('/').filter(Boolean)
+}));
+
+/**
+ * Methods allowed for `segments` among the built-in routes (PUT is accepted wherever PATCH is).
+ * Empty when no built-in route has this path shape.
+ */
+function allowedMethods(segments: string[]): Set<string> {
+  const methods = new Set<string>();
+  for (const { method, pattern } of BUILT_IN_ROUTES) {
+    if (pattern.length !== segments.length) continue;
+    if (!pattern.every((part, i) => part.startsWith('{') || part === segments[i])) continue;
+    methods.add(method);
+    if (method === 'PATCH') methods.add('PUT');
+  }
+  return methods;
 }
 
 class PayloadTooLargeError extends Error {
@@ -263,6 +299,16 @@ export class CriticalPathRouter {
       context: RequestContext | null | undefined;
     }
   ): Promise<Response> {
+    // Only exact routes reach the handlers below, so an unknown sub-path (e.g. DELETE
+    // /tasks/:id/anything) can never fall through to its parent resource's handler.
+    const allowed = allowedMethods(segments);
+    if (allowed.size === 0) return this.jsonResponse({ error: `Route not found: ${method} ${pathname}` }, 404);
+    if (!allowed.has(method)) {
+      const response = this.jsonResponse({ error: `Method ${method} not allowed for ${pathname}` }, 405);
+      response.headers.set('Allow', [...allowed].sort().join(', '));
+      return response;
+    }
+
     // OpenAPI contract (behind the same auth as every other route)
     if (segments[0] === 'openapi.json' && segments.length === 1 && method === 'GET') {
       return this.jsonResponse(buildOpenApiDocument({ serverUrl: this.openApiServerUrl(url, subpath) }));
@@ -821,27 +867,9 @@ export class CriticalPathRouter {
     // Agent Status / Telemetry API
     if (segments[0] === 'status') {
       if (method === 'POST') {
-        const body = await this.readJson(request);
-        const status = typeof body.status === 'string' ? body.status : 'active';
-        if (engine.events) {
-          engine.events.publish({
-            type: 'agent.status_updated' as any,
-            aggregateId: body.taskId || body.projectId || 'system',
-            payload: {
-              status,
-              taskId: body.taskId,
-              projectId: body.projectId,
-              details: body.details,
-              isEngaged: body.isEngaged ?? true,
-              timestamp: Date.now()
-            }
-          } as any);
-        }
-        return this.jsonResponse({
-          success: true,
-          status,
-          timestamp: Date.now()
-        });
+        const body = await this.readBody(request, schemas.ReportAgentStatusSchema);
+        await engine.reportAgentStatus(body);
+        return this.jsonResponse({ success: true, status: body.status, timestamp: Date.now() });
       }
     }
 
@@ -868,7 +896,11 @@ export class CriticalPathRouter {
     return `${url.origin}${root}`;
   }
 
-  /** Reads a JSON body, stopping as soon as it exceeds `maxBodyBytes`. */
+  /**
+   * Reads a JSON body, stopping as soon as it exceeds `maxBodyBytes`. Non-empty bodies must be
+   * declared as JSON: browsers can send cross-site form posts as text/plain or form data without a
+   * preflight, so accepting those would let other sites act with a user's cookies.
+   */
   private async readJson(request: Request): Promise<any> {
     const declared = Number(request.headers.get('Content-Length'));
     if (Number.isFinite(declared) && declared > this.maxBodyBytes) throw new PayloadTooLargeError(this.maxBodyBytes);
@@ -889,6 +921,10 @@ export class CriticalPathRouter {
         text += decoder.decode(value, { stream: true });
       }
       text += decoder.decode();
+    }
+    const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
+    if (text.trim() && type !== 'application/json' && !type.endsWith('+json')) {
+      throw new UnsupportedMediaTypeError();
     }
     try {
       return JSON.parse(text);
@@ -917,6 +953,8 @@ export class CriticalPathRouter {
         return this.jsonResponse({ error: e.message }, 404);
       case 'PayloadTooLargeError':
         return this.jsonResponse({ error: e.message }, 413);
+      case 'UnsupportedMediaTypeError':
+        return this.jsonResponse({ error: e.message }, 415);
       case 'ForbiddenError':
         return this.jsonResponse({ error: e.message }, 403);
     }

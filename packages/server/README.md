@@ -110,9 +110,11 @@ const doc = buildOpenApiDocument({ serverUrl: 'https://app.example.com/api/criti
 | `400` | Malformed JSON, invalid body (with `issues`), `ValidationError`, workflow transition or custom field validation failures |
 | `401` | `requireAuth` is set and no user was resolved |
 | `403` | The engine's `authorize` policy denies the action (`ForbiddenError`) |
-| `404` | Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ "success": true }`) |
+| `404` | Unknown route (paths must match exactly; extra segments never fall through to a parent route), `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ "success": true }`) |
+| `405` | Known path, wrong method (with an `Allow` header) |
 | `409` | `CircularDependencyError` (body includes `cyclePath`) |
 | `413` | Request body larger than `maxBodyBytes` |
+| `415` | Non-empty body not sent as `application/json` (blocks cross-site form posts) |
 | `500` | Unexpected errors. The body is always `{ "error": "Internal Server Error" }`; the real error is logged with `console.error`. |
 
 `OPTIONS` preflight requests return `204` with CORS headers.

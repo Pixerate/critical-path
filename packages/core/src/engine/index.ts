@@ -59,6 +59,7 @@ import {
   TaskStatusChangedEvent,
   TaskBlockedEvent,
   TaskUnblockedEvent,
+  AgentStatusUpdatedEvent,
   TaskDeletedEvent,
   ProjectCreatedEvent,
   ProjectUpdatedEvent,
@@ -2291,6 +2292,50 @@ export class CriticalPathEngine {
       });
     }
     return deleted;
+  }
+
+  // --- Agent status ---
+
+  /**
+   * Publishes an `agent.status_updated` event (delivered to webhooks) saying what the caller is
+   * doing on a task or project. Requires `task.update` on the project, so status can only be
+   * reported where the caller works, and only within their tenant.
+   */
+  async reportAgentStatus(input: {
+    status: string;
+    taskId?: string;
+    projectId?: string;
+    details?: string;
+    isEngaged?: boolean;
+  }): Promise<void> {
+    let projectId = input.projectId;
+    if (input.taskId) {
+      const task = await this.getTask(input.taskId);
+      if (!task) throw new NotFoundError(`Task "${input.taskId}" not found.`);
+      if (projectId && projectId !== task.projectId) {
+        throw new ValidationError(`Task "${input.taskId}" is not in project "${projectId}".`);
+      }
+      projectId = task.projectId;
+    }
+    if (!projectId) throw new ValidationError('taskId or projectId is required.');
+    await this.requireProjectAccess('task.update', projectId);
+    const project = await this.store.getProject(projectId);
+    if (!project) throw new NotFoundError(`Project "${projectId}" not found.`);
+
+    await this.publishEvent<AgentStatusUpdatedEvent>({
+      name: 'agent.status_updated',
+      aggregateId: input.taskId ?? projectId,
+      aggregateType: input.taskId ? 'Task' : 'Project',
+      payload: {
+        status: input.status,
+        ...(input.taskId ? { taskId: input.taskId } : {}),
+        projectId,
+        ...(input.details !== undefined ? { details: input.details } : {}),
+        isEngaged: input.isEngaged ?? true,
+        ...(this.actor ? { actorId: this.actor.userId } : {}),
+        tenantId: project.tenantId
+      }
+    });
   }
 
   // --- Ladder of Abstraction & Critical Path Method ---
