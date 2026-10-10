@@ -21,7 +21,7 @@
     "astro": "^5.4.0",
     "lucide-astro": "^0.556.0",
     "svelte": "^5.56.10",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
