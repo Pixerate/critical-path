@@ -63,10 +63,13 @@ describe.each(stores)('engine.createTask on %s', (_name, makeStore) => {
   it('round-trips every optional field through create and read', async () => {
     const engine = new CriticalPathEngine({ store: makeStore() });
     const project = await engine.createProject({ name: 'Fields' });
-    const created = await engine.createTask({ projectId: project.id, ...SAMPLE });
+    // parentId must name a real task in the same project
+    const parent = await engine.createTask({ projectId: project.id, title: 'Parent' });
+    const sample = { ...SAMPLE, parentId: parent.id };
+    const created = await engine.createTask({ projectId: project.id, ...sample });
     const stored = await engine.getTask(created.id);
 
-    for (const [field, value] of Object.entries(SAMPLE)) {
+    for (const [field, value] of Object.entries(sample)) {
       expect({ field, value: (created as unknown as Record<string, unknown>)[field] }).toEqual({ field, value });
       expect({ field, value: (stored as unknown as Record<string, unknown>)[field] }).toEqual({ field, value });
     }

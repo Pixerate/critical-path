@@ -351,3 +351,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: A request that used to work now gets `404`, `405` or `415`. Typical causes: a path with an extra segment, a method the route doesn't support, or a POST/PATCH sent without `Content-Type: application/json` (for example `fetch(url, { method: 'POST', body: JSON.stringify(x) })`, which sends `text/plain`).
 - **Root Cause**: Built-in routes used to match on leading segments, so `DELETE /tasks/:id/anything` fell through to `DELETE /tasks/:id` and deleted the task. Bodies were parsed as JSON whatever their type, which allowed cross-site form posts. Now only paths in `ROUTES` (openapi.ts) or `ROUTE_ALIASES` reach handlers, and non-empty bodies must be JSON.
 - **Solution / Workaround**: Send `Content-Type: application/json` (the client SDK always does). When adding a built-in route, add it to `ROUTES`, otherwise the router returns `404` for it. Plugin routes are matched first and are unaffected.
+
+### Member Changes That Touch Admins Need `project.manage_admins`
+- **Area / Package**: `@critical-path/core` (`updateProject`, `createRolePolicy`, custom policies)
+- **Symptom / Behavior**: A project manager gets `403` when saving members, or a custom policy that used to allow member edits now rejects some of them.
+- **Root Cause**: `project.manage_members` alone let managers grant any role, including `admin` to themselves, and then delete the project. Adding, removing or changing an `admin` entry now also requires `project.manage_admins` (granted to the `admin` role and superusers).
+- **Solution / Workaround**: Have an admin make admin changes, and keep the existing admin entries unchanged when a manager edits other members. Custom policies must grant `project.manage_admins` where admin changes should be allowed.
+
+### Task Parents Are Validated
+- **Area / Package**: `@critical-path/core` (`createTask`, `updateTask`)
+- **Symptom / Behavior**: Setting `parentId` fails with "was not found in this project", "cannot be its own parent", or "cannot be its parent".
+- **Root Cause**: Parents must exist in the same project, and a task cannot become a subtask of itself or of its own descendant. Before this check, a cycle made `deleteTask` recurse until the process ran out of memory. Deletes now also skip tasks already being deleted in the same cascade, so cycles stored earlier can still be removed.
+- **Solution / Workaround**: Detach or move the descendant first. Data with existing cycles can be cleaned up by deleting either task in the cycle.

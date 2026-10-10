@@ -51,7 +51,7 @@ Team memberships are cached per engine and refreshed whenever a team changes thr
 | `project.read` | ✓ | ✓ | ✓ | ✓ |
 | `task.create`, `task.update`, `comment.create`, `attachment.create`, `time.log` |  | ✓ | ✓ | ✓ |
 | `task.delete`, `plan.manage` (iterations, containers, deliverables), `project.update`, `project.manage_members`, `comment.moderate`, `attachment.delete` |  |  | ✓ | ✓ |
-| `project.delete` |  |  |  | ✓ |
+| `project.delete`, `project.manage_admins` (adding, removing or changing an `admin` member) |  |  |  | ✓ |
 
 - Authors may edit and delete their own comments and attachments without moderator rights.
 - Actors whose `roles` include `admin` (configurable with `superuserRoles`) may do anything within their tenant.
@@ -106,3 +106,8 @@ createCriticalPathMcpServer({ engine, actor: { userId: 'claude', actorType: 'age
 ```
 
 Then add `claude` to the projects it should work on.
+
+
+### Managing admins
+
+Changing `members` needs `project.manage_members`. If the change would add, remove or alter an `admin` entry, it also needs `project.manage_admins`, which only project admins (and workspace superusers) have by default. A project manager can manage every other member but cannot promote themselves, demote the owner, or delete the project. Custom policies should grant `project.manage_admins` wherever they want admin changes to be allowed.

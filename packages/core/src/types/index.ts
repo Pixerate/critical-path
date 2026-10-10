@@ -921,6 +921,8 @@ export type AuthorizationAction =
   | 'project.update'
   | 'project.delete'
   | 'project.manage_members'
+  /** Adding, removing or changing a project `admin` member (on top of `project.manage_members`). */
+  | 'project.manage_admins'
   | 'task.create'
   | 'task.update'
   | 'task.delete'

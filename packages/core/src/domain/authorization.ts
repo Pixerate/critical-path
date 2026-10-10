@@ -24,7 +24,7 @@ const PROJECT_MANAGER: AuthorizationAction[] = [
   'comment.moderate',
   'attachment.delete'
 ];
-const PROJECT_ADMIN: AuthorizationAction[] = [...PROJECT_MANAGER, 'project.delete'];
+const PROJECT_ADMIN: AuthorizationAction[] = [...PROJECT_MANAGER, 'project.delete', 'project.manage_admins'];
 
 /** Actions each project role grants by default. */
 export const DEFAULT_ROLE_PERMISSIONS: Record<ProjectRole, readonly AuthorizationAction[]> = {

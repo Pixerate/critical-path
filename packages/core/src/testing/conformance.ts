@@ -330,6 +330,17 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
       expect(await store.getWebhook(webhook.id)).toMatchObject({ name: 'Hook', secret: 'whsec_x', events: ['*'], active: true, tenantId: 'tenant-1' });
     });
 
+    it('increments task hours atomically (if the adapter implements incrementTaskHours)', async () => {
+      const store = await createStore();
+      if (!store.incrementTaskHours) return;
+      const project = await store.createProject({ key: 'HRS', name: 'Hours' });
+      const task = await store.createTask({ projectId: project.id, title: 'T', status: 'todo', priority: 'medium' });
+      await Promise.all(Array.from({ length: 5 }, () => store.incrementTaskHours!(task.id, { loggedHours: 1, actualHours: 1 })));
+      const updated = await store.incrementTaskHours(task.id, { loggedHours: 0.5, billableHours: 2 });
+      expect(updated).toMatchObject({ loggedHours: 5.5, actualHours: 5, billableHours: 2 });
+      expect(await store.incrementTaskHours('missing', { loggedHours: 1 })).toBeNull();
+    });
+
     it('claims due webhook outbox jobs with a lease (if the adapter implements WebhookOutboxStore)', async () => {
       const outbox = (await createStore()) as unknown as Partial<WebhookOutboxStore>;
       if (!outbox.putWebhookJob || !outbox.claimWebhookJobs || !outbox.deleteWebhookJob) return;

@@ -743,6 +743,7 @@ Discrete interfaces are provided for repository segregation:
 - `DependencyRepository`
 - `WebhookRepository`
 - `StorageAdapter` (composition of all repositories)
+- `StorageAdapter.incrementTaskHours(taskId, deltas)` (optional: atomic hour totals for `logTime`; `SQLiteStore` and `InMemoryStore` implement it)
 - `StorageAdapter.transaction(fn)` (optional: makes cascading deletes atomic; `SQLiteStore` implements it)
 - `WebhookOutboxStore` (optional: `putWebhookJob`, `claimWebhookJobs`, `deleteWebhookJob`, for `OutboxWebhookQueue`)
 

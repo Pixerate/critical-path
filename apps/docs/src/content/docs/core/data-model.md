@@ -35,7 +35,7 @@ interface Task {
   loggedHours?: number;
   tags?: string[];
   customFields?: Record<string, unknown>;
-  parentId?: string;           // Subtasks support
+  parentId?: string;           // Parent task: must exist in the same project and cannot create a cycle
   createdAt: string;           // ISO-8601
   updatedAt: string;           // ISO-8601
 }
