@@ -96,6 +96,8 @@ describe('client ↔ server contract', () => {
 
     const portfolio = await client.calculatePortfolioCriticalPath({ projectIds: [project.id], calendars: 'assignee', levelResources: true });
     expect(portfolio.projects[0].projectEndDate).toBe(leveled.projectEndDate);
+    const remaining = await client.calculateCriticalPath(project.id, { effort: 'remaining' });
+    expect(remaining.projectId).toBe(project.id);
   });
 
   it('surfaces validation errors for fields the server rejects', async () => {

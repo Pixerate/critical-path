@@ -18,6 +18,7 @@ import {
   previousWorkingTime,
   parseDate
 } from './calendar.js';
+import { isTaskInProgress } from '../utils/status.js';
 
 export function getTaskDurationHours(task: Task): number {
   if (typeof task.estimatedHours === 'number' && task.estimatedHours >= 0) {
@@ -50,12 +51,20 @@ export function isTaskFinished(task: Task): boolean {
   return task.status === 'done' || task.status === 'canceled';
 }
 
+/** What effort critical path analysis schedules: the full estimate, or what remains on in-progress tasks. */
+export type EffortBasis = 'estimate' | 'remaining';
+
 /**
  * Working hours critical path analysis schedules for a task: 0 when it is finished (it needs no
- * more time and occupies nobody), otherwise its elapsed hours.
+ * more time and occupies nobody), otherwise its effort divided by its allocation. With
+ * `effort: 'remaining'`, an in-progress task's effort is `max(0, estimate - loggedHours)`.
  */
-export function getTaskScheduledHours(task: Task): number {
-  return isTaskFinished(task) ? 0 : getTaskElapsedHours(task);
+export function getTaskScheduledHours(task: Task, effort: EffortBasis = 'estimate'): number {
+  if (isTaskFinished(task)) return 0;
+  if (effort === 'remaining' && isTaskInProgress({ status: task.status, semanticStatus: task.semanticStatus })) {
+    return Math.max(0, getTaskDurationHours(task) - (task.loggedHours ?? 0)) / getTaskAllocation(task);
+  }
+  return getTaskElapsedHours(task);
 }
 
 export interface CPMOptions {
@@ -85,6 +94,12 @@ export interface CPMOptions {
    * due date, then slack) or `'order'` (creation order).
    */
   levelingPriority?: LevelingPriority;
+  /**
+   * `'estimate'` (default) schedules each unfinished task's full estimate. `'remaining'` schedules
+   * only what is left on in-progress tasks: `max(0, estimate - loggedHours)`. Finished tasks take
+   * no time either way.
+   */
+  effort?: EffortBasis;
 }
 
 export type LevelingPriority = 'slack' | 'priority' | 'dueDate' | 'order';
@@ -251,7 +266,7 @@ function scheduleOnDates(
       return [id, options.calendars === 'assignee' ? resolveTaskSchedule(task, { ...options, schedule: seg.schedule }) : seg.schedule];
     })
   );
-  const durationOf = new Map(taskIds.map((id) => [id, getTaskScheduledHours(taskMap.get(id)!)]));
+  const durationOf = new Map(taskIds.map((id) => [id, getTaskScheduledHours(taskMap.get(id)!, options.effort)]));
   const ctx: PassContext = { taskMap, calendarOf, durationOf, startOf: (id) => segmentOf.get(id)!.start };
   const endOfProjects = (dates: Dates) => {
     const ends = new Map(segments.map((seg) => [seg.projectId, latest(seg.taskIds.map((id) => dates.finish.get(id)!), seg.start)]));
@@ -670,6 +685,12 @@ export interface PortfolioProjectInput {
   projectStartDate?: string | Date;
   /** The project calendar. Default: `DEFAULT_WORK_SCHEDULE`. */
   schedule?: WorkSchedule;
+  /**
+   * Background work: the project's tasks take up people and team capacity but the project is
+   * left out of the results. `'hidden'` also replaces its task ids with `'hidden'` wherever they
+   * would appear (`waitingOn`, over-allocations); `'visible'` keeps them.
+   */
+  background?: 'visible' | 'hidden';
 }
 
 export interface PortfolioCPMOptions extends Omit<CPMOptions, 'projectStartDate' | 'schedule'> {
@@ -701,13 +722,30 @@ export function calculatePortfolioCPM(
     taskIds: p.tasks.map((t) => t.id)
   }));
   const result = scheduleOnDates(graph, segments, options, calculatedAt);
-  const ends = result.projects.map((a) => a.projectEndDate!).filter(Boolean).sort();
+
+  // Background projects are dropped from the results; hidden ones also have their task ids redacted.
+  const background = new Set(projects.filter((p) => p.background).map((p) => p.projectId));
+  const hiddenTasks = new Set(projects.filter((p) => p.background === 'hidden').flatMap((p) => p.tasks.map((t) => t.id)));
+  const backgroundTask = new Set(projects.filter((p) => p.background).flatMap((p) => p.tasks.map((t) => t.id)));
+  const redact = (id: string) => (hiddenTasks.has(id) ? 'hidden' : id);
+  const redactAll = (list: Overallocation[]) =>
+    list.map((o) => ({ ...o, taskIds: [...new Set(o.taskIds.map(redact))] }));
+  const shown = result.projects
+    .filter((a) => !background.has(a.projectId))
+    .map((a) => ({
+      ...a,
+      tasks: a.tasks.map((t) => (t.waitingOn ? { ...t, waitingOn: redact(t.waitingOn) } : t)),
+      ...(a.overallocations ? { overallocations: redactAll(a.overallocations) } : {})
+    }));
+
+  const ends = shown.map((a) => a.projectEndDate!).filter(Boolean).sort();
   return {
     calculatedAt,
-    projects: result.projects,
+    projects: shown,
     ...(ends.length ? { projectEndDate: ends[ends.length - 1] } : {}),
     ...(options.levelResources ? { leveled: true } : {}),
-    overallocations: result.overallocations
+    // Only periods that involve a task in the results; other projects' own clashes are not reported.
+    overallocations: redactAll(result.overallocations.filter((o) => o.taskIds.some((id) => !backgroundTask.has(id))))
   };
 }
 
@@ -755,7 +793,7 @@ export function calculateCPM(
 
   for (const id of topoOrder) {
     const task = taskMap.get(id)!;
-    const duration = getTaskScheduledHours(task);
+    const duration = getTaskScheduledHours(task, options.effort);
     const prereqs = prerequisites.get(id) || new Set();
 
     let maxPrereqFinish = 0;
@@ -789,7 +827,7 @@ export function calculateCPM(
   for (let i = topoOrder.length - 1; i >= 0; i--) {
     const id = topoOrder[i];
     const task = taskMap.get(id)!;
-    const duration = getTaskScheduledHours(task);
+    const duration = getTaskScheduledHours(task, options.effort);
     const succs = successors.get(id) || new Set();
 
     let minSuccLateStart = totalDurationHours;
@@ -832,7 +870,7 @@ export function calculateCPM(
     }
 
     const task = taskMap.get(id)!;
-    const duration = getTaskScheduledHours(task);
+    const duration = getTaskScheduledHours(task, options.effort);
 
     const earlyStartDate = projectStartDate
       ? addWorkingHours(projectStartDate, es, schedule).toISOString()
