@@ -74,6 +74,22 @@ export interface TaskUnblockedEvent extends DomainEvent<{
   readonly aggregateType: 'Task';
 }
 
+/** An agent (or person) reporting what they are doing on a task or project; see `engine.reportAgentStatus`. */
+export interface AgentStatusUpdatedEvent
+  extends DomainEvent<{
+    status: string;
+    taskId?: string;
+    projectId: string;
+    details?: string;
+    isEngaged: boolean;
+    actorId?: string;
+    /** The project's tenant, so webhooks are routed without another lookup. */
+    tenantId?: string;
+  }> {
+  readonly name: 'agent.status_updated';
+  readonly aggregateType: 'Task' | 'Project';
+}
+
 export interface TaskDeletedEvent extends DomainEvent<{ taskId: string; projectId: string; title: string }> {
   readonly name: 'task.deleted';
   readonly aggregateType: 'Task';
@@ -235,6 +251,7 @@ export interface DeliverableDeletedEvent extends DomainEvent<{ deliverableId: st
 }
 
 export type CriticalPathDomainEvent =
+  | AgentStatusUpdatedEvent
   | TaskCreatedEvent
   | TaskUpdatedEvent
   | TaskStatusChangedEvent
@@ -323,6 +340,7 @@ export class DomainEventBus {
 
 /** Every domain event name, e.g. for validating webhook subscriptions at runtime. */
 export const DOMAIN_EVENT_NAMES = [
+  'agent.status_updated',
   'attachment.created',
   'attachment.deleted',
   'comment.created',

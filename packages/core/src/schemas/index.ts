@@ -204,6 +204,17 @@ export const CreateTaskSchema = strictObject({ projectId: nonEmpty, ...taskField
 
 export const UpdateTaskSchema = strictObject(taskFields).partial();
 
+// --- Agent status ---
+
+export const ReportAgentStatusSchema = strictObject({
+  status: z.string().trim().min(1).max(100).default('active'),
+  taskId: z.string().min(1).optional(),
+  projectId: z.string().min(1).optional(),
+  details: z.string().max(2000).optional(),
+  isEngaged: z.boolean().default(true)
+}).refine((v) => v.taskId || v.projectId, { message: 'taskId or projectId is required' });
+export type ReportAgentStatusBody = z.infer<typeof ReportAgentStatusSchema>;
+
 // --- Dependencies ---
 
 export const CreateDependencySchema = strictObject({

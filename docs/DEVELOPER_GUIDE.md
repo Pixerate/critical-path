@@ -271,15 +271,18 @@ All endpoints return JSON responses.
 ### Request Validation & OpenAPI
 - Request bodies are parsed with the strict schemas in `@critical-path/core/schemas`. Invalid bodies, server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, owning `projectId` on updates), identity fields and unknown keys return `400` with `issues: [{ path, message }]`.
 - `GET /api/critical-path/openapi.json` returns an OpenAPI 3.1 document generated from the same schemas. `buildOpenApiDocument()` from `@critical-path/server` builds it without a router.
-- When adding a route, add it to `ROUTES` in `packages/server/src/openapi.ts`; `openapi.test.ts` calls every documented route and fails on unknown routes or mismatched response keys.
+- When adding a route, add it to `ROUTES` in `packages/server/src/openapi.ts` (the router only dispatches paths listed there or in `ROUTE_ALIASES`); `openapi.test.ts` calls every documented route and fails on unknown routes or mismatched response keys.
 
 ### Error Responses
 - `400` - Malformed JSON body, invalid body (response includes `issues`), `ValidationError`, illegal workflow transition, custom field or attachment validation failure.
 - `401` - `requireAuth` is enabled and `getContext` resolved no user.
 - `403` - The engine's `authorize` policy denied the action (`ForbiddenError`). Projects the caller cannot read, or in another tenant, return `404` instead.
-- `404` - Unknown route, `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ success: true }`; client SDK delete methods resolve to `false` on 404).
+- `404` - Unknown route (built-in routes match exact paths only), `NotFoundError`, or `DELETE` of a resource that does not exist (successful deletes return `{ success: true }`; client SDK delete methods resolve to `false` on 404).
 - `409` - `CircularDependencyError` (response includes `cyclePath`).
+- `405` - Known path with the wrong method (`Allow` header included).
 - `413` - Request body larger than the router's `maxBodyBytes` option (default 10 MiB).
+- `415` - Non-empty body not declared as JSON; this blocks cross-site form posts against cookie-based auth.
+- `POST /status` (agent status, delivered to webhooks as `agent.status_updated`) requires `task.update` on the task's or project's project.
 - `500` - Unexpected error. The body is `Internal Server Error` unless `exposeErrors` is enabled (default: only when `NODE_ENV === 'development'`). Pass `onError(error, request)` as a router/adapter option to report errors or return a custom `Response`; otherwise they are logged with `console.error`.
 - `OPTIONS` preflight requests return `204` with CORS headers.
 

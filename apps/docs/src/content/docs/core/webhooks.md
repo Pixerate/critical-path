@@ -3,7 +3,7 @@ title: Webhooks
 description: Signed, retried webhook deliveries for every domain event, with tenant routing and a pluggable delivery queue.
 ---
 
-Every domain event the engine publishes (`task.created`, `task.status_changed`, `time.logged`, `project.deleted`, ...) can be delivered to HTTP endpoints. Deliveries are signed, time out, and retry with exponential backoff.
+Every domain event the engine publishes (`task.created`, `task.status_changed`, `time.logged`, `project.deleted`, `agent.status_updated`, ...) can be delivered to HTTP endpoints. Deliveries are signed, time out, and retry with exponential backoff.
 
 ---
 
