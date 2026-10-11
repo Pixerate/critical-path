@@ -18,7 +18,7 @@
     "@critical-path/svelte": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.4",
     "svelte": "^5.57.2",
     "typescript": "^6.0.0",
     "vitest": "^3.0.0",
