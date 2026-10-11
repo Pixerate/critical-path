@@ -5,6 +5,10 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+# Default for every job; the publish job asks for exactly what it needs below.
+permissions:
+  contents: read
+
 # Merges in quick succession must release one after another, not race to version and push.
 concurrency:
   group: release-main
@@ -16,27 +20,27 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'Pixerate' || github.event_name == 'workflow_dispatch'
     permissions:
-      contents: write
-      id-token: write
+      contents: write # push the version commit and tags
+      id-token: write # npm Trusted Publishing (OIDC provenance)
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
           cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Configure Git
         run: |
@@ -66,15 +70,27 @@ jobs:
         if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
         run: pnpm run test
 
+      # Push the version bump before publishing: if the push fails, nothing is published and
+      # main stays in step with npm. If publishing then fails, the next run publishes the
+      # versions npm does not have yet.
+      - name: Commit and push version bumps & changelogs
+        if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
+        run: |
+          git add -A .changeset ':(glob)**/package.json' ':(glob)**/CHANGELOG.md'
+          if git diff --cached --quiet; then
+            echo "No version changes to commit"
+          else
+            git commit -m "chore(release): version packages and update changelogs [skip ci]"
+            git push origin HEAD
+          fi
+
       - name: Publish changed packages to NPM using Trusted Publishing (OIDC Provenance)
         if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
         run: pnpm exec changeset publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Trusted Publishing authenticates with OIDC; no npm token is stored.
+          NODE_AUTH_TOKEN: ""
 
-      - name: Commit version bumps & changelogs, push git tags
+      - name: Push release tags
         if: steps.changeset_check.outputs.count > 0 || github.event_name == 'workflow_dispatch'
-        run: |
-          git add .
-          git commit -m "chore(release): version packages and update changelogs [skip ci]" || echo "No changes to commit"
-          git push origin HEAD --tags || echo "Failed to push tags"
+        run: git push origin --tags
