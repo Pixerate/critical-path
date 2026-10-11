@@ -62,3 +62,14 @@ const result = await engine.calculateCriticalPath('proj-1');
 console.log(`Project Completion Time: ${result.totalDurationHours} hours`);
 console.log(`Bottleneck Tasks:`, result.criticalTaskIds);
 ```
+
+## Automatic unblocking
+
+When a task is completed or canceled, the engine checks the tasks that depend on it. A downstream task that is marked blocked (`isBlocked`, `blockedReason` or `blockedSince`) is unblocked once every task it depends on is completed or canceled, and `task.unblocked` is published. Blocked time is added to `blockedDurationSeconds`.
+
+- Each task's status is read with its own project's status definitions, so dependencies across projects with different workflows work.
+- Upstream tasks the caller cannot read still count, so nothing is unblocked early.
+- Tasks that were never blocked get no event.
+
+Adding a dependency that already exists (same tasks and type) returns the existing one instead of creating a duplicate. Both tasks must exist.
+

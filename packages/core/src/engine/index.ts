@@ -38,7 +38,8 @@ import type {
   TaskMetrics,
   TaskProgressHistory,
   WorkloadDistribution,
-  WorkloadDistributionOptions
+  WorkloadDistributionOptions,
+  StatusDefinition
 } from '../types/index.js';
 import { StorageAdapter, InMemoryStore, type ActivityQuery, type Page, type TaskQuery } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
@@ -393,6 +394,32 @@ export class CriticalPathEngine {
   }
 
   /** Strips fields only the engine may set (tenancy) from updates made through a view. */
+  /**
+   * Removes fields an update may never change: the id and timestamps, the record's owner
+   * (`owned`, e.g. `projectId`), and on actor views the tenant. Routers strip these through their
+   * schemas; this protects plugin routes and direct engine callers too.
+   */
+  private withoutOwnership<T extends object>(updates: T, owned: string[] = []): T {
+    const blocked = new Set(['id', 'createdAt', 'updatedAt', ...owned, ...(this.actor ? ['tenantId'] : [])]);
+    return Object.fromEntries(Object.entries(updates).filter(([key]) => !blocked.has(key))) as T;
+  }
+
+  /** The project, or `NotFoundError`. Checked even when no policy is enforced, so records cannot be orphaned. */
+  private async requireExistingProject(projectId: string): Promise<Project> {
+    const project = await this.store.getProject(projectId);
+    if (!project) throw new NotFoundError(`Project "${projectId}" not found.`);
+    return project;
+  }
+
+  /** A workflow a project may use: it must exist and belong to the project's tenant. */
+  private async assertUsableWorkflow(workflowId: string | undefined, tenantId: string | undefined): Promise<void> {
+    if (!workflowId) return;
+    const workflow = await this.store.getWorkflow(workflowId);
+    if (!workflow || (workflow.tenantId ?? undefined) !== (tenantId ?? undefined)) {
+      throw new ValidationError(`Workflow "${workflowId}" was not found.`);
+    }
+  }
+
   private withoutTenant<T extends { tenantId?: string }>(updates: T): T {
     if (!this.actor || !('tenantId' in updates)) return updates;
     const { tenantId: _ignored, ...rest } = updates;
@@ -540,7 +567,7 @@ export class CriticalPathEngine {
     if (project?.workflow) return project.workflow;
     if (project?.workflowId) {
       const wf = await this.store.getWorkflow(project.workflowId);
-      if (wf) return wf;
+      if (wf && (wf.tenantId ?? undefined) === (project.tenantId ?? undefined)) return wf;
     }
 
     // Only fall back to workflows from the project's own tenant.
@@ -591,6 +618,7 @@ export class CriticalPathEngine {
     validateCustomFieldDefinitions(project.customFieldDefinitions, this.plugins.getCustomFieldTypes());
     // Views always use the actor's tenant (possibly none); only trusted base-engine calls may set it.
     const input = { ...project, tenantId: this.actor ? this.actor.tenantId : project.tenantId };
+    await this.assertUsableWorkflow(input.workflowId, input.tenantId);
     // The creator administers the project they create.
     if (this.actor && this.actor.userId !== 'anonymous' && !input.members?.some((m) => m.userId === this.actor!.userId)) {
       input.members = [...(input.members ?? []), { userId: this.actor.userId, role: 'admin' }];
@@ -634,6 +662,9 @@ export class CriticalPathEngine {
     }
     validateCustomFieldDefinitions(updates.customFieldDefinitions, this.plugins.getCustomFieldTypes());
     updates = this.withoutTenant(updates);
+    if (updates.workflowId && updates.workflowId !== existing.workflowId) {
+      await this.assertUsableWorkflow(updates.workflowId, existing.tenantId);
+    }
 
     const updated = await this.store.updateProject(id, updates);
     if (updated) {
@@ -762,7 +793,7 @@ export class CriticalPathEngine {
       throw new ValidationError('Plugins cannot move a task to another project in beforeTaskCreate.');
     }
     const projectId = taskInput.projectId;
-    const project = await this.store.getProject(projectId);
+    const project = await this.requireExistingProject(projectId);
     const workflow = await this.resolveProjectWorkflow(projectId);
 
     // Merge hook output over the caller's input for every schema-known task field. Unknown keys
@@ -1074,7 +1105,7 @@ export class CriticalPathEngine {
         updated.status,
         project?.statusDefinitions || workflow?.statuses
       );
-      if (statusDef.category === 'completed') {
+      if (statusDef.category === 'completed' || statusDef.category === 'canceled') {
         await this.checkAndUnblockDownstreamTasks(updated);
       }
     } else {
@@ -1162,78 +1193,74 @@ export class CriticalPathEngine {
     return updated;
   }
 
+  /**
+   * After a task completes or is canceled, unblocks downstream tasks whose upstream tasks are all
+   * completed or canceled. Runs on an elevated view, so upstream tasks the caller cannot read still
+   * count, and resolves each task's status against its own project's definitions.
+   */
   private async checkAndUnblockDownstreamTasks(completedTask: Task): Promise<void> {
     try {
-      const graph = await this.getTaskDependencyGraph(completedTask.id);
+      const engine = this.elevated();
+      const graph = await engine.getTaskDependencyGraph(completedTask.id);
       if (!graph.downstreamTasks || graph.downstreamTasks.length === 0) return;
 
+      const statusDefsByProject = new Map<string, StatusDefinition[] | undefined>();
+      const categoryOf = async (task: Task) => {
+        if (!statusDefsByProject.has(task.projectId)) {
+          const project = await this.store.getProject(task.projectId);
+          const workflow = await this.resolveProjectWorkflow(task.projectId);
+          statusDefsByProject.set(task.projectId, project?.statusDefinitions || workflow?.statuses);
+        }
+        return resolveStatusDefinition(task.status, statusDefsByProject.get(task.projectId)).category;
+      };
+
       for (const downstream of graph.downstreamTasks) {
-        const downstreamProject = await this.store.getProject(downstream.projectId);
-        const downstreamWorkflow = await this.resolveProjectWorkflow(downstream.projectId);
-        const downstreamStatusDefs = downstreamProject?.statusDefinitions || downstreamWorkflow?.statuses;
-        const downstreamStatusDef = resolveStatusDefinition(downstream.status, downstreamStatusDefs);
+        const category = await categoryOf(downstream);
+        if (category === 'completed' || category === 'canceled') continue;
+        // Nothing to unblock; don't publish task.unblocked for tasks that were never blocked.
+        if (!downstream.isBlocked && !downstream.blockedReason && !downstream.blockedSince) continue;
 
-        if (downstreamStatusDef.category === 'completed' || downstreamStatusDef.category === 'canceled') {
-          continue;
+        const downstreamGraph = await engine.getTaskDependencyGraph(downstream.id);
+        let allSatisfied = true;
+        for (const up of downstreamGraph.upstreamTasks) {
+          const upCategory = await categoryOf(up);
+          if (upCategory !== 'completed' && upCategory !== 'canceled') {
+            allSatisfied = false;
+            break;
+          }
         }
+        if (!allSatisfied) continue;
 
-        const downstreamGraph = await this.getTaskDependencyGraph(downstream.id);
-        const allUpstreamsCompleted = downstreamGraph.upstreamTasks.every((up) => {
-          const upDef = resolveStatusDefinition(up.status, downstreamStatusDefs);
-          return upDef.category === 'completed';
+        const updates: Partial<Task> = { isBlocked: false, blockedReason: null };
+        if (downstream.blockedSince) {
+          const startMs = new Date(downstream.blockedSince).getTime();
+          const endMs = Date.now();
+          if (!isNaN(startMs) && endMs >= startMs) {
+            updates.blockedDurationSeconds = (downstream.blockedDurationSeconds ?? 0) + (endMs - startMs) / 1000;
+          }
+          updates.blockedSince = null;
+        }
+        const updatedDownstream = (await this.store.updateTask(downstream.id, updates)) ?? downstream;
+
+        await this.publishEvent<TaskUnblockedEvent>({
+          name: 'task.unblocked',
+          aggregateId: downstream.id,
+          aggregateType: 'Task',
+          payload: { task: updatedDownstream, upstreamTaskId: completedTask.id }
         });
-
-        if (allUpstreamsCompleted) {
-          let updatedDownstream = downstream;
-          const updates: Partial<Task> = {};
-
-          if (downstream.isBlocked || downstream.blockedReason || downstream.blockedSince) {
-            updates.isBlocked = false;
-            updates.blockedReason = null;
-            if (downstream.blockedSince) {
-              const startMs = new Date(downstream.blockedSince).getTime();
-              const endMs = new Date().getTime();
-              if (!isNaN(startMs) && !isNaN(endMs) && endMs >= startMs) {
-                const blockedSeconds = Math.max(0, (endMs - startMs) / 1000);
-                updates.blockedDurationSeconds = (downstream.blockedDurationSeconds ?? 0) + blockedSeconds;
-              }
-              updates.blockedSince = null;
-            }
-          }
-
-          if (Object.keys(updates).length > 0) {
-            const res = await this.store.updateTask(downstream.id, updates);
-            if (res) updatedDownstream = res;
-          }
-
-          const now = new Date().toISOString();
-          const unblockedEvent: TaskUnblockedEvent = {
-            id: `evt_${crypto.randomUUID()}`,
-            name: 'task.unblocked',
-            aggregateId: downstream.id,
-            aggregateType: 'Task',
-            occurredAt: now,
-            payload: {
-              task: updatedDownstream,
-              upstreamTaskId: completedTask.id
-            }
-          };
-          await this.events.publish(unblockedEvent);
-
-          await this.store.logActivity({
-            projectId: downstream.projectId,
-            taskId: downstream.id,
-            actorId: this.actorIdOr('system'),
-            action: 'task.unblocked',
-            details: { unblockedByTaskId: completedTask.id }
-          });
-
-        }
+        await this.store.logActivity({
+          projectId: downstream.projectId,
+          taskId: downstream.id,
+          actorId: this.actorIdOr('system'),
+          action: 'task.unblocked',
+          details: { unblockedByTaskId: completedTask.id }
+        });
       }
     } catch (err) {
       console.error(`[CriticalPathEngine] Error during auto-unblocking for task ${completedTask.id}:`, err);
     }
   }
+
 
   /**
    * Deletes a task and everything that belongs to it: subtasks (or, with `subtasks: 'detach'`,
@@ -1307,13 +1334,25 @@ export class CriticalPathEngine {
     }
   }
 
+  /** A task's direct subtasks, paged through the store's parent filter (indexed in SQLite). */
+  private async childTasks(task: Task): Promise<Task[]> {
+    const children: Task[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.store.queryTasks({ projectId: task.projectId, parentId: task.id, limit: 500, cursor });
+      children.push(...page.items);
+      cursor = page.nextCursor;
+    } while (cursor);
+    return children;
+  }
+
   /** Removes records owned by a task; the task's deletion was already authorized. */
   private async deleteTaskChildren(task: Task, subtasks: 'delete' | 'detach', deleting: Set<string>): Promise<void> {
     const cascade = this.elevated();
 
     // Parent cycles stored before parents were validated: skip tasks this cascade is already deleting.
     deleting.add(task.id);
-    const children = (await this.store.getTasks(task.projectId)).filter((t) => t.parentId === task.id && !deleting.has(t.id));
+    const children = (await this.childTasks(task)).filter((t) => !deleting.has(t.id));
     for (const child of children) {
       if (subtasks === 'delete') {
         await cascade.deleteTaskNow(child.id, { subtasks }, deleting);
@@ -1369,13 +1408,16 @@ export class CriticalPathEngine {
   }
 
   // --- Task Dependencies & Graph ---
+  /** Adds a dependency. Adding one that already exists (same tasks and type) returns the existing one. */
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
-    if (this.enforcing) {
-      const [task, upstream] = await Promise.all([this.getTask(dep.taskId), this.getTask(dep.dependsOnTaskId)]);
-      if (!task) throw new NotFoundError(`Task "${dep.taskId}" not found.`);
-      if (!upstream) throw new NotFoundError(`Task "${dep.dependsOnTaskId}" not found.`);
-      await this.requireProjectAccess('task.update', task.projectId);
-    }
+    const [task, upstream] = await Promise.all([this.getTask(dep.taskId), this.getTask(dep.dependsOnTaskId)]);
+    if (!task) throw new NotFoundError(`Task "${dep.taskId}" not found.`);
+    if (!upstream) throw new NotFoundError(`Task "${dep.dependsOnTaskId}" not found.`);
+    await this.requireProjectAccess('task.update', task.projectId);
+    const duplicate = (await this.store.getDependencies(dep.taskId)).find(
+      (d) => d.taskId === dep.taskId && d.dependsOnTaskId === dep.dependsOnTaskId && d.type === dep.type
+    );
+    if (duplicate) return duplicate;
     // Enforce Directed Acyclic Graph (DAG) Invariant
     const reachableDeps = await this.collectUpstreamDependencies(dep.dependsOnTaskId);
     const cycleCheck = detectDependencyCycle(reachableDeps, dep);
@@ -1588,6 +1630,7 @@ export class CriticalPathEngine {
       ownerId: existing.authorId
     });
 
+    updates = this.withoutOwnership(updates, ['taskId', 'authorId', 'authorType', 'reactions']);
     const mentions = updates.mentions ?? (updates.content ? extractMentions(updates.content) : undefined);
     const toUpdate = mentions !== undefined ? { ...updates, mentions } : updates;
 
@@ -1976,7 +2019,7 @@ export class CriticalPathEngine {
     const existing = await this.getTeam(id);
     if (!existing) return null;
     await this.requireWorkspaceAccess('workspace.manage');
-    const updated = await this.store.updateTeam(id, this.withoutTenant(updates));
+    const updated = await this.store.updateTeam(id, this.withoutOwnership(updates));
     if (updated) {
       await this.publishEvent<TeamUpdatedEvent>({
         name: 'team.updated',
@@ -2018,6 +2061,7 @@ export class CriticalPathEngine {
 
   async createContainer(container: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer> {
     await this.requireProjectAccess('plan.manage', container.projectId);
+    await this.requireExistingProject(container.projectId);
     const created = await this.store.createContainer(container);
     const now = new Date().toISOString();
 
@@ -2038,7 +2082,7 @@ export class CriticalPathEngine {
     const existing = await this.getContainer(id);
     if (!existing) return null;
     await this.requireProjectAccess('plan.manage', existing.projectId);
-    const updated = await this.store.updateContainer(id, updates);
+    const updated = await this.store.updateContainer(id, this.withoutOwnership(updates, ['projectId']));
     if (updated) {
       await this.publishEvent<ContainerUpdatedEvent>({
         name: 'container.updated',
@@ -2100,7 +2144,7 @@ export class CriticalPathEngine {
 
   async createDeliverable(input: CreateDeliverableInput): Promise<Deliverable> {
     await this.requireProjectAccess('plan.manage', input.projectId);
-    const project = await this.store.getProject(input.projectId);
+    const project = await this.requireExistingProject(input.projectId);
     if (project?.customFieldDefinitions && input.customFields) {
       validateCustomFieldValues(project.customFieldDefinitions, input.customFields, this.plugins.getCustomFieldTypes());
     }
@@ -2141,7 +2185,7 @@ export class CriticalPathEngine {
       updates.deliveredAt = new Date().toISOString();
     }
 
-    const updated = await this.store.updateDeliverable(id, updates);
+    const updated = await this.store.updateDeliverable(id, this.withoutOwnership(updates, ['projectId']));
     if (updated) {
       const now = new Date().toISOString();
 
@@ -2275,6 +2319,7 @@ export class CriticalPathEngine {
 
   async createIteration(iteration: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
     await this.requireProjectAccess('plan.manage', iteration.projectId);
+    await this.requireExistingProject(iteration.projectId);
     const created = await this.store.createIteration(iteration);
     await this.publishEvent<IterationCreatedEvent>({
       name: 'iteration.created',
@@ -2302,7 +2347,7 @@ export class CriticalPathEngine {
     if (!existing) return null;
     await this.requireProjectAccess('plan.manage', existing.projectId);
 
-    const updated = await this.store.updateIteration(id, updates);
+    const updated = await this.store.updateIteration(id, this.withoutOwnership(updates, ['projectId']));
     if (updated) {
       await this.publishEvent<IterationUpdatedEvent>({
         name: 'iteration.updated',
@@ -2751,14 +2796,14 @@ export class CriticalPathEngine {
 
   async updateWebhook(
     id: string,
-    updates: Partial<Pick<Webhook, 'name' | 'url' | 'events' | 'active' | 'secret'>>
+    updates: Partial<Pick<Webhook, 'name' | 'url' | 'events' | 'active' | 'secret' | 'customFields'>>
   ): Promise<PublicWebhook | null> {
     if (!(await this.getWebhook(id))) return null;
     if (updates.url) this.validateWebhookUrl(updates.url);
-    const { name, url, events, active, secret } = updates;
+    const { name, url, events, active, secret, customFields } = updates;
     const updated = await this.store.updateWebhook(
       id,
-      Object.fromEntries(Object.entries({ name, url, events, active, secret }).filter(([, v]) => v !== undefined))
+      Object.fromEntries(Object.entries({ name, url, events, active, secret, customFields }).filter(([, v]) => v !== undefined))
     );
     this.webhooks.invalidate();
     return updated ? this.toPublicWebhook(updated) : null;
