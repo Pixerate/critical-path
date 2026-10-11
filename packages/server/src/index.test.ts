@@ -495,6 +495,20 @@ describe('@critical-path/server Router Tests', () => {
     expect((await call('PATCH', `/comments/${comment.id}`, { customFields: { externalId: 'x' } })).comment.customFields).toEqual({ externalId: 'x' });
   });
 
+  it('validates analysis query parameters', async () => {
+    const router = new CriticalPathRouter();
+    const project = await router.engine.createProject({ name: 'Q' });
+    const get = (path: string) => router.handleRequest(new Request(`http://localhost/api/critical-path${path}`));
+    for (const query of ['interval=fortnight', 'groupBy=zzz', 'metric=guess', 'defaultWeeklyCapacityHours=abc', 'defaultWeeklyCapacityHours=-5', 'startDate=next-week', 'unknown=1']) {
+      expect((await get(`/workload?${query}`)).status, query).toBe(400);
+      expect((await get(`/projects/${project.id}/workload?${query}`)).status, query).toBe(400);
+    }
+    expect((await get(`/projects/${project.id}/ladder?level=bogus`)).status).toBe(400);
+    const ok = await (await get(`/workload?interval=day&groupBy=priority&metric=scheduled&defaultWeeklyCapacityHours=32.5&startDate=2026-10-05&endDate=2026-10-09`)).json();
+    expect(ok.workload).toMatchObject({ interval: 'day', groupBy: 'priority', metric: 'scheduled' });
+    expect((await get(`/projects/${project.id}/ladder?level=macro`)).status).toBe(200);
+  });
+
   it('rejects non-JSON request bodies with 415', async () => {
     const router = new CriticalPathRouter();
     const post = (body: string, type?: string) =>

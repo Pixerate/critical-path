@@ -376,6 +376,12 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: The old check only counted files in `.changeset/`, and a stale changeset for the private docs package meant it could never fail. CI now diffs against the base branch and requires a changeset added by the PR (empty changesets are fine). Releases now push the version commit before `changeset publish`, so a failed push stops the run instead of leaving npm ahead of main. If publishing fails after the push, the next release run publishes the missing versions. Third-party actions are pinned to commit SHAs; Dependabot keeps them current.
 - **Solution / Workaround**: Run `pnpm changeset` in every PR (choose no packages for CI/docs-only changes). If a release push is rejected (for example by branch protection), allow the release bot to push to `main` and re-run the workflow.
 
+### CLI and MCP Leave a New Task's Status to the Workflow
+- **Area / Package**: `@critical-path/client` (CLI `propose`, `subtask`, `createSubtask`), `@critical-path/mcp` (`create_task`)
+- **Symptom / Behavior**: Tasks proposed by agents are no longer `draft`, and subtasks are no longer forced to `todo`. They start in the project workflow's default status.
+- **Root Cause**: Forcing `draft` or `todo` created tasks in statuses many workflows don't have; a `draft` task had no allowed transitions and was stuck. Without a status, the engine applies the workflow's `defaultStatusKey`.
+- **Solution / Workaround**: Pass `--status <key>` (CLI) or `status` (client, MCP) when a specific status is wanted. Agent proposals are still marked with `customFields.proposedByAgent`. CLI commands that set custom fields (`block`, `clarify`, `deliverable`) now merge into the task's existing `customFields` instead of replacing them.
+
 ### Engine Checks References and Owners Even Without a Policy
 - **Area / Package**: `@critical-path/core` (`createTask`, `createContainer`, `createIteration`, `createDeliverable`, `addDependency`, `createProject`/`updateProject`, `update*`)
 - **Symptom / Behavior**: Code that worked against a bare engine now fails with `NotFoundError` (unknown `projectId` or dependency task) or `ValidationError` (a `workflowId` from another tenant or one that does not exist). Updates that included `projectId`, `taskId` or `authorId` silently keep the original values.

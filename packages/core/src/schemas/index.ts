@@ -371,6 +371,26 @@ export const TaskListQuerySchema = strictObject({
   cursor: nonEmpty.optional()
 });
 
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a date (YYYY-MM-DD)');
+
+/** `GET /workload` and `GET /projects/:id/workload` query parameters. */
+export const WorkloadQuerySchema = strictObject({
+  projectId: nonEmpty.optional(),
+  startDate: dateOnly.optional(),
+  endDate: dateOnly.optional(),
+  interval: z.enum(['day', 'week', 'month']).optional(),
+  groupBy: z.enum(['assignee', 'team', 'taskType', 'priority', 'status']).optional(),
+  metric: z.enum(['scheduled', 'logged', 'remaining', 'blended']).optional(),
+  defaultWeeklyCapacityHours: z.coerce.number().finite().positive().optional()
+});
+
+/** `GET /projects/:id/ladder` query parameters. */
+export const LadderQuerySchema = strictObject({
+  level: z.enum(['macro', 'standard', 'concrete', 'all']).default('all'),
+  containerId: nonEmpty.optional(),
+  iterationId: nonEmpty.optional()
+});
+
 /** `GET /activities` query parameters. */
 export const ActivityListQuerySchema = strictObject({
   projectId: nonEmpty.optional(),

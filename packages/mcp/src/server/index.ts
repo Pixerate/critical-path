@@ -14,6 +14,9 @@ import type { Actor, CriticalPathEngine } from '@critical-path/core';
 import type { CriticalPathClient } from '@critical-path/client';
 import { ALL_TOOLS, parseToolArgs, type BackendContext } from '../tools/definitions.js';
 
+
+/** Most tasks a resource or prompt puts into the model's context. */
+const MAX_TASKS_IN_CONTEXT = 200;
 export interface CriticalPathMcpServerOptions {
   engine?: CriticalPathEngine;
   client?: CriticalPathClient;
@@ -134,6 +137,7 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
 
   // 4. Resource Reading
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    if (options.engine) await options.engine.ready;
     const uri = request.params.uri;
 
     if (uri === 'criticalpath://projects') {
@@ -150,13 +154,18 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
     }
 
     if (uri === 'criticalpath://tasks') {
-      const tasks = await target.getTasks();
+      // Bounded: a whole workspace would not fit a model's context. Use list_tasks to page.
+      const page = await target.queryTasks({ limit: MAX_TASKS_IN_CONTEXT });
       return {
         contents: [
           {
             uri,
             mimeType: 'application/json',
-            text: JSON.stringify(tasks, null, 2)
+            text: JSON.stringify(
+              page.nextCursor ? { tasks: page.items, truncated: true, note: `First ${MAX_TASKS_IN_CONTEXT} tasks; use the list_tasks tool for more.` } : page.items,
+              null,
+              2
+            )
           }
         ]
       };
@@ -215,6 +224,7 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
 
   // 6. Prompts Retrieval
   server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    if (options.engine) await options.engine.ready;
     const { name, arguments: args } = request.params;
 
     if (name === 'summarize_project') {
@@ -223,7 +233,9 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
         throw new McpError(ErrorCode.InvalidParams, 'Argument "projectId" is required.');
       }
       const project = await target.getProject(projectId);
-      const tasks = await target.getTasks(projectId);
+      const page = await target.queryTasks({ projectId, limit: MAX_TASKS_IN_CONTEXT });
+      const tasks = page.items;
+      const more = page.nextCursor ? ` (showing the first ${MAX_TASKS_IN_CONTEXT})` : '';
 
       return {
         description: `Project summary for ${project?.name || projectId}`,
@@ -232,7 +244,7 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
             role: 'user',
             content: {
               type: 'text',
-              text: `Please analyze the current status of project "${project?.name || projectId}".\n\nProject Info:\n${JSON.stringify(project, null, 2)}\n\nTasks (${tasks.length} total):\n${JSON.stringify(tasks, null, 2)}\n\nProvide an executive summary highlighting:\n1. Overall progress and completion rate\n2. Any high/urgent priority tasks needing immediate attention\n3. Recommendations for unblocking or advancing the sprint.`
+              text: `Please analyze the current status of project "${project?.name || projectId}".\n\nProject Info:\n${JSON.stringify(project, null, 2)}\n\nTasks (${tasks.length}${more}):\n${JSON.stringify(tasks, null, 2)}\n\nProvide an executive summary highlighting:\n1. Overall progress and completion rate\n2. Any high/urgent priority tasks needing immediate attention\n3. Recommendations for unblocking or advancing the sprint.`
             }
           }
         ]

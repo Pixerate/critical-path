@@ -343,6 +343,45 @@ describe('@critical-path/mcp', () => {
       expect(mockWin.__CRITICAL_PATH_WEBMCP__).toBeUndefined();
     });
 
+    it('sends standard annotations and registers nothing for an aborted signal', async () => {
+      const mockClient: any = { getTasks: () => Promise.resolve([]) };
+      const handle = registerWebMcpTools({ client: mockClient, document: mockDoc, window: mockWin });
+      const tools = handle.getRegisteredTools();
+      expect(tools.find((t) => t.name === 'delete_task')?.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
+      expect(tools.find((t) => t.name === 'list_tasks')?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false });
+      handle.unregister();
+
+      const controller = new AbortController();
+      controller.abort();
+      const none = registerWebMcpTools({ client: mockClient, signal: controller.signal, document: mockDoc, window: mockWin });
+      expect(none.getRegisteredTools()).toHaveLength(0);
+      expect(await mockDoc.modelContext.getTools()).toHaveLength(0);
+    });
+
+    it('creates tasks in the workflow default status and filters by parent', async () => {
+      const engine = new CriticalPathEngine();
+      const flow = await engine.createWorkflow({
+        name: 'Open/closed',
+        statuses: [
+          { key: 'open', label: 'Open', category: 'not_started' },
+          { key: 'closed', label: 'Closed', category: 'completed' }
+        ],
+        transitions: [{ id: 'close', name: 'Close', fromStatusKey: '*', toStatusKey: 'closed' }],
+        defaultStatusKey: 'open'
+      });
+      const project = await engine.createProject({ name: 'Flow', workflowId: flow.id });
+      const create = TOOL_MAP.get('create_task')!;
+      const parent = await create.execute({ projectId: project.id, title: 'Parent' }, engine);
+      expect(parent.status).toBe('open');
+      await engine.createTask({ projectId: project.id, title: 'Child', parentId: parent.id });
+
+      const list = TOOL_MAP.get('list_tasks')!;
+      const children = await list.execute({ projectId: project.id, parentId: parent.id }, engine);
+      expect(children.tasks.map((t: { title: string }) => t.title)).toEqual(['Child']);
+      const topLevel = await list.execute({ projectId: project.id, parentId: 'none' }, engine);
+      expect(topLevel.tasks.map((t: { title: string }) => t.title)).toEqual(['Parent']);
+    });
+
     it('supports AbortSignal unregistration lifecycle', async () => {
       const controller = new AbortController();
       const mockClient: any = {

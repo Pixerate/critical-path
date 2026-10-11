@@ -8,6 +8,7 @@ export interface WebMcpToolRegistration {
   inputSchema: Record<string, unknown>;
   annotations?: {
     readOnlyHint?: boolean;
+    destructiveHint?: boolean;
   };
   execute: (input: any) => Promise<any>;
 }
@@ -99,7 +100,11 @@ export function registerWebMcpTools(options: RegisterWebMcpOptions): WebMcpRegis
   const registeredTools: WebMcpToolRegistration[] = [];
   const abortController = new AbortController();
 
-  // Combine caller signal with our internal abort controller
+  // Combine caller signal with our internal abort controller. An already-aborted signal
+  // registers nothing (the component unmounted before registration).
+  if (options.signal?.aborted) {
+    return { unregister: () => {}, getRegisteredTools: () => [] };
+  }
   if (options.signal) {
     options.signal.addEventListener('abort', () => abortController.abort(), { once: true });
   }
@@ -110,7 +115,11 @@ export function registerWebMcpTools(options: RegisterWebMcpOptions): WebMcpRegis
       title: toolDef.title,
       description: toolDef.description,
       inputSchema: toolDef.inputSchema,
-      annotations: toolDef.annotations,
+      // Standard MCP annotations (as the stdio server sends them), not the internal flags
+      annotations: {
+        readOnlyHint: toolDef.annotations?.readOnlyHint ?? false,
+        destructiveHint: toolDef.annotations?.requiresConfirmation ?? false
+      },
       execute: async (input: any) => {
         const ambientContext = options.projectId ? { projectId: options.projectId } : undefined;
         const result = await toolDef.execute(parseToolArgs(toolDef, input), options.client, ambientContext);

@@ -126,6 +126,12 @@ Invalid values, or `levelResources=true` without assignee calendars, return `400
 }
 ```
 
+### `GET /workload` and `GET /projects/:projectId/workload`
+Workload distribution. Query parameters are validated (unknown or invalid values return `400`): `projectId` (top-level route only), `startDate`/`endDate` (`YYYY-MM-DD`), `interval` (`day`, `week`, `month`), `groupBy` (`assignee`, `team`, `taskType`, `priority`, `status`), `metric` (`scheduled`, `logged`, `remaining`, `blended`), `defaultWeeklyCapacityHours` (positive number).
+
+### `GET /projects/:projectId/ladder`
+Timeline ladder. Query: `level` (`macro`, `standard`, `concrete`, `all`; default `all`), `containerId`, `iterationId`. Invalid values return `400`.
+
 ### `GET /portfolio/critical-path`
 Critical path analysis across several projects. People, team pools and dependencies are shared across them.
 
