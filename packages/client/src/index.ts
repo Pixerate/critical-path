@@ -511,8 +511,9 @@ export class CriticalPathClient {
       title: data.title,
       description: data.description,
       parentId: parentTaskId,
-      status: data.status || 'todo',
-      priority: data.priority || 'medium',
+      // Leave status and priority to the project's workflow defaults unless given
+      ...(data.status ? { status: data.status } : {}),
+      ...(data.priority ? { priority: data.priority } : {}),
       assigneeId: data.assigneeId,
       customFields: data.customFields
     });

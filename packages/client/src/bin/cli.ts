@@ -44,6 +44,22 @@ function parseCliArgs(args: string[]) {
   return { flags, positionals };
 }
 
+/** True for http:// URLs to anything other than this machine. */
+function isInsecureRemote(apiUrl: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(apiUrl);
+    return protocol === 'http:' && !['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname) && !hostname.endsWith('.localhost');
+  } catch {
+    return false;
+  }
+}
+
+/** The task's current custom fields with `patch` applied, so updates don't wipe other fields. */
+async function mergedCustomFields(client: CriticalPathClient, taskId: string, patch: Record<string, unknown>) {
+  const current = await client.getTask(taskId);
+  return { ...(current.customFields ?? {}), ...patch };
+}
+
 function getContext(flags: Record<string, any>): {
   client: CriticalPathClient;
   taskId?: string;
@@ -63,6 +79,9 @@ function getContext(flags: Record<string, any>): {
   const headers: Record<string, string> = {};
   if (apiKey) {
     headers['Authorization'] = `Bearer ${apiKey}`;
+    if (isInsecureRemote(apiUrl)) {
+      console.error(`[critical-path] Warning: sending your API key over plain HTTP to ${new URL(apiUrl).host}. Use https.`);
+    }
   }
 
   const client = new CriticalPathClient({ baseUrl: apiUrl, headers });
@@ -95,7 +114,7 @@ Options:
   --task <id>       Target task ID (defaults to CRITICAL_PATH_TASK_ID)
   --project <id>    Target project ID (defaults to CRITICAL_PATH_PROJECT_ID)
   --api <url>       Critical Path API base URL (defaults to CRITICAL_PATH_API)
-  --key <key>       API Bearer token (defaults to CRITICAL_PATH_KEY)
+  --key <key>       API Bearer token (prefer CRITICAL_PATH_KEY: flags are visible in process lists)
   --help, -h        Display this help message
 `);
 }
@@ -153,12 +172,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         content: commentContent,
       });
 
-            await client.updateTask(taskId, {
+      await client.updateTask(taskId, {
         isBlocked: true,
-        customFields: {
-          blockerReason: reason,
-          ...(prUrl ? { prUrl } : {})
-        }
+        customFields: await mergedCustomFields(client, taskId, { blockerReason: reason, ...(prUrl ? { prUrl } : {}) })
       });
 
       await client.updateStatus(`Blocked: ${reason}`, {
@@ -200,10 +216,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 
       await client.updateTask(taskId, {
         isBlocked: true,
-        customFields: {
-          needsClarification: true,
-          clarificationReason: reason
-        }
+        customFields: await mergedCustomFields(client, taskId, { needsClarification: true, clarificationReason: reason })
       });
 
       await client.updateStatus('Awaiting clarification', {
@@ -233,7 +246,8 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         projectId,
         title,
         description,
-        status: 'draft' as any,
+        // The workflow's default status unless --status is given (a fixed 'draft' may not exist in it)
+        ...(flags.status ? { status: flags.status as string } : {}),
         priority: (flags.priority as any) || 'medium',
         parentId: (flags.parent as string) || undefined,
         customFields: {
@@ -241,7 +255,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         }
       });
 
-      console.log(`[critical-path] Created draft proposal "${title}" (ID: ${created.id})`);
+      console.log(`[critical-path] Created proposal "${title}" (ID: ${created.id}, status: ${created.status})`);
       break;
     }
 
@@ -255,16 +269,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       const { client, taskId, projectId } = getContext(flags);
 
       if (projectId) {
-        try {
-          await client.createDeliverable({
-            projectId,
-            title,
-            status: 'delivered',
-            outputUrls: [url]
-          });
-        } catch {
-          // If deliverables entity is not supported by backend store, fallback to task metadata
-        }
+        await client.createDeliverable({
+          projectId,
+          title,
+          status: 'delivered',
+          outputUrls: [url]
+        });
       }
 
       if (taskId) {
@@ -273,10 +283,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
           content: `Deliverable recorded: [${title}](${url})`,
         });
         await client.updateTask(taskId, {
-          customFields: {
-            deliverableUrl: url,
-            deliverableTitle: title
-          }
+          customFields: await mergedCustomFields(client, taskId, { deliverableUrl: url, deliverableTitle: title })
         });
       }
 
@@ -310,13 +317,18 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       const targetParentId = (flags.parent as string) || taskId;
 
       if (subAction === 'list') {
-        const targetProj = (flags.project as string) || projectId;
         if (!targetParentId) {
           console.error('[critical-path] Error: Parent task ID is required (--task, --parent, or CRITICAL_PATH_TASK_ID).');
           process.exit(1);
         }
-        const tasks = await client.getTasks(targetProj);
-        const subtasks = tasks.filter((t) => t.parentId === targetParentId);
+        // Ask the server for this parent's subtasks rather than downloading every task
+        const subtasks = [];
+        let cursor: string | undefined;
+        do {
+          const page = await client.queryTasks({ parentId: targetParentId, limit: 500, cursor });
+          subtasks.push(...page.items);
+          cursor = page.nextCursor;
+        } while (cursor);
         if (subtasks.length === 0) {
           console.log(`[critical-path] No subtasks found for parent task ${targetParentId}.`);
         } else {
@@ -354,7 +366,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         title,
         description: (flags.description as string) || '',
         parentId: targetParentId,
-        status: (flags.status as any) || 'todo',
+        ...(flags.status ? { status: flags.status as string } : {}),
         priority: (flags.priority as any) || 'medium',
         assigneeId: (flags.assignee as string) || undefined,
         customFields: {

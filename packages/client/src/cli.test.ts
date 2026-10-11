@@ -37,18 +37,19 @@ describe('critical-path CLI Subcommands', () => {
             todos: [
               { id: 'todo-1', title: 'Existing checklist item', completed: false }
             ],
+            customFields: { severity: 'high' },
             ...body
           }
         }), { status: 200 });
       }
       if (urlStr.endsWith('/tasks') || urlStr.includes('/tasks?')) {
         if (method === 'GET') {
-          return new Response(JSON.stringify({
-            tasks: [
-              { id: 'sub-1', title: 'Existing child subtask', parentId: 'task-123', status: 'todo' },
-              { id: 'sub-2', title: 'Unrelated task', parentId: 'other-task', status: 'todo' }
-            ]
-          }), { status: 200 });
+          const parentId = new URL(urlStr).searchParams.get('parentId');
+          const tasks = [
+            { id: 'sub-1', title: 'Existing child subtask', parentId: 'task-123', status: 'todo' },
+            { id: 'sub-2', title: 'Unrelated task', parentId: 'other-task', status: 'todo' }
+          ];
+          return new Response(JSON.stringify({ tasks: parentId ? tasks.filter((t) => t.parentId === parentId) : tasks }), { status: 200 });
         }
         return new Response(JSON.stringify({ task: { id: 'task-new-1', ...body } }), { status: 201 });
       }
@@ -85,8 +86,8 @@ describe('critical-path CLI Subcommands', () => {
   it('handles "block" command', async () => {
     await main(['block', '--reason', 'Waiting on upstream PR #123', '--pr', 'https://github.com/Pixerate/ai-core/pull/123']);
 
-    // 1. addComment, 2. updateTask, 3. updateStatus
-    expect(fetchCalls.length).toBe(3);
+    // 1. addComment, 2. read the task's custom fields, 3. updateTask, 4. updateStatus
+    expect(fetchCalls.length).toBe(4);
 
     const commentCall = fetchCalls.find(c => c.url.endsWith('/comments'));
     expect(commentCall?.body.content).toContain('Waiting on upstream PR #123');
@@ -96,6 +97,8 @@ describe('critical-path CLI Subcommands', () => {
     expect(updateTaskCall?.body.isBlocked).toBe(true);
     expect(updateTaskCall?.body.customFields?.blockerReason).toBe('Waiting on upstream PR #123');
     expect(updateTaskCall?.body.customFields?.prUrl).toBe('https://github.com/Pixerate/ai-core/pull/123');
+    // Other custom fields are kept, not wiped
+    expect(updateTaskCall?.body.customFields?.severity).toBe('high');
 
     const statusCall = fetchCalls.find(c => c.url.endsWith('/status'));
     expect(statusCall?.body.status).toBe('Blocked: Waiting on upstream PR #123');
@@ -110,7 +113,7 @@ describe('critical-path CLI Subcommands', () => {
       '--question', 'Is soft-delete required?'
     ]);
 
-    expect(fetchCalls.length).toBe(3);
+    expect(fetchCalls.length).toBe(4);
 
     const commentCall = fetchCalls.find(c => c.url.endsWith('/comments'));
     expect(commentCall?.body.content).toContain('Database schema ambiguous');
@@ -137,7 +140,8 @@ describe('critical-path CLI Subcommands', () => {
     expect(createTaskCall?.body.title).toBe('Implement Redis caching layer');
     expect(createTaskCall?.body.description).toBe('Caches frequent queries to optimize response times');
     expect(createTaskCall?.body.projectId).toBe('proj-456');
-    expect(createTaskCall?.body.status).toBe('draft');
+    // No fixed 'draft': the project's workflow default applies
+    expect(createTaskCall?.body.status).toBeUndefined();
     expect(createTaskCall?.body.parentId).toBeUndefined();
     expect(createTaskCall?.body.customFields?.proposedByAgent).toBe(true);
   });
@@ -151,7 +155,7 @@ describe('critical-path CLI Subcommands', () => {
 
     const createTaskCall = fetchCalls.find(c => c.url.endsWith('/tasks') && c.method === 'POST' && c.body.title === 'Implement cache invalidation logic');
     expect(createTaskCall?.body.parentId).toBe('task-custom-parent');
-    expect(createTaskCall?.body.status).toBe('draft');
+    expect(createTaskCall?.body.status).toBeUndefined();
   });
 
   it('handles "deliverable" command', async () => {
@@ -167,6 +171,28 @@ describe('critical-path CLI Subcommands', () => {
     const updateTaskCall = fetchCalls.find(c => c.url.includes('/tasks/task-123') && c.method === 'PATCH');
     expect(updateTaskCall?.body.customFields?.deliverableUrl).toBe('https://github.com/Pixerate/uchiage-runners/pull/45');
     expect(updateTaskCall?.body.customFields?.deliverableTitle).toBe('Pull Request #45');
+    expect(updateTaskCall?.body.customFields?.severity).toBe('high');
+  });
+
+  it('warns before sending a key over plain HTTP to a remote host', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    process.env.CRITICAL_PATH_API = 'http://pm.example.com/api/critical-path';
+    await main(['comment', 'hello']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('plain HTTP to pm.example.com'));
+    errSpy.mockClear();
+    process.env.CRITICAL_PATH_API = 'http://localhost:3000/api/critical-path';
+    await main(['comment', 'hello']);
+    expect(errSpy).not.toHaveBeenCalledWith(expect.stringContaining('plain HTTP'));
+    errSpy.mockRestore();
+  });
+
+  it('reports deliverable failures instead of swallowing them', async () => {
+    vi.stubGlobal('fetch', async (url: string | URL | Request) =>
+      url.toString().endsWith('/deliverables')
+        ? new Response(JSON.stringify({ error: 'Not allowed' }), { status: 403 })
+        : new Response(JSON.stringify({ success: true }), { status: 200 })
+    );
+    await expect(main(['deliverable', '--title', 'PR', '--url', 'https://example.com/pr/1'])).rejects.toThrow(/Not allowed|403/);
   });
 
   it('handles "comment" command', async () => {
@@ -191,7 +217,7 @@ describe('critical-path CLI Subcommands', () => {
     expect(createTaskCall?.body.description).toBe('Run Knex migrations for users table');
     expect(createTaskCall?.body.projectId).toBe('proj-456');
     expect(createTaskCall?.body.parentId).toBe('task-123');
-    expect(createTaskCall?.body.status).toBe('todo');
+    expect(createTaskCall?.body.status).toBeUndefined(); // workflow default
     expect(createTaskCall?.body.priority).toBe('high');
     expect(createTaskCall?.body.customFields?.createdByAgent).toBe(true);
   });
@@ -201,7 +227,8 @@ describe('critical-path CLI Subcommands', () => {
     await main(['subtask', 'list']);
 
     const getTasksCall = fetchCalls.find(c => (c.url.endsWith('/tasks') || c.url.includes('/tasks?')) && c.method === 'GET');
-    expect(getTasksCall).toBeDefined();
+    // The server filters by parent; the CLI no longer downloads every task
+    expect(new URL(getTasksCall!.url).searchParams.get('parentId')).toBe('task-123');
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Subtasks for parent task task-123 (1):'));
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Existing child subtask'));
     logSpy.mockRestore();

@@ -400,31 +400,14 @@ export class CriticalPathRouter {
         }
       } else if (subResource === 'ladder' || subResource === 'timeline-ladder') {
         if (method === 'GET') {
-          const level = (url.searchParams.get('level') || 'all') as any;
-          const containerId = url.searchParams.get('containerId') || undefined;
-          const iterationId = url.searchParams.get('iterationId') || undefined;
-          const ladder = await engine.getTimelineLadder(projectId, { level, containerId, iterationId });
+          const query = schemas.parsePayload(schemas.LadderQuerySchema, Object.fromEntries(url.searchParams));
+          const ladder = await engine.getTimelineLadder(projectId, query);
           return this.jsonResponse({ ladder });
         }
       } else if (subResource === 'workload' || subResource === 'workload-distribution') {
         if (method === 'GET') {
-          const startDate = url.searchParams.get('startDate') || undefined;
-          const endDate = url.searchParams.get('endDate') || undefined;
-          const interval = (url.searchParams.get('interval') || undefined) as any;
-          const groupBy = (url.searchParams.get('groupBy') || undefined) as any;
-          const metric = (url.searchParams.get('metric') || undefined) as any;
-          const defaultWeeklyCapacityHours = url.searchParams.get('defaultWeeklyCapacityHours')
-            ? parseFloat(url.searchParams.get('defaultWeeklyCapacityHours')!)
-            : undefined;
-
-          const workload = await engine.getWorkloadDistribution(projectId, {
-            startDate,
-            endDate,
-            interval,
-            groupBy,
-            metric,
-            defaultWeeklyCapacityHours
-          });
+          const query = schemas.parsePayload(schemas.WorkloadQuerySchema.omit({ projectId: true }), Object.fromEntries(url.searchParams));
+          const workload = await engine.getWorkloadDistribution(projectId, query);
           return this.jsonResponse({ workload });
         }
       } else {
@@ -843,24 +826,8 @@ export class CriticalPathRouter {
     // Workload & Capacity API
     if (segments[0] === 'workload') {
       if (method === 'GET') {
-        const projectId = url.searchParams.get('projectId') || undefined;
-        const startDate = url.searchParams.get('startDate') || undefined;
-        const endDate = url.searchParams.get('endDate') || undefined;
-        const interval = (url.searchParams.get('interval') || undefined) as any;
-        const groupBy = (url.searchParams.get('groupBy') || undefined) as any;
-        const metric = (url.searchParams.get('metric') || undefined) as any;
-        const defaultWeeklyCapacityHours = url.searchParams.get('defaultWeeklyCapacityHours')
-          ? parseFloat(url.searchParams.get('defaultWeeklyCapacityHours')!)
-          : undefined;
-
-        const workload = await engine.getWorkloadDistribution(projectId, {
-          startDate,
-          endDate,
-          interval,
-          groupBy,
-          metric,
-          defaultWeeklyCapacityHours
-        });
+        const { projectId, ...query } = schemas.parsePayload(schemas.WorkloadQuerySchema, Object.fromEntries(url.searchParams));
+        const workload = await engine.getWorkloadDistribution(projectId, query);
         return this.jsonResponse({ workload });
       }
     }

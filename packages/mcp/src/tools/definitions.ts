@@ -104,19 +104,25 @@ export const listTasksTool = defineTool<{
   priority?: string;
   assigneeId?: string;
   iterationId?: string;
+  deliverableId?: string;
+  containerId?: string;
+  parentId?: string;
   limit?: number;
   cursor?: string;
 }>({
   name: 'list_tasks',
   title: 'List Tasks',
   description:
-    'List tasks (oldest first), optionally filtered by project, status, priority, assignee or iteration. Returns { tasks, nextCursor }; pass nextCursor back as cursor to get the next page.',
+    'List tasks (oldest first), optionally filtered by project, status, priority, assignee, iteration, deliverable, container or parent task (\'none\' for top-level tasks). Returns { tasks, nextCursor }; pass nextCursor back as cursor to get the next page.',
   zodSchema: z.object({
     projectId: z.string().optional().describe('Filter by project ID'),
     status: z.string().optional().describe('Filter by task status key'),
     priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().describe('Filter by priority'),
     assigneeId: z.string().optional().describe('Filter by assignee ID'),
     iterationId: z.string().optional().describe('Filter by iteration (sprint) ID'),
+    deliverableId: z.string().optional().describe('Filter by deliverable ID'),
+    containerId: z.string().optional().describe('Filter by container (e.g. epic) ID'),
+    parentId: z.string().optional().describe("Subtasks of this task ID, or 'none' for top-level tasks only"),
     limit: z.number().int().min(1).max(500).optional().describe('Page size (default 100)'),
     cursor: z.string().optional().describe('nextCursor from a previous call')
   }),
@@ -128,6 +134,9 @@ export const listTasksTool = defineTool<{
       priority: args.priority ? [args.priority] : undefined,
       assigneeId: args.assigneeId,
       iterationId: args.iterationId,
+      deliverableId: args.deliverableId,
+      containerId: args.containerId,
+      ...(args.parentId ? { parentId: args.parentId === 'none' ? null : args.parentId } : {}),
       limit: args.limit,
       cursor: args.cursor
     });
@@ -170,7 +179,7 @@ export const createTaskTool = defineTool<{
     projectId: z.string().optional().describe('Project ID (inferred from active view in browser if omitted)'),
     title: z.string().describe('Title of the task'),
     description: z.string().optional().describe('Detailed description / markdown'),
-    status: z.string().optional().describe('Status (defaults to "todo" or first workflow status)'),
+    status: z.string().optional().describe("Status key (defaults to the project workflow's default status)"),
     priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().default('none').describe('Task priority'),
     assigneeId: z.string().optional().describe('User ID to assign task to'),
     dueDate: z.string().optional().describe('Due date (ISO string)'),
@@ -195,7 +204,8 @@ export const createTaskTool = defineTool<{
       projectId,
       title: args.title,
       description: args.description,
-      status: args.status || 'todo',
+      // Without a status the engine uses the project's workflow default
+      ...(args.status ? { status: args.status } : {}),
       priority: args.priority || 'none',
       assigneeId: args.assigneeId,
       dueDate: args.dueDate,
