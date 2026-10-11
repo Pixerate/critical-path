@@ -1,5 +1,12 @@
 # @critical-path/react
 
+## 0.14.17
+
+### Patch Changes
+
+- Updated dependencies [fc9740b]
+  - @critical-path/mcp@0.17.1
+
 ## 0.14.16
 
 ### Patch Changes
