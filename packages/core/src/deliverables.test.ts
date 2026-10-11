@@ -183,8 +183,9 @@ describe('CriticalPathEngine Deliverables & Rollup Metrics', () => {
     const project = await engine.createProject({
       name: 'Autumn Ad Campaign'
     });
-    await engine.createWorkflow(DEFAULT_CREATIVE_WORKFLOW);
-    await engine.updateProject(project.id, { workflowId: DEFAULT_CREATIVE_WORKFLOW.id });
+    // createWorkflow assigns a new id; the project must reference that one
+    const creative = await engine.createWorkflow(DEFAULT_CREATIVE_WORKFLOW);
+    await engine.updateProject(project.id, { workflowId: creative.id });
 
     // Track domain events
     const eventLog: string[] = [];
