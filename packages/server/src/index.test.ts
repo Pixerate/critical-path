@@ -461,6 +461,40 @@ describe('@critical-path/server Router Tests', () => {
     }
   });
 
+  it('accepts customFields on every entity over HTTP', async () => {
+    const router = new CriticalPathRouter({ webhookDelivery: { resolveHost: async () => ['93.184.215.14'], fetch: (async () => new Response(null, { status: 204 })) as unknown as typeof fetch } });
+    const base = 'http://localhost/api/critical-path';
+    const custom = { externalId: 'crm-42', tags: ['a'] };
+    const call = async (method: string, path: string, body: unknown) => {
+      const res = await router.handleRequest(new Request(`${base}${path}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+      expect(res.status, `${method} ${path}`).toBeLessThan(300);
+      return res.json();
+    };
+
+    const { project } = await call('POST', '/projects', { name: 'P', customFields: custom });
+    expect(project.customFields).toEqual(custom);
+    const { task } = await call('POST', '/tasks', { projectId: project.id, title: 'T', customFields: custom });
+    const { task: other } = await call('POST', '/tasks', { projectId: project.id, title: 'O' });
+    const created = await Promise.all([
+      call('POST', '/workflows', { name: 'W', statuses: [{ key: 'todo', label: 'To do', category: 'not_started' }], customFields: custom }),
+      call('POST', '/teams', { name: 'T', customFields: custom }),
+      call('POST', '/containers', { projectId: project.id, name: 'C', customFields: custom }),
+      call('POST', '/iterations', { projectId: project.id, name: 'I', customFields: custom }),
+      call('POST', '/deliverables', { projectId: project.id, title: 'D', customFields: custom }),
+      call('POST', '/comments', { taskId: task.id, content: 'Hi', customFields: custom }),
+      call('POST', '/attachments', { taskId: task.id, filename: 'a.txt', url: 'https://example.com/a.txt', mimeType: 'text/plain', sizeBytes: 1, customFields: custom }),
+      call('POST', '/time-entries', { taskId: task.id, hours: 1, customFields: custom }),
+      call('POST', `/tasks/${task.id}/dependencies`, { dependsOnTaskId: other.id, customFields: custom }),
+      call('POST', '/webhooks', { name: 'H', url: 'https://hooks.example.com/h', events: ['*'], customFields: custom })
+    ]);
+    for (const body of created) {
+      const entity = Object.values(body as Record<string, { customFields?: unknown }>).find((v) => v && typeof v === 'object' && 'customFields' in v);
+      expect(entity?.customFields).toEqual(custom);
+    }
+    const { comment } = created[5] as { comment: { id: string } };
+    expect((await call('PATCH', `/comments/${comment.id}`, { customFields: { externalId: 'x' } })).comment.customFields).toEqual({ externalId: 'x' });
+  });
+
   it('rejects non-JSON request bodies with 415', async () => {
     const router = new CriticalPathRouter();
     const post = (body: string, type?: string) =>

@@ -363,3 +363,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: Setting `parentId` fails with "was not found in this project", "cannot be its own parent", or "cannot be its parent".
 - **Root Cause**: Parents must exist in the same project, and a task cannot become a subtask of itself or of its own descendant. Before this check, a cycle made `deleteTask` recurse until the process ran out of memory. Deletes now also skip tasks already being deleted in the same cascade, so cycles stored earlier can still be removed.
 - **Solution / Workaround**: Detach or move the descendant first. Data with existing cycles can be cleaned up by deleting either task in the cycle.
+
+### Use `customFields` for Your Own Data on Any Entity
+- **Area / Package**: `@critical-path/core` schemas and storage adapters
+- **Symptom / Behavior**: Adding your own key to a project, comment, time entry or other entity is rejected with `400 Unrecognized key`.
+- **Root Cause**: Request bodies are strict, so unknown keys are never silently stored or dropped.
+- **Solution / Workaround**: Put the data in `customFields`, a JSON object every entity accepts. An update replaces the whole object, so merge client-side to change one key. Only task custom fields are validated (against `customFieldDefinitions`). Custom storage adapters must round-trip `customFields` on every entity; `runStorageAdapterConformance` checks this.

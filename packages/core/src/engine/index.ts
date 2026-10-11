@@ -1808,6 +1808,7 @@ export class CriticalPathEngine {
       uploaderType?: 'user' | 'agent' | 'system';
       artifactType?: 'plan' | 'spec' | 'deliverable' | 'review' | 'general';
       metadata?: Record<string, unknown>;
+      customFields?: Record<string, unknown>;
     }
   ): Promise<Attachment> {
     if (!this.fileStorage) {
@@ -1844,7 +1845,8 @@ export class CriticalPathEngine {
       url: uploadResult.url,
       storageKey: uploadResult.storageKey,
       artifactType: input.artifactType,
-      metadata: input.metadata
+      metadata: input.metadata,
+      ...(input.customFields ? { customFields: input.customFields } : {})
     });
   }
 
@@ -2729,6 +2731,7 @@ export class CriticalPathEngine {
     events: Webhook['events'];
     secret?: string;
     active?: boolean;
+    customFields?: Record<string, unknown>;
   }): Promise<{ webhook: PublicWebhook; secret: string }> {
     await this.requireWorkspaceAccess('workspace.manage');
     this.validateWebhookUrl(input.url);
@@ -2739,7 +2742,8 @@ export class CriticalPathEngine {
       events: input.events,
       secret,
       active: input.active ?? true,
-      tenantId: this.actor?.tenantId
+      tenantId: this.actor?.tenantId,
+      ...(input.customFields ? { customFields: input.customFields } : {})
     });
     this.webhooks.invalidate();
     return { webhook: this.toPublicWebhook(created), secret };

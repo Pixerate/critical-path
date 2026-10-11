@@ -503,7 +503,8 @@ export class CriticalPathRouter {
           const dep = await engine.addDependency({
             taskId,
             dependsOnTaskId: body.dependsOnTaskId,
-            type: body.type || 'blocking'
+            type: body.type || 'blocking',
+            ...(body.customFields ? { customFields: body.customFields } : {})
           });
           return this.jsonResponse({ dependency: dep }, 201);
         }

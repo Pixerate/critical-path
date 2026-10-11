@@ -330,6 +330,70 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
       expect(await store.getWebhook(webhook.id)).toMatchObject({ name: 'Hook', secret: 'whsec_x', events: ['*'], active: true, tenantId: 'tenant-1' });
     });
 
+    it('round-trips customFields on every entity, including nested values and updates', async () => {
+      const store = await createStore();
+      const custom = { source: 'crm', score: 3, flags: [true, false], nested: { owner: 'ops', ids: [1, 2] } };
+      const changed = { source: 'erp' };
+
+      const project = await store.createProject({ name: 'P', customFields: custom });
+      expect((await store.getProject(project.id))?.customFields).toEqual(custom);
+      expect((await store.updateProject(project.id, { customFields: changed }))?.customFields).toEqual(changed);
+      expect((await store.getProject(project.id))?.customFields).toEqual(changed);
+
+      const workflow = await store.createWorkflow({ name: 'W', statuses: [], transitions: [], customFields: custom });
+      expect((await store.getWorkflow(workflow.id))?.customFields).toEqual(custom);
+      await store.updateWorkflow(workflow.id, { customFields: changed });
+      expect((await store.getWorkflow(workflow.id))?.customFields).toEqual(changed);
+
+      const team = await store.createTeam({ name: 'T', memberIds: [], customFields: custom });
+      expect((await store.getTeam(team.id))?.customFields).toEqual(custom);
+      await store.updateTeam(team.id, { customFields: changed });
+      expect((await store.getTeam(team.id))?.customFields).toEqual(changed);
+
+      const container = await store.createContainer({ projectId: project.id, name: 'C', customFields: custom });
+      expect((await store.getContainer(container.id))?.customFields).toEqual(custom);
+      expect((await store.getContainers(project.id))[0].customFields).toEqual(custom);
+      await store.updateContainer(container.id, { customFields: changed });
+      expect((await store.getContainer(container.id))?.customFields).toEqual(changed);
+
+      const iteration = await store.createIteration({ projectId: project.id, name: 'I', status: 'planning', customFields: custom });
+      expect((await store.getIteration(iteration.id))?.customFields).toEqual(custom);
+      expect((await store.getIterations(project.id))[0].customFields).toEqual(custom);
+      await store.updateIteration(iteration.id, { customFields: changed });
+      expect((await store.getIteration(iteration.id))?.customFields).toEqual(changed);
+
+      const task = await store.createTask({ projectId: project.id, title: 'Task', status: 'todo', priority: 'medium', customFields: custom });
+      const comment = await store.addComment({ taskId: task.id, authorId: 'u1', content: 'Hi', customFields: custom });
+      expect((await store.getComment(comment.id))?.customFields).toEqual(custom);
+      expect((await store.getComments(task.id))[0].customFields).toEqual(custom);
+      await store.updateComment(comment.id, { customFields: changed });
+      expect((await store.getComment(comment.id))?.customFields).toEqual(changed);
+
+      const attachment = await store.createAttachment({
+        taskId: task.id,
+        uploaderId: 'u1',
+        filename: 'a.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 1,
+        url: 'https://example.com/a.txt',
+        customFields: custom
+      });
+      expect((await store.getAttachment(attachment.id))?.customFields).toEqual(custom);
+
+      const entry = await store.logTime({ taskId: task.id, userId: 'u1', hours: 1, customFields: custom });
+      expect((await store.getTimeEntries(task.id))[0]).toMatchObject({ id: entry.id, customFields: custom });
+
+      const other = await store.createTask({ projectId: project.id, title: 'Other', status: 'todo', priority: 'medium' });
+      const dependency = await store.addDependency({ taskId: task.id, dependsOnTaskId: other.id, type: 'blocked_by', customFields: custom });
+      expect((await store.getDependency(dependency.id))?.customFields).toEqual(custom);
+      expect((await store.getDependencies(task.id))[0].customFields).toEqual(custom);
+
+      const webhook = await store.addWebhook({ name: 'H', url: 'https://example.com/h', events: ['*'], active: true, customFields: custom });
+      expect((await store.getWebhook(webhook.id))?.customFields).toEqual(custom);
+      await store.updateWebhook(webhook.id, { customFields: changed });
+      expect((await store.getWebhook(webhook.id))?.customFields).toEqual(changed);
+    });
+
     it('increments task hours atomically (if the adapter implements incrementTaskHours)', async () => {
       const store = await createStore();
       if (!store.incrementTaskHours) return;
