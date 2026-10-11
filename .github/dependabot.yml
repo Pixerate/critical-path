@@ -14,6 +14,21 @@ updates:
           - "minor"
           - "patch"
 
+  # Firebase App Hosting installs the docs site from its own npm lockfile, not the pnpm one.
+  - package-ecosystem: "npm"
+    directory: "/apps/docs"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      docs-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

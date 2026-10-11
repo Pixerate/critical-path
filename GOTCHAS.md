@@ -369,3 +369,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: Adding your own key to a project, comment, time entry or other entity is rejected with `400 Unrecognized key`.
 - **Root Cause**: Request bodies are strict, so unknown keys are never silently stored or dropped.
 - **Solution / Workaround**: Put the data in `customFields`, a JSON object every entity accepts. An update replaces the whole object, so merge client-side to change one key. Only task custom fields are validated (against `customFieldDefinitions`). Custom storage adapters must round-trip `customFields` on every entity; `runStorageAdapterConformance` checks this.
+
+### CI Requires Each PR to Add Its Own Changeset; Releases Push Before Publishing
+- **Area / Package**: `.github/workflows/ci.yml`, `release-and-publish.yml`
+- **Symptom / Behavior**: A PR fails "Check this PR adds a changeset" even though `.changeset/` has files. Or a release run fails at "Commit and push version bumps" and publishes nothing.
+- **Root Cause**: The old check only counted files in `.changeset/`, and a stale changeset for the private docs package meant it could never fail. CI now diffs against the base branch and requires a changeset added by the PR (empty changesets are fine). Releases now push the version commit before `changeset publish`, so a failed push stops the run instead of leaving npm ahead of main. If publishing fails after the push, the next release run publishes the missing versions. Third-party actions are pinned to commit SHAs; Dependabot keeps them current.
+- **Solution / Workaround**: Run `pnpm changeset` in every PR (choose no packages for CI/docs-only changes). If a release push is rejected (for example by branch protection), allow the release bot to push to `main` and re-run the workflow.
