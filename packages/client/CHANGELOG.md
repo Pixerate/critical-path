@@ -1,5 +1,12 @@
 # @critical-path/client
 
+## 0.24.4
+
+### Patch Changes
+
+- Updated dependencies [bbc4305]
+  - @critical-path/core@0.49.0
+
 ## 0.24.3
 
 ### Patch Changes
