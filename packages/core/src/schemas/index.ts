@@ -104,7 +104,8 @@ export const CreateWorkflowSchema = strictObject({
     .default([]),
   taskTypes: z.array(TaskTypeDefinitionSchema).optional(),
   defaultStatusKey: z.string().optional(),
-  isDefault: z.boolean().optional()
+  isDefault: z.boolean().optional(),
+  customFields: customFields.optional()
 });
 export const UpdateWorkflowSchema = CreateWorkflowSchema.partial();
 
@@ -133,7 +134,8 @@ export const CreateProjectSchema = strictObject({
   customFieldDefinitions: z.array(CustomFieldDefinitionSchema).optional(),
   schedule: WorkScheduleSchema.optional(),
   startDate: isoString.optional(),
-  targetEndDate: isoString.optional()
+  targetEndDate: isoString.optional(),
+  customFields: customFields.optional()
 });
 export const UpdateProjectSchema = CreateProjectSchema.partial();
 
@@ -219,7 +221,8 @@ export type ReportAgentStatusBody = z.infer<typeof ReportAgentStatusSchema>;
 
 export const CreateDependencySchema = strictObject({
   dependsOnTaskId: nonEmpty,
-  type: z.enum(['blocking', 'blocked_by', 'relates_to']).default('blocking')
+  type: z.enum(['blocking', 'blocked_by', 'relates_to']).default('blocking'),
+  customFields: customFields.optional()
 });
 
 // --- Deliverables ---
@@ -249,7 +252,8 @@ export const CreateTeamSchema = strictObject({
   memberIds: z.array(z.string()).default([]),
   headcount: z.number().nonnegative().optional(),
   weeklyCapacityHours: z.number().nonnegative().optional(),
-  schedule: WorkScheduleSchema.optional()
+  schedule: WorkScheduleSchema.optional(),
+  customFields: customFields.optional()
 });
 export const UpdateTeamSchema = CreateTeamSchema.partial();
 
@@ -260,7 +264,8 @@ const containerFields = {
   description: z.string().optional(),
   parentId: z.string().optional(),
   type: z.string().optional(),
-  color: z.string().optional()
+  color: z.string().optional(),
+  customFields: customFields.optional()
 };
 export const CreateContainerSchema = strictObject({ projectId: nonEmpty, ...containerFields });
 export const UpdateContainerSchema = strictObject(containerFields).partial();
@@ -273,12 +278,11 @@ const iterationFields = {
   type: z.string().optional(),
   startDate: isoString.optional(),
   endDate: isoString.optional(),
-  status: z.enum(['planning', 'active', 'completed']).default('planning')
+  status: z.enum(['planning', 'active', 'completed']).default('planning'),
+  customFields: customFields.optional()
 };
 export const CreateIterationSchema = strictObject({ projectId: nonEmpty, ...iterationFields });
-export const UpdateIterationSchema = z
-  .object({ ...iterationFields, status: z.enum(['planning', 'active', 'completed']) })
-  .partial();
+export const UpdateIterationSchema = strictObject({ ...iterationFields, status: z.enum(['planning', 'active', 'completed']) }).partial();
 
 // --- Comments & Reactions ---
 
@@ -287,11 +291,10 @@ export const CreateCommentSchema = strictObject({
   parentId: z.string().optional(),
   content: nonEmpty,
   mentions: z.array(z.string()).optional(),
-  metadata: metadata.optional()
+  metadata: metadata.optional(),
+  customFields: customFields.optional()
 });
-export const UpdateCommentSchema = z
-  .object({ content: nonEmpty, mentions: z.array(z.string()), metadata })
-  .partial();
+export const UpdateCommentSchema = strictObject({ content: nonEmpty, mentions: z.array(z.string()), metadata, customFields }).partial();
 
 export const CommentReactionSchema = strictObject({
   emoji: nonEmpty
@@ -314,7 +317,8 @@ export const CreateAttachmentSchema = strictObject({
   mimeType: nonEmpty.default('application/octet-stream'),
   sizeBytes: z.number().int().nonnegative().default(0),
   url: nonEmpty,
-  storageKey: z.string().optional()
+  storageKey: z.string().optional(),
+  customFields: customFields.optional()
 });
 
 export const UploadAttachmentSchema = strictObject({
@@ -322,7 +326,8 @@ export const UploadAttachmentSchema = strictObject({
   filename: nonEmpty,
   data: z.string(),
   mimeType: z.string().optional(),
-  encoding: z.enum(['base64', 'utf-8', 'binary']).optional()
+  encoding: z.enum(['base64', 'utf-8', 'binary']).optional(),
+  customFields: customFields.optional()
 });
 
 export const PresignAttachmentSchema = strictObject({
@@ -341,7 +346,8 @@ export const LogTimeSchema = strictObject({
   hours: z.number().positive(),
   isBillable: z.boolean().optional(),
   description: z.string().optional(),
-  loggedAt: isoString.optional()
+  loggedAt: isoString.optional(),
+  customFields: customFields.optional()
 });
 
 // --- List queries (URL search parameters) ---
@@ -383,7 +389,8 @@ export const CreateWebhookSchema = strictObject({
   events: z.array(z.enum(['*', ...DOMAIN_EVENT_NAMES])).min(1),
   /** Signing secret (at least 16 characters). Generated when omitted and returned once. */
   secret: z.string().min(16).optional(),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  customFields: customFields.optional()
 });
 export const UpdateWebhookSchema = CreateWebhookSchema.partial();
 

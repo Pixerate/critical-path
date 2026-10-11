@@ -54,6 +54,21 @@ In many organizations, teams use custom statuses like `qa_in_review`, `waiting_o
 
 ---
 
+## Custom Fields on Every Entity
+
+Request bodies are strict, so unknown keys are rejected. To attach your own data, use `customFields`, a JSON object accepted on create and update and returned unchanged. It is supported on every entity: projects, workflows, teams, tasks, containers, iterations, deliverables, comments, attachments, time entries, dependencies and webhooks.
+
+```ts
+await engine.createProject({ name: 'Website', customFields: { crmAccountId: 'acc_42', budgetCode: 'MKT-7' } });
+await engine.addComment({ taskId, content: 'Approved', customFields: { source: 'slack', messageTs: '1728.55' } });
+await engine.logTime({ taskId, hours: 2, customFields: { invoiceLine: 17 } });
+```
+
+- **Updates replace the object.** `customFields` in an update replaces the stored object; it is not deep-merged. Read, change and write back to edit one key.
+- **Tasks are validated.** Task `customFields` are checked against the project's `customFieldDefinitions` (types, required fields, plugin field types). Other entities store any JSON object as-is.
+- **Storage.** `InMemoryStore` and `FirebaseStore` store it with the record. `SQLiteStore` keeps it in each table's JSON `extra` column (tasks and deliverables have a dedicated column). Custom adapters must round-trip it; the conformance suite checks every entity.
+- **Over HTTP, in the client and in MCP:** the same `customFields` property on every create or update body. The MCP `create_project`, `create_task`, `update_task`, `create_deliverable` and `add_comment` tools accept it.
+
 ## Project Entity
 
 The `Project` interface represents the top-level container holding tasks and configuration.

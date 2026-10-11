@@ -25,7 +25,19 @@ import type { WebhookOutboxEntry, WebhookOutboxStore } from '../webhooks/outbox.
  * SQLite returns NULL columns as `null`, while domain objects leave unset optional fields out.
  * Dropping nulls keeps SQLiteStore results identical to the other adapters.
  */
-const EXTRA_TABLES = ['projects', 'tasks', 'teams', 'attachments'] as const;
+const EXTRA_TABLES = [
+  'projects',
+  'tasks',
+  'teams',
+  'attachments',
+  'workflows',
+  'containers',
+  'iterations',
+  'comments',
+  'time_entries',
+  'dependencies',
+  'webhooks'
+] as const;
 type ExtraTable = (typeof EXTRA_TABLES)[number];
 
 function dropNulls<T extends object>(row: T): T {
@@ -431,6 +443,11 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       .run(Object.keys(extra).length ? JSON.stringify(extra) : null, (entity as { id: string }).id);
   }
 
+  /** The fields stored in a row's `extra` JSON, for mappers that pick columns explicitly. */
+  private extraOf(row: any): Record<string, unknown> {
+    return row.extra ? JSON.parse(row.extra) : {};
+  }
+
   /** Merges the `extra` JSON back into a row. */
   private expandExtra(row: any): any {
     const { extra, ...rest } = row;
@@ -553,6 +570,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       newWf.createdAt,
       newWf.updatedAt
     );
+    this.writeExtra('workflows', newWf);
     return newWf;
   }
 
@@ -581,6 +599,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       updated.updatedAt,
       id
     );
+    this.writeExtra('workflows', updated);
     return updated;
   }
 
@@ -663,13 +682,13 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
   async getContainers(projectId: string): Promise<TaskContainer[]> {
     const stmt = this.db.prepare('SELECT * FROM containers WHERE projectId = ?');
     const rows = stmt.all(projectId) as any[];
-    return rows.map(dropNulls);
+    return rows.map((r) => dropNulls(this.expandExtra(r)));
   }
 
   async getContainer(id: string): Promise<TaskContainer | null> {
     const stmt = this.db.prepare('SELECT * FROM containers WHERE id = ?');
     const row = stmt.get(id) as any;
-    return row ? dropNulls(row) : null;
+    return row ? dropNulls(this.expandExtra(row)) : null;
   }
 
   async createContainer(container: Omit<TaskContainer, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskContainer> {
@@ -692,6 +711,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       newContainer.createdAt,
       newContainer.updatedAt
     );
+    this.writeExtra('containers', newContainer);
     return newContainer;
   }
 
@@ -713,6 +733,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       updated.updatedAt,
       id
     );
+    this.writeExtra('containers', updated);
     return updated;
   }
 
@@ -1019,13 +1040,13 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
   async getIterations(projectId: string): Promise<Iteration[]> {
     const stmt = this.db.prepare('SELECT * FROM iterations WHERE projectId = ?');
     const rows = stmt.all(projectId) as any[];
-    return rows.map(dropNulls);
+    return rows.map((r) => dropNulls(this.expandExtra(r)));
   }
 
   async getIteration(id: string): Promise<Iteration | null> {
     const stmt = this.db.prepare('SELECT * FROM iterations WHERE id = ?');
     const row = stmt.get(id) as any;
-    return row ? dropNulls(row) : null;
+    return row ? dropNulls(this.expandExtra(row)) : null;
   }
 
   async createIteration(iteration: Omit<Iteration, 'id' | 'createdAt'>): Promise<Iteration> {
@@ -1048,6 +1069,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       newIteration.status,
       newIteration.createdAt
     );
+    this.writeExtra('iterations', newIteration);
     return newIteration;
   }
 
@@ -1070,6 +1092,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       updated.status,
       id
     );
+    this.writeExtra('iterations', updated);
     return updated;
   }
 
@@ -1082,6 +1105,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
   // --- Comments ---
   private mapComment(row: any): Comment {
     return dropNulls({
+      ...this.extraOf(row),
       id: row.id,
       taskId: row.taskId,
       authorId: row.authorId,
@@ -1131,6 +1155,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       newComment.createdAt,
       newComment.updatedAt
     );
+    this.writeExtra('comments', newComment);
     return newComment;
   }
 
@@ -1167,6 +1192,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       updated.updatedAt,
       id
     );
+    this.writeExtra('comments', updated);
     return updated;
   }
 
@@ -1372,7 +1398,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
   async getTimeEntries(taskId: string): Promise<TimeEntry[]> {
     const stmt = this.db.prepare('SELECT * FROM time_entries WHERE taskId = ?');
     const rows = stmt.all(taskId) as any[];
-    return rows.map((r) => dropNulls({ ...r, isBillable: r.isBillable !== null ? Boolean(r.isBillable) : undefined }));
+    return rows.map((r) => dropNulls({ ...this.expandExtra(r), isBillable: r.isBillable !== null ? Boolean(r.isBillable) : undefined }));
   }
 
   async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string }): Promise<TimeEntry> {
@@ -1393,13 +1419,14 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       newEntry.description || null,
       newEntry.loggedAt
     );
+    this.writeExtra('time_entries', newEntry);
     return newEntry;
   }
 
   // --- Dependencies ---
   async getDependencies(taskId: string): Promise<TaskDependency[]> {
     const stmt = this.db.prepare('SELECT * FROM dependencies WHERE taskId = ? OR dependsOnTaskId = ?');
-    return (stmt.all(taskId, taskId) as any[]).map(dropNulls);
+    return (stmt.all(taskId, taskId) as any[]).map((r) => dropNulls(this.expandExtra(r)));
   }
 
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
@@ -1411,12 +1438,13 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       VALUES (?, ?, ?, ?)
     `);
     stmt.run(newDep.id, newDep.taskId, newDep.dependsOnTaskId, newDep.type);
+    this.writeExtra('dependencies', newDep);
     return newDep;
   }
 
   async getDependency(id: string): Promise<TaskDependency | null> {
     const row = this.db.prepare('SELECT * FROM dependencies WHERE id = ?').get(id) as any;
-    return row ? { id: row.id, taskId: row.taskId, dependsOnTaskId: row.dependsOnTaskId, type: row.type } : null;
+    return row ? dropNulls(this.expandExtra(row)) : null;
   }
 
   async removeDependency(id: string): Promise<boolean> {
@@ -1454,6 +1482,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
         updated.tenantId ?? null,
         id
       );
+    this.writeExtra('webhooks', updated);
     return updated;
   }
 
@@ -1507,6 +1536,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
 
   private mapWebhook(row: any): Webhook {
     return dropNulls({
+      ...this.extraOf(row),
       id: row.id,
       name: row.name ?? '',
       url: row.url,
@@ -1537,6 +1567,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       newWh.tenantId ?? null,
       newWh.createdAt
     );
+    this.writeExtra('webhooks', newWh);
     return newWh;
   }
 
@@ -1557,7 +1588,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
 
   private mapWorkflow(row: any): Workflow {
     return dropNulls({
-      ...row,
+      ...this.expandExtra(row),
       tenantId: row.tenantId ?? undefined,
       statuses: row.statuses ? JSON.parse(row.statuses) : [],
       transitions: row.transitions ? JSON.parse(row.transitions) : [],

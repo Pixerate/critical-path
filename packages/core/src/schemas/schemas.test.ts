@@ -69,10 +69,10 @@ const keyChecks: true[] = [
   true as SameKeys<Infer<typeof CreateIterationSchema>, Omit<Iteration, 'id' | 'createdAt'>>,
   // Reactions are managed through the reactions endpoints.
   true as SameKeys<Infer<typeof CreateCommentSchema>, Omit<Comment, ServerAssigned | 'reactions' | CommentIdentity>>,
-  true as SameKeys<Infer<typeof UpdateCommentSchema>, Pick<Comment, 'content' | 'mentions' | 'metadata'>>,
+  true as SameKeys<Infer<typeof UpdateCommentSchema>, Pick<Comment, 'content' | 'mentions' | 'metadata' | 'customFields'>>,
   true as SameKeys<Infer<typeof CreateAttachmentSchema>, Omit<CreateAttachmentInput, UploaderIdentity>>,
   true as SameKeys<Infer<typeof LogTimeSchema>, Omit<TimeEntry, 'id' | 'userId'>>,
-  true as SameKeys<Infer<typeof CreateWebhookSchema>, Pick<Webhook, 'name' | 'url' | 'events' | 'secret' | 'active'>>
+  true as SameKeys<Infer<typeof CreateWebhookSchema>, Pick<Webhook, 'name' | 'url' | 'events' | 'secret' | 'active' | 'customFields'>>
 ];
 
 describe('request schemas', () => {

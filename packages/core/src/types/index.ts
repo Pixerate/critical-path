@@ -91,6 +91,8 @@ export interface Team {
   tenantId?: string;
   createdAt: string;
   updatedAt: string;
+  /** Your own data for this record (any JSON object). Stored and returned as-is. */
+  customFields?: Record<string, unknown>;
 }
 
 export interface CustomFieldDefinition {
@@ -133,6 +135,8 @@ export interface Workflow {
   tenantId?: string;
   createdAt: string;
   updatedAt: string;
+  /** Your own data for this record (any JSON object). Stored and returned as-is. */
+  customFields?: Record<string, unknown>;
 }
 
 export interface Project {
@@ -157,6 +161,8 @@ export interface Project {
   targetEndDate?: string;
   createdAt: string;
   updatedAt: string;
+  /** Your own data for this record (any JSON object). Stored and returned as-is. */
+  customFields?: Record<string, unknown>;
 }
 
 export interface TaskContainer {
@@ -169,6 +175,8 @@ export interface TaskContainer {
   color?: string;
   createdAt: string;
   updatedAt: string;
+  /** Your own data for this record (any JSON object). Stored and returned as-is. */
+  customFields?: Record<string, unknown>;
 }
 
 export interface TaskDependency {
@@ -176,6 +184,8 @@ export interface TaskDependency {
   taskId: string;
   dependsOnTaskId: string;
   type: 'blocking' | 'blocked_by' | 'relates_to';
+  /** Your own data for this record (any JSON object). Stored and returned as-is. */
+  customFields?: Record<string, unknown>;
 }
 
 export interface TaskDependencyGraph {
@@ -319,6 +329,8 @@ export interface Iteration {
   endDate?: string;
   status: 'planning' | 'active' | 'completed';
   createdAt: string;
+  /** Your own data for this record (any JSON object). Stored and returned as-is. */
+  customFields?: Record<string, unknown>;
 }
 
 export type AuthorType = 'user' | 'agent' | 'system';
@@ -364,6 +376,8 @@ export interface Comment {
   metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  /** Your own data for this record (any JSON object). Stored and returned as-is. */
+  customFields?: Record<string, unknown>;
 }
 
 export interface Attachment {
@@ -382,6 +396,8 @@ export interface Attachment {
   metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  /** Your own data for this record (any JSON object). Stored and returned as-is. */
+  customFields?: Record<string, unknown>;
 }
 
 export type CreateAttachmentInput = Omit<Attachment, 'id' | 'createdAt' | 'updatedAt'>;
@@ -440,6 +456,8 @@ export interface TimeEntry {
   isBillable?: boolean;
   description?: string;
   loggedAt: string;
+  /** Your own data for this record (any JSON object). Stored and returned as-is. */
+  customFields?: Record<string, unknown>;
 }
 
 export interface Activity {
@@ -464,6 +482,8 @@ export interface Webhook {
   /** Tenant whose events this webhook receives. Set from the creating actor. */
   tenantId?: string;
   createdAt: string;
+  /** Your own data for this record (any JSON object). Stored and returned as-is. */
+  customFields?: Record<string, unknown>;
 }
 
 /** A webhook as returned by engine and API reads: the secret is replaced by `hasSecret`. */

@@ -83,14 +83,15 @@ export const getProjectTool = defineTool<{ id: string }>({
   }
 });
 
-export const createProjectTool = defineTool<{ name: string; description?: string; key?: string }>({
+export const createProjectTool = defineTool<{ name: string; description?: string; key?: string; customFields?: Record<string, unknown> }>({
   name: 'create_project',
   title: 'Create Project',
   description: 'Create a new project workspace.',
   zodSchema: z.object({
     name: z.string().describe('Name of the project'),
     description: z.string().optional().describe('Description of the project'),
-    key: z.string().optional().describe('Short project key/prefix (e.g. "PROJ")')
+    key: z.string().optional().describe('Short project key/prefix (e.g. "PROJ")'),
+    customFields: z.record(z.unknown()).optional().describe('Custom field values as a JSON object (validated against the project\'s field definitions for tasks)')
   }),
   execute: async (args, target) => {
     return target.createProject(args);
@@ -160,6 +161,7 @@ export const createTaskTool = defineTool<{
   allocation?: number;
   isBlocked?: boolean;
   blockedReason?: string;
+  customFields?: Record<string, unknown>;
 }>({
   name: 'create_task',
   title: 'Create Task',
@@ -181,7 +183,8 @@ export const createTaskTool = defineTool<{
       .optional()
       .describe("Share of the assignee's time the task takes, in (0, 1]; e.g. 0.5 for half-time. Estimates are effort, so a 0.5 task takes twice as long"),
     isBlocked: z.boolean().optional().describe('Whether the task is blocked'),
-    blockedReason: z.string().optional().describe('Reason why the task is blocked')
+    blockedReason: z.string().optional().describe('Reason why the task is blocked'),
+    customFields: z.record(z.unknown()).optional().describe('Custom field values as a JSON object (validated against the project\'s field definitions for tasks)')
   }),
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
@@ -198,6 +201,7 @@ export const createTaskTool = defineTool<{
       dueDate: args.dueDate,
       tags: args.tags || [],
       estimatedHours: args.estimatedHours,
+      customFields: args.customFields,
       allocation: args.allocation,
       isBlocked: args.isBlocked,
       blockedReason: args.blockedReason
@@ -220,6 +224,7 @@ export const updateTaskTool = defineTool<{
   loggedHours?: number;
   isBlocked?: boolean;
   blockedReason?: string;
+  customFields?: Record<string, unknown>;
 }>({
   name: 'update_task',
   title: 'Update Task',
@@ -242,7 +247,8 @@ export const updateTaskTool = defineTool<{
       .describe("Share of the assignee's time the task takes, in (0, 1]; e.g. 0.5 for half-time. Estimates are effort, so a 0.5 task takes twice as long"),
     loggedHours: z.number().optional(),
     isBlocked: z.boolean().optional().describe('Whether the task is blocked'),
-    blockedReason: z.string().optional().describe('Reason why the task is blocked')
+    blockedReason: z.string().optional().describe('Reason why the task is blocked'),
+    customFields: z.record(z.unknown()).optional().describe('Custom field values as a JSON object (validated against the project\'s field definitions for tasks)')
   }),
   execute: async (args, target) => {
     const { id, ...updates } = args;
@@ -288,6 +294,7 @@ export const createDeliverableTool = defineTool<{
   description?: string;
   dueDate?: string;
   taskIds?: string[];
+  customFields?: Record<string, unknown>;
 }>({
   name: 'create_deliverable',
   title: 'Create Deliverable',
@@ -297,7 +304,8 @@ export const createDeliverableTool = defineTool<{
     title: z.string(),
     description: z.string().optional(),
     dueDate: z.string().optional(),
-    taskIds: z.array(z.string()).optional()
+    taskIds: z.array(z.string()).optional(),
+    customFields: z.record(z.unknown()).optional().describe('Custom field values as a JSON object (validated against the project\'s field definitions for tasks)')
   }),
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
@@ -328,16 +336,17 @@ export const listCommentsTool = defineTool<{ taskId: string }>({
   }
 });
 
-export const addCommentTool = defineTool<{ taskId: string; content: string }>({
+export const addCommentTool = defineTool<{ taskId: string; content: string; customFields?: Record<string, unknown> }>({
   name: 'add_comment',
   title: 'Add Comment',
   description: 'Add a comment to a task. The comment is attributed to the identity this MCP server runs as.',
   zodSchema: z.object({
     taskId: z.string().describe('The task ID'),
-    content: z.string().describe('Comment body/markdown')
+    content: z.string().describe('Comment body/markdown'),
+    customFields: z.record(z.unknown()).optional().describe('Custom field values as a JSON object (validated against the project\'s field definitions for tasks)')
   }),
   execute: async (args, target) => {
-    return target.addComment({ taskId: args.taskId, content: args.content });
+    return target.addComment({ taskId: args.taskId, content: args.content, customFields: args.customFields });
   }
 });
 

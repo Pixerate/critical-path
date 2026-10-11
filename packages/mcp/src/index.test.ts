@@ -159,6 +159,10 @@ describe('@critical-path/mcp', () => {
       expect(halfTime.allocation).toBe(0.5);
       const updated = await TOOL_MAP.get('update_task')!.execute({ id: halfTime.id, allocation: 0.25 }, engine);
       expect(updated.allocation).toBe(0.25);
+      const custom = await TOOL_MAP.get('create_task')!.execute({ projectId: scratch.id, title: 'Custom', customFields: { ref: 'X-1' } }, engine);
+      expect(custom.customFields).toEqual({ ref: 'X-1' });
+      const note = await TOOL_MAP.get('add_comment')!.execute({ taskId: custom.id, content: 'n', customFields: { ref: 'C-1' } }, engine);
+      expect(note.customFields).toEqual({ ref: 'C-1' });
 
       // 2. get_timeline_ladder tool
       const ladderTool = TOOL_MAP.get('get_timeline_ladder')!;

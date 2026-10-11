@@ -190,6 +190,10 @@ await asVic.createTask({ projectId, title: 'x' }); // ForbiddenError if vic is o
 
 Checks run on `withActor` views (the base engine is trusted). Roles come from `project.members`: users (`{ userId, role }`) or whole teams (`{ teamId, role }`), with roles `viewer` < `contributor` < `project_manager` < `admin`. Project creators become `admin`. Actors with `roles: ['admin']` are superusers. Projects the actor cannot read, or that belong to another tenant, behave as if they do not exist (`NotFoundError`). Lists are filtered. Records created through a view are stamped with the actor's `tenantId`. See the docs site's Authorization page for the full permission matrix and custom policies.
 
+#### Custom fields
+
+Every entity (projects, workflows, teams, tasks, containers, iterations, deliverables, comments, attachments, time entries, dependencies, webhooks) accepts a `customFields` JSON object on create and update for your own data. Task custom fields are validated against the project's `customFieldDefinitions`; on other entities any JSON object is stored as-is. Updates replace the whole object.
+
 #### Webhooks
 
 ```ts

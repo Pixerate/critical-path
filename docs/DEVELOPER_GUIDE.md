@@ -742,7 +742,7 @@ Discrete interfaces are provided for repository segregation:
 - `TimeEntryRepository`
 - `DependencyRepository`
 - `WebhookRepository`
-- `StorageAdapter` (composition of all repositories)
+- `StorageAdapter` (composition of all repositories). Every entity has an optional `customFields` JSON object that adapters must round-trip (see the conformance suite).
 - `StorageAdapter.incrementTaskHours(taskId, deltas)` (optional: atomic hour totals for `logTime`; `SQLiteStore` and `InMemoryStore` implement it)
 - `StorageAdapter.transaction(fn)` (optional: makes cascading deletes atomic; `SQLiteStore` implements it)
 - `WebhookOutboxStore` (optional: `putWebhookJob`, `claimWebhookJobs`, `deleteWebhookJob`, for `OutboxWebhookQueue`)
