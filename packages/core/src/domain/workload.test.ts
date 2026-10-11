@@ -309,3 +309,15 @@ describe('calculateWorkloadDistribution', () => {
     expect(result.totalHours).toBe(16);
   });
 });
+
+describe('workload default date range', () => {
+  it('keeps the hours of undated tasks created on a weekend', async () => {
+    const { calculateWorkloadDistribution } = await import('./workload.js');
+    // Sunday: a 16h task with no dates spreads over Monday and Tuesday of the next week
+    const createdAt = '2026-10-11T10:00:00.000Z';
+    const task = { id: 't', projectId: 'p', title: 'T', status: 'in_progress', priority: 'medium', estimatedHours: 16, createdAt, updatedAt: createdAt } as const;
+    const result = calculateWorkloadDistribution({ tasks: [task], timeEntries: [], users: [], teams: [] }, { interval: 'week', metric: 'scheduled' });
+    expect(result.totalHours).toBe(16);
+    expect(result.buckets.map((b) => b.date)).toEqual(['2026-10-05', '2026-10-12']);
+  });
+});

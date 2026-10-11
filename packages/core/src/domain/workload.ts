@@ -112,6 +112,13 @@ export function calculateWorkloadDistribution(
       if (t.dueDate) dates.push(parseDateOnly(t.dueDate).getTime());
       if (t.actualEndDate) dates.push(parseDateOnly(t.actualEndDate).getTime());
       if (t.createdAt) dates.push(parseDateOnly(t.createdAt).getTime());
+      // Without a due date, a task's effort is spread up to start + one day per 8 hours (see below),
+      // which can run past every date above (e.g. a task created on a weekend). Include that end,
+      // or its hours would fall outside every bucket and be lost.
+      const start = t.plannedStartDate ?? t.actualStartDate ?? t.createdAt;
+      if (!t.dueDate && start) {
+        dates.push(addDays(parseDateOnly(start), Math.max(1, Math.ceil(getTaskDurationHours(t) / 8))).getTime());
+      }
     }
     for (const te of timeEntries) {
       if (te.loggedAt) dates.push(parseDateOnly(te.loggedAt).getTime());
