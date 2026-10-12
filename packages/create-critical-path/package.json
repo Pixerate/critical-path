@@ -24,6 +24,7 @@
   },
   "files": [
     "dist",
+    "CHANGELOG.md",
     "!dist/**/*.test.*"
   ],
   "publishConfig": {

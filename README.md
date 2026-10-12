@@ -191,6 +191,10 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 
 ---
 
+## ⬆️ Upgrading
+
+Critical Path is pre-1.0, so minor releases can contain breaking changes (marked **BREAKING** in each package's `CHANGELOG.md`, which ships with the package). Upgrade every `@critical-path/*` package together. [`UPGRADING.md`](./UPGRADING.md) is a step-by-step guide written for coding agents: inventory, upgrade, a check-and-fix item for every breaking change, and verification. It is also on the [docs site](https://criticalpath.uchiage.app/getting-started/upgrading/).
+
 ## 🚀 Quick Start
 
 ### Option A: Scaffold a New Project (30 Seconds)

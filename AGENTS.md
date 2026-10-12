@@ -47,6 +47,7 @@ Whenever an agent makes code changes or pushes to this repository, the agent MUS
 ### 4. 📦 Changeset Release Workflow
 - When modifying package code in `packages/*`, create a changeset markdown file via `pnpm changeset` or place a changeset in `.changeset/`.
 - This ensures automated semver bumping, selective package publishing, and package-level `CHANGELOG.md` generation on merge.
+- For every **BREAKING** change, add a check-and-fix item to [`UPGRADING.md`](./UPGRADING.md) and to `apps/docs/src/content/docs/getting-started/upgrading.md` (same content), so agents in consumer apps can migrate on their own.
 
 ### 5. 💡 Maintain & Check `GOTCHAS.md`
 - Always check [`GOTCHAS.md`](./GOTCHAS.md) before starting tasks or debugging to review known issues, pitfalls, and established workarounds.
