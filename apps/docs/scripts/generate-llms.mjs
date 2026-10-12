@@ -10,11 +10,24 @@ const DOCS_DIR = path.resolve(__dirname, '../src/content/docs');
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
 const ROOT_DIR = path.resolve(__dirname, '../../..');
 
+/**
+ * A section's pages: the listed ones first (in that order), then every other page in the
+ * directory alphabetically, so new pages are never left out of llms.txt.
+ */
+function sectionFiles(section) {
+  const dir = path.join(DOCS_DIR, section.dir);
+  const others = fs
+    .readdirSync(dir)
+    .filter((f) => /\.mdx?$/.test(f) && !section.files.includes(f))
+    .sort();
+  return [...section.files, ...others];
+}
+
 const SECTIONS = [
   {
     title: 'Start Here',
     dir: 'getting-started',
-    files: ['introduction.md', 'quick-start.md', 'architecture.md'],
+    files: ['introduction.md', 'quick-start.md', 'upgrading.md', 'architecture.md'],
   },
   {
     title: 'Core Engine',
@@ -95,7 +108,7 @@ function generate() {
 
   for (const section of SECTIONS) {
     const sectionDocs = [];
-    for (const filename of section.files) {
+    for (const filename of sectionFiles(section)) {
       const filePath = path.join(DOCS_DIR, section.dir, filename);
       if (!fs.existsSync(filePath)) {
         console.warn(`File not found: ${filePath}`);

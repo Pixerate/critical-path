@@ -2,6 +2,9 @@
 
 > **Svelte 5 Runes Reactive Integrations for Critical Path.**
 
+> **Upgrading?** Upgrade every `@critical-path/*` package together. Coding agents: follow [UPGRADING.md](https://github.com/Pixerate/critical-path/blob/main/UPGRADING.md); breaking changes are marked **BREAKING** in this package's `CHANGELOG.md`.
+
+
 `@critical-path/svelte` provides Svelte 5 Runes reactive state classes and factories (`ProjectState`, `TaskState`, `KanbanState`, `TaskTransitionsState`, `WorkflowState`, `CommentState`, `AttachmentState`, `TaskActivityState`, `DeliverableState`, `DeliverableSummaryState`, `WebMcpState`) for building project management UIs in Svelte 5 and SvelteKit applications.
 
 ---

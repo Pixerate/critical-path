@@ -3,6 +3,9 @@
 > **Model Context Protocol (MCP) and Client-Side WebMCP Integration for Critical Path**  
 > Connect AI coding agents, background workers, and in-browser copilots directly to your project management workflows.
 
+> **Upgrading?** Upgrade every `@critical-path/*` package together. Coding agents: follow [UPGRADING.md](https://github.com/Pixerate/critical-path/blob/main/UPGRADING.md); breaking changes are marked **BREAKING** in this package's `CHANGELOG.md`.
+
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---

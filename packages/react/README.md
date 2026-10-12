@@ -2,6 +2,9 @@
 
 > **React Context Provider & Hooks for Critical Path.**
 
+> **Upgrading?** Upgrade every `@critical-path/*` package together. Coding agents: follow [UPGRADING.md](https://github.com/Pixerate/critical-path/blob/main/UPGRADING.md); breaking changes are marked **BREAKING** in this package's `CHANGELOG.md`.
+
+
 `@critical-path/react` provides components and custom React hooks (`useProjects`, `useTasks`, `useKanban`, `useTaskActivity`, `useComments`, `useAttachments`, `useTaskTransitions`, `useWorkflows`, `useDeliverables`, `useDeliverableSummary`, `useWebMCP`) for rendering project management UIs in React and Next.js.
 
 ---

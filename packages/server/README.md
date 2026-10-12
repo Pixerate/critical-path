@@ -2,6 +2,9 @@
 
 > **Web Fetch API compatible server router & framework adapters for Critical Path.**
 
+> **Upgrading?** Upgrade every `@critical-path/*` package together. Coding agents: follow [UPGRADING.md](https://github.com/Pixerate/critical-path/blob/main/UPGRADING.md); breaking changes are marked **BREAKING** in this package's `CHANGELOG.md`.
+
+
 `@critical-path/server` bridges standard Web Fetch API `Request` and `Response` objects to `@critical-path/core`, offering turnkey adapters for **Next.js App Router** and **SvelteKit**.
 
 ---

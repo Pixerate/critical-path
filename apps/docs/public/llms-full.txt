@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-11T09:40:08.072Z
+> Documentation generated on: 2026-10-12T11:06:58.432Z
 
 ================================================================================
 
@@ -253,6 +253,208 @@ console.log('Critical Tasks:', analysis.criticalTaskIds);
 ```
 
 Congratulations! You are now running Critical Path in your application. Check out the [Data Model Guide](/core/data-model/) to learn about the underlying schemas.
+
+--------------------------------------------------------------------------------
+
+## Upgrading (for coding agents)
+URL: https://criticalpath.uchiage.app/getting-started/upgrading/
+Description: Step-by-step instructions an AI coding agent can follow to upgrade an app's @critical-path packages, find each breaking change and verify the result.
+
+<!-- Kept in sync with UPGRADING.md at the repository root. -->
+
+This guide is for an AI coding agent maintaining an application that depends on `@critical-path/*` packages. Follow it top to bottom to move the app to the latest release. Critical Path is pre-1.0, so minor versions can contain breaking changes; every one is marked **BREAKING** in the package changelogs.
+
+> The same guide is in the repository as [`UPGRADING.md`](https://github.com/Pixerate/critical-path/blob/main/UPGRADING.md).
+
+## Rules
+
+1. **Upgrade every `@critical-path/*` package together, to the same release.** The packages depend on each other at exact versions, so mixing versions installs two copies of core (two engines, mismatched types).
+2. **Fix causes, not symptoms.** Do not silence a new `400`, `403`, `404`, `405` or `415` by catching it. Each one points at a request that now needs to change (see the checklist below).
+3. **Keep your own data in `customFields`.** Request bodies are strict, so unknown keys are rejected. Every entity accepts a `customFields` JSON object.
+4. **Do not downgrade to make tests pass.** If something cannot be migrated, stop and report it to the user with the failing test and the changelog entry.
+
+## 1. Take inventory
+
+Find the installed versions and the features the app uses. Each feature maps to items in the checklist.
+
+```bash
+npm ls --depth=0 2>/dev/null | grep -E "@critical-path/|create-critical-path"
+```
+
+```bash
+grep -rnE "from '@critical-path/[a-z]+(/[a-z]+)?'" --include=*.{ts,tsx,js,mjs,svelte} src app lib 2>/dev/null | sed -E "s/.*from '([^']+)'.*/\1/" | sort | uniq -c
+```
+
+Note whether the app:
+
+- [ ] serves the HTTP API (`createNextHandler`, `createSvelteKitHandler`, `createUniversalHandler`, `CriticalPathRouter`)
+- [ ] calls the API from a browser on another origin
+- [ ] implements its own storage adapter (`implements StorageAdapter`)
+- [ ] uses an `authorize` policy, tenants (`tenantId`) or project `members`
+- [ ] registers plugins (`hooks`, `customFieldTypes`, `routes`, `middleware`)
+- [ ] uses webhooks, file storage (`S3StorageAdapter`, `FirebaseStorageAdapter`), work schedules, or critical path analysis
+- [ ] drives the `critical-path` CLI or MCP tools from agents
+
+## 2. Upgrade the packages
+
+Upgrade only the packages the app already uses, all in one command:
+
+```bash
+npm install @critical-path/core@latest @critical-path/server@latest @critical-path/client@latest @critical-path/react@latest
+```
+
+With pnpm, use `pnpm add`; with yarn, use `yarn add`. Then confirm a single version of core is installed:
+
+```bash
+npm ls @critical-path/core
+```
+
+## 3. Read what changed
+
+Each package ships its `CHANGELOG.md` (from the releases after core 0.51.0). Read the entries between the old and new versions, newest first:
+
+```bash
+grep -n "BREAKING" node_modules/@critical-path/core/CHANGELOG.md
+```
+
+If the file is missing (older releases), read the changelogs on GitHub: `https://github.com/Pixerate/critical-path/blob/main/packages/<package>/CHANGELOG.md`.
+
+## 4. Migrate
+
+Work through the items whose version is newer than the version you started from (core versions; server, client and MCP changed in the same releases). For each item, run the check; if it matches, apply the fix.
+
+### core 0.25: strict bodies, no identity in payloads, CORS off
+
+- **Check:** request bodies or engine calls that pass `actorId`, `authorId`, `userId`, `uploaderId` or keys the API does not define. Browsers calling the API from another origin.
+- **Fix:** remove identity fields from bodies. Resolve the caller in the router instead:
+
+  ```ts
+  createNextHandler({ store }, {
+    getContext: async (request) => ({ userId: await sessionUserId(request), tenantId, roles }),
+    requireAuth: true,
+    cors: { origins: ['https://app.example.com'], credentials: true } // only for cross-origin browsers
+  });
+  ```
+
+  In server code, use `engine.withActor({ userId, tenantId, roles })`. Move app-specific keys into `customFields`. The client throws `CriticalPathError` (with `status`, `issues`, `isNotFound`) for non-2xx responses (client 0.19).
+
+### core 0.26: project members are objects
+
+- **Check:** `members: ['user-1', ...]`.
+- **Fix:** `members: [{ userId: 'user-1', role: 'contributor' }]`. Roles: `viewer`, `contributor`, `project_manager`, `admin`. Teams can be members too: `{ teamId, role }` (core 0.37).
+
+### core 0.27–0.30: webhooks, plugins, cascades, pagination
+
+- **Webhooks** are delivered for every domain event. Subscribe only to the events you need and de-duplicate on the `X-CriticalPath-Delivery` header.
+- **Plugins:** `customFieldTypes` is `CustomFieldType[]` (`{ type, label?, validate(value, definition) }`). `beforeTaskDelete` and `afterTaskDelete` receive `(taskId, task)`. Before-hook output is validated like caller input and cannot change `projectId`.
+- **Required custom fields** are enforced even when `customFields` is omitted.
+- **Deletes cascade:** `deleteTask` removes subtasks, dependencies, comments, attachments (and files) and time entries. Pass `{ subtasks: 'detach' }` to keep subtasks.
+- **Pagination:** `GET /tasks` and `GET /activities` return `{ tasks|activities, nextCursor }` (default 100, max 500). Follow `nextCursor`; the client's `getTasks` already does. MCP `list_tasks` returns `{ tasks, nextCursor }`.
+
+### core 0.31–0.32: file storage and store instances
+
+- **Check:** `new S3StorageAdapter(` or `new FirebaseStorageAdapter(`, `getPresignedAttachmentUploadUrl(`, `store: 'sqlite'`.
+- **Fix:** pass your AWS SDK v3 `client`, `commands` and `presign` to `S3StorageAdapter`, and a real `bucket` to `FirebaseStorageAdapter`. Presigned uploads take `{ projectId, filename, contentType?, expiresInSeconds? }`. Pass store instances (`new SQLiteStore({ filename })`), never strings.
+
+### core 0.35–0.38: in-memory copies, tenant filters, webhook DNS checks
+
+- `InMemoryStore` returns copies; mutating a returned record no longer changes stored state. Write changes through the engine.
+- Webhook deliveries resolve the target host and fail if it is a private address; redirects are not followed. In tests that use real-looking hostnames with a mock `fetch`, pass `webhookDelivery: { resolveHost: async () => ['93.184.215.14'] }`. In local development, use `allowPrivateUrls: true`.
+
+### core 0.41: work schedules honour their time zone
+
+- **Check:** `timezone:` in any `WorkSchedule`, or date-time strings without `Z` or an offset passed to calendar functions.
+- **Fix:** expect dates to follow the schedule's zone. Remove `timezone` (or set `'UTC'`) to keep the old results. Treat schedule objects as immutable once used.
+
+### core 0.44–0.45: analysis results
+
+- `Overallocation.assigneeId` is optional; entries for team pools have `teamId`. Every entry has `capacity`.
+- Completed and canceled tasks take no time in critical path analysis. Update assertions on `totalDurationHours` and dates for projects with finished tasks.
+
+### core 0.47: router security
+
+- **Check:** requests without `Content-Type: application/json` (for example `fetch(url, { method: 'POST', body: JSON.stringify(x) })`), URLs with extra path segments, or calls to `POST /status`.
+- **Fix:** always send `Content-Type: application/json` (otherwise `415`; the client SDK already does). Use exact routes from `GET /openapi.json` (otherwise `404`, or `405` for a wrong method). `POST /status` needs `taskId` or `projectId` and `task.update` permission.
+
+### core 0.48: admins, parents, time logs
+
+- **Check:** a custom `authorize` policy, or code that edits `members`.
+- **Fix:** adding, removing or changing an `admin` member requires the new `project.manage_admins` action; grant it in custom policies where admin changes should be allowed. Task `parentId` must be a task in the same project and cannot create a cycle. Custom storage adapters may implement `incrementTaskHours` for atomic time logging.
+
+### core 0.49: `customFields` on every entity
+
+- **Check:** a custom storage adapter.
+- **Fix:** round-trip `customFields` on every entity (projects, workflows, teams, containers, iterations, comments, attachments, time entries, dependencies, webhooks). `PATCH` bodies for comments and iterations reject unknown keys.
+
+### core 0.50: references and ownership
+
+- **Check:** creating records in projects that may not exist, adding the same dependency twice, `workflowId` values, or updates that include `projectId`, `taskId` or `authorId`.
+- **Fix:** create the project first; `createWorkflow` assigns a new id, so reference the returned `id`. Adding an existing dependency now returns the existing one. Updates ignore ownership fields; to move a record, create it in the new project.
+
+### core 0.51: validated analysis queries, tool defaults
+
+- **Check:** `GET /workload`, `GET /projects/:id/workload` or `GET /projects/:id/ladder` query strings; CLI `propose`/`subtask`, `client.createSubtask` or MCP `create_task` relying on `draft`/`todo`.
+- **Fix:** use the documented values (`interval`: `day|week|month`; `groupBy`: `assignee|team|taskType|priority|status`; `metric`: `scheduled|logged|remaining|blended`; dates as `YYYY-MM-DD`; `level`: `macro|standard|concrete|all`). New tasks start in the workflow's default status unless you pass `status`.
+
+### If the app implements a storage adapter
+
+Run the conformance suite after every upgrade. It checks every contract the engine relies on:
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { runStorageAdapterConformance } from '@critical-path/core/testing';
+
+runStorageAdapterConformance({ name: 'MyStore', createStore: () => new MyStore(), describe, it, expect });
+```
+
+## 5. Verify
+
+Run these and fix every failure before finishing:
+
+```bash
+npx tsc --noEmit
+```
+
+```bash
+npm test
+```
+
+Then smoke-test the running API (adjust the base URL and auth):
+
+```bash
+curl -s -X POST "$API/projects" -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{"name":"Upgrade check","customFields":{"source":"upgrade"}}'
+```
+
+Expect `201` with `customFields` echoed back. A `400` with `issues` names the field to change; `401`/`403` means `getContext` or the policy needs attention.
+
+## 6. Finish
+
+- Summarise for the user: the versions moved from and to, each checklist item that applied, and what changed.
+- Mention anything you could not migrate, with the changelog entry.
+- Known pitfalls and workarounds: <https://github.com/Pixerate/critical-path/blob/main/GOTCHAS.md>.
+
+## Keeping up to date automatically
+
+Group the packages so they always move together. Dependabot (`.github/dependabot.yml`):
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      critical-path:
+        patterns: ['@critical-path/*', 'create-critical-path']
+```
+
+Renovate (`renovate.json`):
+
+```json
+{ "packageRules": [{ "matchPackageNames": ["/^@critical-path\\//", "create-critical-path"], "groupName": "critical-path" }] }
+```
+
+When such a PR opens, an agent can follow this guide from step 3 on the PR branch.
 
 --------------------------------------------------------------------------------
 
@@ -639,6 +841,16 @@ console.log(`Project Completion Time: ${result.totalDurationHours} hours`);
 console.log(`Bottleneck Tasks:`, result.criticalTaskIds);
 ```
 
+## Automatic unblocking
+
+When a task is completed or canceled, the engine checks the tasks that depend on it. A downstream task that is marked blocked (`isBlocked`, `blockedReason` or `blockedSince`) is unblocked once every task it depends on is completed or canceled, and `task.unblocked` is published. Blocked time is added to `blockedDurationSeconds`.
+
+- Each task's status is read with its own project's status definitions, so dependencies across projects with different workflows work.
+- Upstream tasks the caller cannot read still count, so nothing is unblocked early.
+- Tasks that were never blocked get no event.
+
+Adding a dependency that already exists (same tasks and type) returns the existing one instead of creating a duplicate. Both tasks must exist.
+
 --------------------------------------------------------------------------------
 
 ## Lifecycle Hooks & Events
@@ -820,6 +1032,1064 @@ export function TimelineView({ projectId }: { projectId: string }) {
 {#if ladderState.macro}
   <div class="macro">Status: {ladderState.macro.health}</div>
 {/if}
+```
+
+--------------------------------------------------------------------------------
+
+## Authorization & Multi-Tenancy
+URL: https://criticalpath.uchiage.app/core/authorization/
+Description: Role-based access control with project membership, workspace superusers, custom policies, and tenant isolation.
+
+Critical Path enforces permissions and tenant boundaries inside the engine, so the REST API, the MCP server and WebMCP all share one policy.
+
+---
+
+## How enforcement works
+
+Checks apply to calls made through an **actor view**, `engine.withActor(actor)`. `@critical-path/server` creates one per request from your `getContext` option (or the `anonymous` actor), and the MCP server creates one from its `actor` option. Calls on the base engine are trusted server code and are never checked.
+
+| Situation | Result |
+| :--- | :--- |
+| Project in another tenant, or a project the actor cannot read | Reported as **not found** (`NotFoundError` → HTTP `404`), so its existence is not revealed |
+| Readable project, but the action is not allowed | `ForbiddenError` → HTTP `403` |
+| Lists (`getProjects`, `getTasks()`, activities, attachments, ...) | Filtered to readable projects |
+
+`engine.store` bypasses all checks. Use it only from trusted code.
+
+---
+
+## Role-based policy
+
+```ts
+import { CriticalPathEngine, createRolePolicy } from '@critical-path/core';
+
+const engine = new CriticalPathEngine({
+  store,
+  authorize: createRolePolicy()
+});
+```
+
+Roles come from `project.members`. Entries are either users (`{ userId, role }`) or teams (`{ teamId, role }`), where every user in `team.memberIds` gets the role. A user matching several entries gets the permissions of all of them. The creator of a project automatically becomes its `admin`.
+
+```ts
+await engine.createProject({
+  name: 'Website',
+  members: [
+    { teamId: designTeam.id, role: 'contributor' },
+    { userId: 'lee', role: 'project_manager' }
+  ]
+});
+```
+
+Team memberships are cached per engine and refreshed whenever a team changes through the engine. Writes made directly with `engine.store` are not seen until the next team change.
+
+| Action | viewer | contributor | project_manager | admin |
+| :--- | :---: | :---: | :---: | :---: |
+| `project.read` | ✓ | ✓ | ✓ | ✓ |
+| `task.create`, `task.update`, `comment.create`, `attachment.create`, `time.log` |  | ✓ | ✓ | ✓ |
+| `task.delete`, `plan.manage` (iterations, containers, deliverables), `project.update`, `project.manage_members`, `comment.moderate`, `attachment.delete` |  |  | ✓ | ✓ |
+| `project.delete`, `project.manage_admins` (adding, removing or changing an `admin` member) |  |  |  | ✓ |
+
+- Authors may edit and delete their own comments and attachments without moderator rights.
+- Actors whose `roles` include `admin` (configurable with `superuserRoles`) may do anything within their tenant.
+- `project.create` defaults to any non-anonymous actor (`canCreateProjects`).
+- `workspace.manage` (workflows, teams) defaults to superusers (`canManageWorkspace`).
+- Override the role matrix with `rolePermissions`.
+
+### Custom policies
+
+`authorize` is any function of `{ actor, action, project?, resource? }` returning `boolean` or `Promise<boolean>`:
+
+```ts
+const engine = new CriticalPathEngine({
+  authorize: async ({ actor, action, project }) =>
+    action === 'project.read' || (await myAcl.check(actor.userId, action, project?.id))
+});
+```
+
+Without `authorize`, actors may do anything within their tenant.
+
+---
+
+## Tenant isolation
+
+Give actors a `tenantId` (from `getContext` on the server):
+
+```ts
+createNextHandler({ store, authorize: createRolePolicy() }, {
+  requireAuth: true,
+  getContext: async () => {
+    const session = await auth();
+    return session?.user
+      ? { userId: session.user.id, tenantId: session.user.orgId, roles: session.user.roles }
+      : null;
+  }
+});
+```
+
+- Projects, workflows and teams created through a view are stamped with the actor's `tenantId`. Payloads can never set or change it.
+- Actors only see records from their own tenant. Tasks, comments, attachments and the rest follow their project.
+- Projects without a workflow only fall back to default workflows from their own tenant.
+- Actors without a `tenantId` (single-tenant deployments) see records that have no tenant.
+
+---
+
+## MCP servers
+
+An engine-backed MCP server acts as its `actor` option (default `mcp-agent`, which has no memberships). When you enable a policy, give the server a real identity:
+
+```ts
+createCriticalPathMcpServer({ engine, actor: { userId: 'claude', actorType: 'agent', tenantId: 'acme' } });
+```
+
+Then add `claude` to the projects it should work on.
+
+
+### Managing admins
+
+Changing `members` needs `project.manage_members`. If the change would add, remove or alter an `admin` entry, it also needs `project.manage_admins`, which only project admins (and workspace superusers) have by default. A project manager can manage every other member but cannot promote themselves, demote the owner, or delete the project. Custom policies should grant `project.manage_admins` wherever they want admin changes to be allowed.
+
+--------------------------------------------------------------------------------
+
+## Calendars & Work Schedules
+URL: https://criticalpath.uchiage.app/core/calendars-and-schedules/
+Description: Configure working hours, working days, holidays, and multi-tier schedule inheritance for realistic critical path and capacity planning.
+
+In real-world project delivery, tasks are not executed 24 hours a day, 7 days a week. Projects respect business hours, organization holidays, weekends, and individual team member availability.
+
+**Critical Path** includes a calendar and work schedule subsystem that accounts for active working hours, weekends, and holidays across all core calculations:
+- **Critical Path Method (CPM)**: Forward and backward passes skip non-working days and holidays, computing realistic project end dates (`earlyStartDate`, `earlyFinishDate`, `lateStartDate`, `lateFinishDate`).
+- **Workload & Capacity Distribution**: Scheduled effort is allocated exclusively across active calendar working days, and net available capacity automatically discounts regional holidays.
+- **Reality Deltas & Variance**: Schedule variance is computed in both elapsed calendar days (`scheduleVarianceDays`) and true business working days (`scheduleVarianceWorkingDays`).
+
+---
+
+## 1. Schedule Data Model
+
+A `WorkSchedule` defines working hours, working days, timezones, and regional holidays:
+
+```ts
+import type { WorkSchedule } from '@critical-path/core';
+
+export const standardSchedule: WorkSchedule = {
+  timezone: 'Europe/London', // IANA zone for the hours, weekdays and holiday dates below (default UTC)
+  days: [
+    { dayOfWeek: 0, isWorkingDay: false }, // Sunday
+    { dayOfWeek: 1, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Monday
+    { dayOfWeek: 2, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Tuesday
+    { dayOfWeek: 3, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Wednesday
+    { dayOfWeek: 4, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Thursday
+    { dayOfWeek: 5, isWorkingDay: true, hours: [{ start: '09:00', end: '17:00' }] }, // Friday
+    { dayOfWeek: 6, isWorkingDay: false }  // Saturday
+  ],
+  holidays: [
+    { date: '2026-12-25', name: 'Christmas Day' },
+    { date: '2026-12-26', name: 'Boxing Day' },
+    { date: '2027-01-01', name: "New Year's Day" }
+  ]
+};
+```
+
+### Day Schedule & Split Shifts
+
+Each day specifies `dayOfWeek` (0 = Sunday), `isWorkingDay` and an array of `hours: WorkingHoursRange[]`:
+
+```ts
+// Split shift or lunch break configuration
+{
+  dayOfWeek: 1,
+  isWorkingDay: true,
+  hours: [
+    { start: '09:00', end: '13:00' },
+    { start: '14:00', end: '18:00' }
+  ]
+}
+```
+
+### Regional & Half-Day Holidays
+
+Holidays are local dates in the schedule's time zone. They are full closures, or half days with `halfDay: true`, which keeps the first half of that day's working hours:
+
+```ts
+holidays: [
+  // Full-day bank holiday
+  { date: '2026-12-25', name: 'Christmas Day' },
+
+  // Half-day holiday: with 09:00-17:00 hours, only 09:00-13:00 is worked
+  { date: '2026-12-24', name: 'Christmas Eve', halfDay: true }
+]
+```
+
+### Time zones
+
+`timezone` is an IANA name such as `'America/New_York'` (default UTC). The schedule's hours, weekdays and holiday dates are wall-clock rules in that zone, so `09:00–17:00` in `'America/New_York'` and in `'Europe/London'` are different instants. Working-time arithmetic follows the zone's UTC offset and daylight-saving changes:
+
+```ts
+const newYork: WorkSchedule = { ...DEFAULT_WORK_SCHEDULE, timezone: 'America/New_York' };
+
+addWorkingHours('2026-10-05T13:00:00Z', 8, newYork); // 09:00 EDT + 8h = 2026-10-05T21:00:00Z
+// Across the fall-back weekend: Friday 09:00 EDT + 16h = Monday 17:00 EST (22:00Z)
+addWorkingHours('2026-10-30T13:00:00Z', 16, newYork);
+```
+
+- **Inputs:** strings with `Z` or an offset, and `Date` objects, are absolute instants. Date-only strings (`'2026-10-05'`) and date-times without an offset (`'2026-10-05T09:00'`) are wall-clock times in the schedule's zone.
+- **Day-level helpers** (`isWorkingDay`, `getWorkingDaysList`, capacity) use the local date an instant falls on: Sunday 23:30 in New York is a Sunday, even though it is Monday in UTC.
+- **Elapsed hours:** a window that spans a clock change has its real elapsed length. A 00:00–08:00 shift on a spring-forward night is 7 hours. `getWorkingHoursInDay` still reports the nominal 8.
+- **Validation:** unknown zone names are rejected by the API schemas, and the calendar functions throw a `RangeError` for them.
+
+---
+
+## 2. Hierarchical Schedule Resolution
+
+Schedules can be declared at multiple levels of granularity and resolve with clean hierarchical fallback:
+
+> **Where this applies:** workload and capacity calculations resolve each assignee's schedule through this hierarchy (users come from the engine's `users` directory). Critical-path (CPM) dates use a single project calendar by default (`options.schedule`, then `project.schedule`, then the engine's `defaultSchedule`), or this hierarchy with `calendars: 'assignee'` (see below).
+
+```
+  ┌────────────────────────────────────────────────────────┐
+  │ 1. Assignee User Schedule (user.schedule)              │
+  │    (Part-time workers, contracted individuals)         │
+  └───────────────────────────┬────────────────────────────┘
+                              │ fallback if undefined
+                              ▼
+  ┌────────────────────────────────────────────────────────┐
+  │ 2. Team Schedule (team.schedule)                       │
+  │    (Front-end pod, European office, 4-day workweek)    │
+  └───────────────────────────┬────────────────────────────┘
+                              │ fallback if undefined
+                              ▼
+  ┌────────────────────────────────────────────────────────┐
+  │ 3. Project Schedule (project.schedule)                 │
+  │    (Client milestone calendar, studio schedule)        │
+  └───────────────────────────┬────────────────────────────┘
+                              │ fallback if undefined
+                              ▼
+  ┌────────────────────────────────────────────────────────┐
+  │ 4. Engine Default Schedule (DEFAULT_WORK_SCHEDULE)     │
+  │    (Standard 40h Monday-Friday 09:00-17:00 UTC)        │
+  └────────────────────────────────────────────────────────┘
+```
+
+You can resolve effective schedules manually using the domain helper:
+
+```ts
+import { resolveEffectiveSchedule, DEFAULT_WORK_SCHEDULE } from '@critical-path/core';
+
+const effective = resolveEffectiveSchedule({
+  user: taskAssignee,
+  team: engineeringTeam,
+  project: activeProject,
+  defaultSchedule: engine.config.defaultSchedule
+});
+```
+
+---
+
+## 3. Critical Path Method (CPM) with Real Calendars
+
+When performing topological scheduling, Critical Path computes date boundaries that respect non-working periods:
+
+```ts
+import { CriticalPathEngine } from '@critical-path/core';
+
+const engine = new CriticalPathEngine({
+  defaultSchedule: standardSchedule
+});
+
+const cpm = await engine.calculateCriticalPath('proj_studio_2026', {
+  projectStartDate: '2026-12-24T09:00:00Z'
+});
+
+console.log('Total critical path working hours:', cpm.totalWorkingHours);
+console.log('Projected completion date:', cpm.projectEndDate);
+
+for (const taskSchedule of cpm.tasks) {
+  console.log(`Task ${taskSchedule.taskId}:`);
+  console.log(`  Early: ${taskSchedule.earlyStartDate} -> ${taskSchedule.earlyFinishDate}`);
+  console.log(`  Late:  ${taskSchedule.lateStartDate} -> ${taskSchedule.lateFinishDate}`);
+  console.log(`  Slack: ${taskSchedule.slackWorkingHours} working hours`);
+}
+```
+
+If a 16-hour task begins on Friday at 09:00, it works 8 hours Friday, skips Saturday and Sunday, and completes on Monday at 17:00.
+
+### Per-assignee calendars
+
+By default every task is scheduled on the project calendar. With `calendars: 'assignee'`, each task runs on its own calendar:
+
+1. the assignee's `schedule` (from the `users` directory)
+2. otherwise the schedule of the task's team (`task.teamId`)
+3. otherwise the project calendar (the project schedule, then `defaultSchedule`)
+
+```ts
+const engine = new CriticalPathEngine({
+  users: [
+    { id: 'alice', name: 'Alice', email: 'alice@example.com', role: 'contributor', createdAt, schedule: fourDayWeek },
+    { id: 'bob', name: 'Bob', email: 'bob@example.com', role: 'contributor', createdAt }
+  ],
+  criticalPathCalendars: 'assignee' // engine default; or pass { calendars: 'assignee' } per call
+});
+
+const cpm = await engine.calculateCriticalPath(projectId, { calendars: 'assignee' });
+```
+
+Suppose Bob's task finishes Thursday at 17:00 and Alice, who does not work Fridays, picks up the next task. Her task starts Monday at 09:00, and everything after it moves with it. A single project calendar would have started it on Friday.
+
+How the results differ from project mode:
+
+- **Dates are exact per task.** Each task starts at the next working moment on its own calendar after its predecessors finish. Each `scheduleId` names the calendar used (when the schedule has an `id`).
+- **Slack is in the task's own working hours.** A Monday–Thursday assignee has less slack across the same span than a Monday–Friday one.
+- **Numeric offsets** (`earlyStart`, `earlyFinish`, `lateStart`, `lateFinish`, `totalDurationHours`) are working hours from the project start, counted in the project calendar.
+- **A start date is required.** It uses `projectStartDate` or the project's `startDate`, falling back to today (UTC midnight).
+
+Each calendar is evaluated in its own `timezone`, so work handed from London to New York continues at the New York assignee's next working moment.
+
+Over HTTP use `GET /projects/:projectId/critical-path?calendars=assignee`; in the client, `calculateCriticalPath(projectId, { calendars: 'assignee' })`; in MCP, the `calendars` argument of `calculate_critical_path`.
+
+### Resource levelling
+
+Without levelling, CPM assumes unlimited people: three independent tasks for Bob all start on Monday. With `levelResources: true` (assignee mode only), each assignee works on **one task at a time**:
+
+```ts
+const cpm = await engine.calculateCriticalPath(projectId, {
+  calendars: 'assignee',
+  levelResources: true,
+  levelingPriority: 'slack' // default
+});
+
+cpm.unleveledProjectEndDate; // the end date before levelling
+cpm.projectEndDate;          // the achievable end date
+for (const t of cpm.tasks) {
+  if (t.levelingDelayHours) console.log(`${t.taskId} waits ${t.levelingDelayHours}h for ${t.waitingOn}`);
+}
+```
+
+Tasks are placed one at a time, in priority order, at the earliest moment their predecessors have finished **and** their assignee is free for the whole task on their own calendar. A short task can fill a gap before later work.
+
+- **Priority rule** (`levelingPriority`), deciding which ready task gets the assignee first:
+  - `'slack'` (default): least unlevelled slack, then task `priority`;
+  - `'priority'`: task `priority` (urgent → none), then slack;
+  - `'dueDate'`: earliest `dueDate`, then slack;
+  - `'order'`: creation order.
+
+  Remaining ties break by creation order, so results are deterministic.
+- **Slack after levelling:** any two tasks of one assignee that cannot run side by side are linked in the order they were scheduled. Slack and `isCritical` therefore reflect both dependencies and people: a task with plenty of dependency slack is critical if delaying it would push back the same person's next task.
+- **Per task:** `levelingDelayHours` (working hours on the task's calendar) and `waitingOn` (the task it last waited for).
+- **Not constrained:** tasks with neither an assignee nor a team pool (see [team capacity](#team-capacity)), and zero-duration milestones.
+- **Not done:** tasks are never split or reassigned. Only tasks in this project are considered; use [portfolio analysis](#across-projects-portfolio) to count people's work in other projects. The result is a good, deterministic heuristic schedule, not a guaranteed optimum.
+
+Enable it by default with `criticalPathLevelResources: true` (together with `criticalPathCalendars: 'assignee'`). Over HTTP: `?calendars=assignee&levelResources=true&levelingPriority=priority`.
+
+### Partial allocation
+
+A task can take only part of its assignee's time with `allocation` (greater than 0, up to 1; default 1):
+
+```ts
+await engine.createTask({ projectId, title: 'API review', estimatedHours: 16, allocation: 0.5, assigneeId: 'bob' });
+```
+
+- **Estimates are effort.** A 16-hour task at 0.5 spans 32 working hours. This applies to every critical path calculation, in project and assignee mode, with or without levelling. `durationHours` in the results is that elapsed span, and each such task reports its `allocation`.
+- **Levelling uses capacity.** Each assignee has 100% to give at any moment. Two 50% tasks run side by side; a third waits until one finishes. A 100% task waits until the assignee is completely free. Tasks that cannot run together (allocations summing above 100%) are linked in scheduled order for slack; compatible ones are not.
+- **Over-allocation report.** Assignee-mode results include `overallocations`: each period where someone is booked above 100%, with the total and the tasks involved. It is empty after levelling.
+
+  ```ts
+  { assigneeId: 'bob', start: '2026-10-05T09:00:00.000Z', end: '2026-10-05T17:00:00.000Z', allocation: 1.5, taskIds: ['a', 'b'] }
+  ```
+- **Capacity per person is fixed at 100%.** Model part-time people with their work schedule (fewer hours), not a lower capacity.
+- **Workload charts** still spread estimated effort over the task's planned dates and do not use `allocation`.
+
+### Team capacity
+
+When levelling, a team is a **pool**: at any moment its work can use at most `headcount` people (default: the number of `memberIds`).
+
+```ts
+await engine.createTeam({ name: 'Frontend', memberIds: ['ana', 'ben', 'cai'] }); // 3 at once
+await engine.createTeam({ name: 'Agency', memberIds: [], headcount: 2 });       // 2 people not listed as members
+```
+
+- **Team-only tasks** (a `teamId` but no assignee) use one slot of their team, or part of one with `allocation`. Five 8-hour team tasks on a three-person team run three on Monday and two on Tuesday.
+- **Members' own tasks count too.** A task assigned to a member also uses a slot in every team that person belongs to. If two of three members are busy, team-only tasks get one slot. Someone in two teams is counted in both, which is conservative but never over-books.
+- **Not decided for you:** the analysis does not pick which member does a team task, and pools use the team's calendar rather than each member's.
+- **Teams with no members and no `headcount`** stay unconstrained. Only teams in the project's tenant are considered.
+- **Slack:** a delayed task is linked to the task whose finish freed its slot, as are tasks whose combined allocation exceeds the pool. Slack is exact along those chains but can be generous elsewhere in a busy pool.
+- **Over-allocation report:** entries have `teamId` (instead of `assigneeId`) and `capacity` when a pool is booked above its headcount, counting team tasks and members' own tasks.
+
+
+### Finished tasks
+
+Completed and canceled tasks (by `semanticStatus`, or the default `done` / `canceled` statuses) take **no time** in critical path analysis and occupy nobody when levelling. Their successors can start at the project start, and dates reflect only the remaining work.
+
+### Remaining effort
+
+By default every unfinished task is scheduled for its full estimate. With `effort: 'remaining'` (or `criticalPathEffort: 'remaining'` on the engine), in-progress tasks are scheduled for what is left: `max(0, estimate - loggedHours)`, divided by `allocation`. A 16-hour task with 10 hours logged takes 6 more. Tasks that have not started use their full estimate even if time was logged against them, and an in-progress task logged at or over its estimate takes no further time. This relies on logged hours being accurate, so it is opt-in. Over HTTP: `?effort=remaining`.
+
+### Across projects (portfolio)
+
+Levelling one project ignores what its people are doing elsewhere. `calculatePortfolioCriticalPath` analyses several projects at once:
+
+```ts
+const portfolio = await engine.calculatePortfolioCriticalPath({
+  projectIds: ['proj_website', 'proj_app'], // default: every project the caller can read
+  calendars: 'assignee',
+  levelResources: true,
+  projectOrder: ['proj_app'] // optional: the app gets people first; unlisted projects come last
+});
+
+portfolio.projects;        // one CriticalPathAnalysis per project, in request order
+portfolio.projectEndDate;  // the latest end
+portfolio.overallocations; // across all included projects
+```
+
+- **Shared people and teams.** With levelling, each person and team pool has one capacity across all included projects, so nobody is booked above it in total. `waitingOn` can point at a task in another project.
+- **Per-project dates.** Each project's tasks start no earlier than that project's `startDate` and use its calendar; `projectStartDate` and `schedule` are fallbacks for projects without them. Slack is measured against each task's own project end.
+- **Dependencies between projects** are honoured: a task waiting on a task in another included project starts after it. Single-project analysis ignores such dependencies.
+- **Access.** Only projects the caller can read are included. Without `projectIds`, unreadable projects are left out entirely, so their work is not counted and nothing about them is revealed (results can be optimistic). An unreadable or unknown id in `projectIds` is rejected (`403` / `404`).
+- **Hidden work.** With `includeHiddenWork: true`, every other project in the caller's tenant, including ones they cannot read, counts toward people's and teams' capacity without appearing in the results. Tasks from unreadable projects appear only as `'hidden'` (in `waitingOn` and over-allocation task lists); tasks from readable background projects keep their ids. Over-allocations are reported only when they involve a task in the results. This requires `workspace.manage`. With the default role policy, the people who have that permission are superusers, who can already read every project, so it matters with a custom `canManageWorkspace` (for example, a planner role) or your own policy.
+- **Size.** Runs above `portfolioTaskLimit` tasks (engine config, default 5000, counting hidden work) are rejected; pass fewer `projectIds`.
+
+Over HTTP: `GET /portfolio/critical-path?projectIds=a,b&calendars=assignee&levelResources=true&projectOrder=b`. Client: `calculatePortfolioCriticalPath(options)`. MCP: `calculate_portfolio_critical_path`.
+---
+
+## 4. Calendar-Aware Workload Distribution
+
+When calculating streamgraphs or capacity planning matrices with `engine.getWorkloadDistribution()`:
+
+1. **Scheduled Effort Spreading**: Estimated task hours are divided evenly **only across active working days**. If a 5-day task spans Friday to Tuesday, zero effort is allocated to Saturday and Sunday.
+2. **Holiday Capacity Deductions**: Net available team or user capacity is automatically deducted for bank holidays within the bucket interval using `getNetAvailableCapacity()`.
+
+```ts
+const workload = await engine.getWorkloadDistribution('proj_123', {
+  interval: 'week',
+  groupBy: 'assignee'
+});
+
+// A standard 40h week with one full-day holiday yields 32h capacity:
+// bucket.capacity['alice'] === 32
+```
+
+---
+
+## 5. Calendar Domain Functions
+
+The `@critical-path/core` package exposes pure, zero-dependency calendar arithmetic helpers:
+
+| Function | Description |
+| :--- | :--- |
+| `isWorkingDay(date, schedule)` | Returns `true` if the specified date is marked working and not a full holiday. |
+| `getWorkingHoursInDay(date, schedule)` | Calculates the net working hours configured for a specific date. |
+| `addWorkingHours(start, hours, schedule)` | Advances a timestamp forward by $N$ working hours, leaping non-working periods. |
+| `subtractWorkingHours(end, hours, schedule)` | Rolls a timestamp backward by $N$ working hours (for CPM backward passes). |
+| `getWorkingHoursBetween(start, end, schedule)` | Measures total active working hours between two timestamps. |
+| `getWorkingDaysBetween(start, end, schedule)` | Measures total working days elapsed between two dates. |
+| `getWorkingDaysList(start, end, schedule)` | Returns an array of `YYYY-MM-DD` strings for all working days in a range. |
+| `getNetAvailableCapacity(start, end, baseWeekly, schedule)` | Computes prorated capacity after deducting holidays and shortened days. |
+
+--------------------------------------------------------------------------------
+
+## Task Metrics & Progress Inference
+URL: https://criticalpath.uchiage.app/core/task-metrics/
+Description: Inferred actuals, actuals vs estimate reality delta, earned value management (EVM), and time-series progress history.
+
+Task progress in real-world engineering and creative production is rarely a simple manual slider. Team members forget to stamp actual start/end dates, estimates diverge from logged effort, and tasks advance in non-linear bursts.
+
+**Critical Path** provides a comprehensive task metrics engine that computes **inferred actuals**, **multi-dimensional variance**, **smart progress inference**, **Earned Value Management (EVM)**, and **time-series progress curve profiling**.
+
+---
+
+## 1. Inferred Actuals & Lifecycle Auto-Stamping
+
+When tasks transition across workflow statuses, Critical Path automatically captures operational timestamps without requiring manual data entry:
+
+```
++-----------------------------------------------------------------------------+
+| Task Lifecycle Event                     Inferred Actual Attribute          |
++-----------------------------------------------------------------------------+
+| Task moved to `in_progress` (first time) ───► actualStartDate stamped       |
+| Task moved to `completed`                ───► actualEndDate stamped         |
+| Task re-opened (completed -> in_progress)───► actualEndDate reset to null   |
++-----------------------------------------------------------------------------+
+```
+
+### Fallback Inference
+If a task is completed or in progress but has no explicit `actualStartDate` or `actualEndDate`:
+- **`actualStartDate`**: Inferred from the earliest `task.transition` activity log moving the task to `in_progress`, or falling back to `task.createdAt`.
+- **`actualEndDate`**: Inferred from the latest `task.transition` activity log moving the task to `completed`, or falling back to `task.updatedAt`.
+- **`activeWorkingHours`**: Calculated as the elapsed business/working duration between `actualStartDate` and `actualEndDate` (or current time if still in progress).
+
+---
+
+## 2. Actuals vs. Estimate (Reality Delta)
+
+Every task evaluates the difference between planned expectations and empirical reality:
+
+```ts
+interface RealityDelta {
+  estimatedHours: number;
+  loggedHours: number;
+  varianceHours: number;       // loggedHours - estimatedHours
+  effortVarianceHours: number; // loggedHours - estimatedHours
+  durationVarianceHours?: number; // activeWorkingHours - plannedDurationHours
+  accuracyRatio?: number;      // loggedHours / estimatedHours
+  isOverdue: boolean;
+  isOverEstimate: boolean;
+}
+```
+
+- **Effort Variance**: Positive when more hours were logged than budgeted; negative when under budget.
+- **Accuracy Ratio**: An accuracy ratio of $1.0$ indicates perfect alignment; $> 1.0$ indicates scope creep or underestimation; $< 1.0$ indicates efficiency or overestimation.
+- **Overdue Detection**: Automatically flags tasks whose planned `dueDate` has passed while `semanticStatus !== 'completed'`.
+
+---
+
+## 3. Smart Progress Inference
+
+Tasks can have multiple indicators of completion. Critical Path resolves progress via a deterministic waterfall:
+
+```
+┌────────────────────────────────────────────────────────┐
+│ 1. Explicit Progress Slider (> 0%)                     │
+│    User or external system explicitly set progress     │
+└───────────────────────────┬────────────────────────────┘
+                            │ (if zero or undefined)
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│ 2. Checklist / Todo Ratio                              │
+│    Completed todos / Total todos                       │
+└───────────────────────────┬────────────────────────────┘
+                            │ (if no checklist)
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│ 3. Effort Logged vs. Estimate                          │
+│    min(100, (loggedHours / estimatedHours) * 100)      │
+└───────────────────────────┬────────────────────────────┘
+                            │ (if no time logged)
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│ 4. Schedule Elapsed Duration                           │
+│    Elapsed time between planned start and due date     │
+└────────────────────────────────────────────────────────┘
+```
+
+The resulting `TaskProgressInference` object details both the resolved percentage and the exact breakdown:
+
+```ts
+interface TaskProgressInference {
+  progressPercentage: number; // 0 - 100
+  source: 'explicit' | 'todos' | 'time_effort' | 'schedule_elapsed' | 'default';
+  isExplicit: boolean;
+  breakdown: {
+    explicitProgress?: number;
+    todoProgress?: number;
+    effortProgress?: number;
+    scheduleProgress?: number;
+  };
+}
+```
+
+---
+
+## 4. Earned Value Management (EVM)
+
+Critical Path applies standard project management EVM formulas at the individual task level:
+
+$$\text{Planned Value } (PV) = \text{Budgeted Effort (Hours)}$$
+$$\text{Earned Value } (EV) = PV \times \frac{\text{Progress } \%}{100}$$
+$$\text{Actual Cost } (AC) = \text{Logged Effort (Hours)}$$
+$$\text{Cost Variance } (CV) = EV - AC$$
+$$\text{Schedule Variance } (SV) = EV - PV$$
+$$\text{Cost Performance Index } (CPI) = \frac{EV}{AC}$$
+$$\text{Schedule Performance Index } (SPI) = \frac{EV}{PV}$$
+
+---
+
+## 5. Time-Series Progress History & Curve Profiles
+
+By replaying activity logs and status changes, Critical Path reconstructs historical progress snapshots:
+
+```ts
+interface TaskProgressHistoryPoint {
+  timestamp: string;
+  progress: number;
+  status: TaskStatus;
+  semanticStatus: SemanticStatus;
+  action: string;
+}
+```
+
+### Curve Shape Classification
+Using piecewise linear interpolation across quartile checkpoints ($t_{25\%}, t_{50\%}, t_{75\%}$), the engine classifies the task's trajectory into one of five profiles:
+
+- **`linear`**: Steady, uniform velocity throughout the task lifecycle.
+- **`s_curve`**: Slow start, rapid acceleration during the middle phase, tapering off at completion.
+- **`early_surge`**: Rapid initial velocity (front-loaded progress) with long tail of refinement.
+- **`late_rush`**: Little initial activity followed by a steep spike near the deadline.
+- **`stalled`**: Active task that has flatlined or made no forward progress over recent activity windows.
+
+---
+
+## 6. Accessing Task Metrics
+
+### Core Engine
+```ts
+import { CriticalPathEngine, SQLiteStore } from '@critical-path/core';
+
+const engine = new CriticalPathEngine({ store: new SQLiteStore({ filename: 'app.db' }) });
+
+const metrics = await engine.getTaskMetrics('task-123');
+const history = await engine.getTaskProgressHistory('task-123');
+```
+
+### REST API
+```http
+GET /api/critical-path/tasks/:id/metrics
+GET /api/critical-path/tasks/:id/progress-history
+```
+
+### Client SDK
+```ts
+import { CriticalPathClient } from '@critical-path/client';
+
+const client = new CriticalPathClient({ baseUrl: 'http://localhost:3000/api/critical-path' });
+
+const metrics = await client.getTaskMetrics('task-123');
+const history = await client.getTaskProgressHistory('task-123');
+```
+
+### React Hook
+```tsx
+import { useTaskMetrics } from '@critical-path/react';
+
+function TaskAnalyticsWidget({ taskId }: { taskId: string }) {
+  const { metrics, history, progress, evm, curveProfile, loading } = useTaskMetrics(taskId);
+
+  if (loading) return <div>Analyzing task metrics...</div>;
+  if (!metrics) return <div>No metrics available</div>;
+
+  return (
+    <div className="metrics-card">
+      <h3>Progress: {progress?.progressPercentage}% ({progress?.source})</h3>
+      <p>Curve Profile: {curveProfile}</p>
+      <p>Cost Performance Index (CPI): {evm?.costPerformanceIndex.toFixed(2)}</p>
+      <p>Effort Variance: {metrics.realityDelta.effortVarianceHours}h</p>
+    </div>
+  );
+}
+```
+
+### Svelte 5 Runes
+```svelte
+<script lang="ts">
+  import { createTaskMetricsState } from '@critical-path/svelte';
+  import { client } from './client';
+
+  let { taskId } = $props<{ taskId: string }>();
+  const state = createTaskMetricsState(client, taskId);
+
+  $effect(() => {
+    state.fetchAll();
+  });
+</script>
+
+{#if state.loading}
+  <p>Loading metrics...</p>
+{:else if state.metrics}
+  <div>
+    <h4>Earned Value (EV): {state.evm?.earnedValue}h</h4>
+    <p>Curve: {state.curveProfile}</p>
+  </div>
+{/if}
+```
+
+### Model Context Protocol (MCP)
+Agents can inspect metrics and progress history using native MCP tools:
+- `get_task_metrics({ taskId: '...' })`
+- `get_task_progress_history({ taskId: '...' })`
+
+--------------------------------------------------------------------------------
+
+## Webhooks
+URL: https://criticalpath.uchiage.app/core/webhooks/
+Description: Signed, retried webhook deliveries for every domain event, with tenant routing and a pluggable delivery queue.
+
+Every domain event the engine publishes (`task.created`, `task.status_changed`, `time.logged`, `project.deleted`, `agent.status_updated`, ...) can be delivered to HTTP endpoints. Deliveries are signed, time out, and retry with exponential backoff.
+
+---
+
+## Registering webhooks
+
+Over the REST API (requires `workspace.manage` when an `authorize` policy is enabled):
+
+```http
+POST /api/critical-path/webhooks
+{ "name": "CI", "url": "https://ci.example.com/hooks/critical-path", "events": ["task.created", "task.status_changed"] }
+```
+
+The response includes the signing `secret` **once**. Later reads (`GET /webhooks`) only report `hasSecret: true`. Pass your own `secret` (at least 16 characters) to choose it, or `PATCH` a new one to rotate it. Use `"events": ["*"]` to receive everything. Unknown event names are rejected with `400`.
+
+From code: `engine.createWebhook({ name, url, events })`, `client.createWebhook(...)`, or static webhooks in config:
+
+```ts
+new CriticalPathEngine({
+  webhooks: [{ name: 'Audit', url: 'https://audit.example.com/in', events: ['*'], active: true, secret: process.env.AUDIT_SECRET }]
+});
+```
+
+Webhooks are scoped to the creating actor's `tenantId` and only receive that tenant's events.
+
+---
+
+## Delivery format
+
+```http
+POST https://ci.example.com/hooks/critical-path
+Content-Type: application/json
+X-CriticalPath-Event: task.created
+X-CriticalPath-Delivery: evt_abc123:wh_xyz789
+X-CriticalPath-Timestamp: 1791345600
+X-CriticalPath-Signature: sha256=4f0c...
+
+{ "id": "evt_abc123", "event": "task.created", "occurredAt": "2026-10-07T06:40:00.000Z", "tenantId": "acme", "data": { "task": { ... } } }
+```
+
+`X-CriticalPath-Delivery` is identical across retries of the same delivery, so receivers can deduplicate.
+
+### Verifying signatures
+
+```ts
+import { verifyWebhookSignature } from '@critical-path/core';
+
+const body = await request.text(); // the raw body, before JSON parsing
+const ok = await verifyWebhookSignature({
+  secret: process.env.CRITICAL_PATH_WEBHOOK_SECRET!,
+  body,
+  timestamp: request.headers.get('X-CriticalPath-Timestamp')!,
+  signature: request.headers.get('X-CriticalPath-Signature')!
+}); // rejects deliveries older than 5 minutes by default (toleranceSeconds)
+```
+
+---
+
+## Delivery options
+
+```ts
+new CriticalPathEngine({
+  webhookDelivery: {
+    timeoutMs: 10_000,       // per attempt
+    maxAttempts: 5,          // retries at 1s, 2s, 4s, 8s (retryBaseDelayMs doubles)
+    retryBaseDelayMs: 1_000,
+    allowPrivateUrls: false, // block localhost / private network targets (set true in development)
+    resolveHost: undefined,  // DNS resolver for the private-address check (default: node:dns where available)
+    onDeliveryFailed: (job, error) => logger.error('webhook failed', job.url, error)
+  }
+});
+```
+
+Any `2xx` response counts as delivered. Other statuses (including redirects, which are never followed), network errors and timeouts are retried.
+
+### Durability
+
+The default queue keeps pending deliveries in memory, so deliveries still waiting to be retried are lost if the process restarts. For durable delivery, use the built-in outbox, which stores each attempt in your storage adapter (`SQLiteStore`, `FirebaseStore` and `InMemoryStore` implement `WebhookOutboxStore`):
+
+```ts
+import { CriticalPathEngine, OutboxWebhookQueue, SQLiteStore } from '@critical-path/core';
+
+const store = new SQLiteStore({ filename: 'app.db' });
+const outbox = new OutboxWebhookQueue(store, { pollIntervalMs: 1_000, leaseMs: 60_000 });
+const engine = new CriticalPathEngine({ store, webhookDelivery: { queue: outbox } });
+
+outbox.start();            // poll in this process
+// or: await outbox.processDue() from a cron job / scheduled function
+```
+
+Each attempt is a separate entry. A worker leases the entries it claims, so other workers skip them, and deletes each one after the attempt (a failed attempt first stores its retry). If a worker dies mid-delivery, the entry is claimed again when its lease expires. Delivery is therefore **at-least-once**: deduplicate on `X-CriticalPath-Delivery`. `FirebaseStore` claims without a transaction, so concurrent workers can occasionally deliver the same attempt twice.
+
+Jobs are enqueued after the mutation is stored, so a crash between the two can still drop an event.
+
+To use an existing job system instead, supply a `queue` that persists jobs and calls `engine.webhooks.deliver(job)` from a worker:
+
+```ts
+const engine = new CriticalPathEngine({
+  webhookDelivery: {
+    queue: {
+      enqueue: (job, delayMs) => jobs.add('critical-path-webhook', job, { delay: delayMs })
+    }
+  }
+});
+
+worker.process('critical-path-webhook', (job) => engine.webhooks.deliver(job.data));
+```
+
+`deliver` makes one attempt and re-enqueues the job itself when a retry is needed.
+
+### Security notes
+
+- URLs must be `http` or `https`. Private, loopback, link-local, carrier-grade NAT, multicast and reserved addresses are rejected unless `allowPrivateUrls` is set, including encoded forms (`http://2130706433/`) and IPv4 embedded in IPv6 (`[::ffff:127.0.0.1]`), as are `localhost`, `*.internal` and `*.local` names.
+- Before each attempt the hostname is resolved, and the delivery fails if **any** address is private. On runtimes without `node:dns` (for example edge workers) only literal hosts are checked unless you pass `resolveHost`.
+- Redirects are not followed, so a receiver cannot bounce a delivery to an internal host.
+- The connection resolves DNS again after the check, so a host with a very short TTL could still switch addresses between the two (DNS rebinding). For complete protection, also restrict outbound traffic at the network or egress-proxy level, or pass a `fetch` whose connections are pinned to checked addresses.
+- Secrets are stored by the storage adapter as given. Protect your database accordingly.
+
+--------------------------------------------------------------------------------
+
+## Workload & Capacity Distribution
+URL: https://criticalpath.uchiage.app/core/workload-capacity/
+Description: Headless time-series aggregation for team capacity planning, stacked area charts, and organic D3 streamgraphs.
+
+When managing agile engineering sprints or studio project allocations, teams need to understand effort distribution across time, identify resource bottlenecks, and spot overallocation before deadlines slip.
+
+**Critical Path** provides a headless workload and capacity distribution engine. Following the framework's core architectural principle, **chart rendering remains in consumer code** (via D3, Visx, Canvas, or pure SVG), while **time-series aggregation, effort spreading, and capacity calculations** are handled systematically by the library.
+
+---
+
+## 1. Architectural Model
+
+```
++-----------------------------------------------------------------------------------------+
+|                                    CRITICAL PATH CORE                                   |
+|                                                                                         |
+|  Tasks & Estimates  ──┐                                                                 |
+|  Time Entries (Logs) ─┼──► calculateWorkloadDistribution() ──►  WorkloadDistribution    |
+|  User/Team Capacity ──┘                                           - Contiguous Buckets  |
+|                                                                   - Zero-filled series  |
+|                                                                   - Capacity limits     |
+|                                                                   - Utilization ratios  |
++-----------------------------------------------------------------------------------------+
+                                           │
+                                           ▼
++-----------------------------------------------------------------------------------------+
+|                                CONSUMER RENDERING LAYER                                 |
+|                                                                                         |
+|  ┌─────────────────────────┐  ┌─────────────────────────┐  ┌─────────────────────────┐  |
+|  │      D3 Streamgraph     │  │   Stacked Bar Chart     │  │  Team Heatmap / Table   │  |
+|  │  (stackOffsetWiggle)    │  │   (Capacity Thresholds) │  │  (Overallocated Badges) │  |
+|  └─────────────────────────┘  └─────────────────────────┘  └─────────────────────────┘  |
++-----------------------------------------------------------------------------------------+
+```
+
+### Why Headless Streamgraphs?
+Streamgraphs and stacked continuous visualizations have strict data requirements:
+1. **Contiguous Time Buckets**: Missing days or weeks break curve interpolation.
+2. **Tabular Zero-Filled Matrix**: Every bucket must have a numeric entry for every series key. If a team member has no logged or scheduled hours in a given week, the value must be `0`, never `undefined`, or D3's baseline offset algorithms (`d3.stackOffsetWiggle`) will evaluate to `NaN` and fail to render.
+3. **Effort Spreading**: Tasks spanning multiple days or weeks need their estimated hours evenly distributed across the overlapping date boundaries.
+
+---
+
+## 2. Core Interfaces
+
+```ts
+type WorkloadInterval = 'day' | 'week' | 'month';
+type WorkloadGroupBy = 'assignee' | 'team' | 'taskType' | 'priority' | 'status';
+type WorkloadMetric = 'scheduled' | 'logged' | 'remaining' | 'blended';
+
+interface WorkloadBucket {
+  date: string;               // ISO date of bucket start (e.g. "2026-09-07")
+  timestamp: number;          // Epoch milliseconds for D3 time scales
+  totalHours: number;         // Sum of hours in this bucket
+  values: Record<string, number>; // Dimension key -> hours (guaranteed non-empty, 0-filled)
+  capacity?: Record<string, number>; // Dimension key -> capacity threshold
+  totalCapacity?: number;     // Aggregate capacity for all series
+  utilizationRatio?: number;  // totalHours / totalCapacity
+}
+
+interface WorkloadDistribution {
+  projectId?: string;
+  startDate: string;
+  endDate: string;
+  interval: WorkloadInterval;
+  groupBy: WorkloadGroupBy;
+  metric: WorkloadMetric;
+  seriesKeys: string[];              // Sorted unique identifiers (e.g. ['u1', 'u2'])
+  seriesLabels: Record<string, string>; // Human-readable names (e.g. { u1: 'Alice' })
+  buckets: WorkloadBucket[];
+  totalHours: number;
+  totalCapacity?: number;
+  averageUtilization?: number;
+}
+```
+
+---
+
+## 3. Metric Modes
+
+- **`scheduled`**: Takes task estimates (`estimatedHours` or `estimatedDurationMinutes`) and spreads them linearly across the task's active calendar duration (`plannedStartDate` to `dueDate`).
+- **`logged`**: Sums empirical `timeEntries` into the exact bucket corresponding to their `loggedAt` timestamp.
+- **`remaining`**: Excludes completed or canceled tasks, calculating `max(0, estimatedHours - loggedHours)`.
+- **`blended`**: Past buckets show empirical logged time from `timeEntries`, while current and future buckets spread the remaining scheduled effort.
+
+---
+
+## 4. Capacity & Utilization Modeling
+
+You can set weekly capacity hours per user or team:
+
+```ts
+interface User {
+  id: string;
+  name: string;
+  weeklyCapacityHours?: number; // e.g. 35 for 0.8 FTE, 40 for 1.0 FTE
+}
+
+interface Team {
+  id: string;
+  name: string;
+  memberIds: string[];
+  weeklyCapacityHours?: number; // e.g. 160 for a 4-person team
+  headcount?: number;           // people at once for critical path levelling (default: memberIds.length)
+}
+```
+
+When generating buckets:
+- For `week`: `capacity = weeklyCapacityHours`.
+- For `day`: `capacity = weeklyCapacityHours / 5` (5-day standard working week).
+- For `month`: normalized according to the days in the calendar month.
+- Utilization ratios (`totalHours / totalCapacity`) are automatically calculated, allowing you to highlight overallocated buckets (ratio > `1.0`).
+
+---
+
+## 5. React Integration
+
+```tsx
+import { useWorkloadDistribution } from '@critical-path/react';
+
+export function TeamWorkloadStreamgraph({ projectId }: { projectId: string }) {
+  const {
+    buckets,
+    seriesKeys,
+    seriesLabels,
+    interval,
+    setInterval,
+    loading
+  } = useWorkloadDistribution(projectId, {
+    interval: 'week',
+    groupBy: 'assignee',
+    metric: 'blended'
+  });
+
+  if (loading) return <div>Calculating workload distribution...</div>;
+
+  return (
+    <div>
+      <div className="controls">
+        <button onClick={() => setInterval('day')}>Day</button>
+        <button onClick={() => setInterval('week')}>Week</button>
+        <button onClick={() => setInterval('month')}>Month</button>
+      </div>
+
+      <MyStreamgraphVisualizer
+        data={buckets}
+        keys={seriesKeys}
+        labels={seriesLabels}
+      />
+    </div>
+  );
+}
+```
+
+---
+
+## 6. Svelte 5 Integration
+
+```svelte
+<script lang="ts">
+  import { useCriticalPathClient } from '@critical-path/svelte';
+  import { createWorkloadState } from '@critical-path/svelte';
+
+  const client = useCriticalPathClient();
+  const workloadState = createWorkloadState(client, 'proj_123', {
+    interval: 'week',
+    groupBy: 'team',
+    metric: 'blended'
+  });
+
+  $effect(() => {
+    workloadState.fetch();
+  });
+</script>
+
+{#if workloadState.loading}
+  <p>Loading capacity...</p>
+{:else}
+  <h3>Average Utilization: {Math.round((workloadState.averageUtilization || 0) * 100)}%</h3>
+  <Streamgraph
+    data={workloadState.buckets}
+    keys={workloadState.seriesKeys}
+    labels={workloadState.seriesLabels}
+  />
+{/if}
+```
+
+---
+
+## 7. D3 Streamgraph Recipe
+
+Here is a complete pattern for rendering a streamgraph using D3 in your UI:
+
+```ts
+import * as d3 from 'd3';
+import type { WorkloadDistribution } from '@critical-path/core';
+
+export function renderStreamgraph(svgElement: SVGSVGElement, distribution: WorkloadDistribution) {
+  const { buckets, seriesKeys } = distribution;
+  const width = 800;
+  const height = 400;
+
+  // 1. Stack the buckets using D3 wiggle baseline
+  const stack = d3.stack<any>()
+    .keys(seriesKeys)
+    .value((d, key) => d.values[key] || 0)
+    .offset(d3.stackOffsetWiggle);
+
+  const series = stack(buckets);
+
+  // 2. Set up Scales
+  const xScale = d3.scaleTime()
+    .domain(d3.extent(buckets, (d) => new Date(d.timestamp)) as [Date, Date])
+    .range([0, width]);
+
+  const yMin = d3.min(series, (layer) => d3.min(layer, (d) => d[0])) || 0;
+  const yMax = d3.max(series, (layer) => d3.max(layer, (d) => d[1])) || 0;
+
+  const yScale = d3.scaleLinear()
+    .domain([yMin, yMax])
+    .range([height, 0]);
+
+  const colorScale = d3.scaleOrdinal(d3.schemeCategory10)
+    .domain(seriesKeys);
+
+  // 3. Define the smooth curved area
+  const area = d3.area<any>()
+    .x((d) => xScale(new Date(d.data.timestamp)))
+    .y0((d) => yScale(d[0]))
+    .y1((d) => yScale(d[1]))
+    .curve(d3.curveBasis);
+
+  // 4. Render paths into SVG
+  const svg = d3.select(svgElement);
+  svg.selectAll('path')
+    .data(series)
+    .join('path')
+    .attr('d', area)
+    .attr('fill', (d) => colorScale(d.key))
+    .attr('opacity', 0.85);
+}
+```
+
+---
+
+## 8. MCP Tool Usage
+
+Autonomous AI agents can query workload distribution directly through the Model Context Protocol:
+
+```json
+{
+  "name": "get_workload_distribution",
+  "arguments": {
+    "projectId": "proj_123",
+    "interval": "week",
+    "groupBy": "assignee",
+    "metric": "blended"
+  }
+}
 ```
 
 --------------------------------------------------------------------------------
@@ -2215,6 +3485,12 @@ Invalid values, or `levelResources=true` without assignee calendars, return `400
   ]
 }
 ```
+
+### `GET /workload` and `GET /projects/:projectId/workload`
+Workload distribution. Query parameters are validated (unknown or invalid values return `400`): `projectId` (top-level route only), `startDate`/`endDate` (`YYYY-MM-DD`), `interval` (`day`, `week`, `month`), `groupBy` (`assignee`, `team`, `taskType`, `priority`, `status`), `metric` (`scheduled`, `logged`, `remaining`, `blended`), `defaultWeeklyCapacityHours` (positive number).
+
+### `GET /projects/:projectId/ladder`
+Timeline ladder. Query: `level` (`macro`, `standard`, `concrete`, `all`; default `all`), `containerId`, `iterationId`. Invalid values return `400`.
 
 ### `GET /portfolio/critical-path`
 Critical path analysis across several projects. People, team pools and dependencies are shared across them.

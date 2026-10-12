@@ -13,6 +13,7 @@ Critical Path decouples project management logic from the presentation layer. It
 
 - [Introduction to Critical Path](https://criticalpath.uchiage.app/getting-started/introduction/): Learn why Critical Path was created, its headless philosophy, and how it transforms project management inside web applications.
 - [Quick Start](https://criticalpath.uchiage.app/getting-started/quick-start/): Get up and running with Critical Path in your project in less than 5 minutes.
+- [Upgrading (for coding agents)](https://criticalpath.uchiage.app/getting-started/upgrading/): Step-by-step instructions an AI coding agent can follow to upgrade an app's @critical-path packages, find each breaking change and verify the result.
 - [System Architecture & Concepts](https://criticalpath.uchiage.app/getting-started/architecture/): Detailed architectural breakdown of Critical Path layers, components, and data flow.
 
 ## Core Engine
@@ -22,6 +23,11 @@ Critical Path decouples project management logic from the presentation layer. It
 - [Dependencies & Critical Path Method](https://criticalpath.uchiage.app/core/dependencies/): How Critical Path models task dependencies as a DAG, detects circular loops, and computes the critical path duration.
 - [Lifecycle Hooks & Events](https://criticalpath.uchiage.app/core/lifecycle/): Tap into mutation lifecycle events for validation, webhooks, audit trails, and side effects.
 - [Ladder of Abstraction & CPM](https://criticalpath.uchiage.app/core/ladder-of-abstraction/): Ladder of Abstraction applied to timelines, Gantt charts, and Critical Path Method (CPM) analysis.
+- [Authorization & Multi-Tenancy](https://criticalpath.uchiage.app/core/authorization/): Role-based access control with project membership, workspace superusers, custom policies, and tenant isolation.
+- [Calendars & Work Schedules](https://criticalpath.uchiage.app/core/calendars-and-schedules/): Configure working hours, working days, holidays, and multi-tier schedule inheritance for realistic critical path and capacity planning.
+- [Task Metrics & Progress Inference](https://criticalpath.uchiage.app/core/task-metrics/): Inferred actuals, actuals vs estimate reality delta, earned value management (EVM), and time-series progress history.
+- [Webhooks](https://criticalpath.uchiage.app/core/webhooks/): Signed, retried webhook deliveries for every domain event, with tenant routing and a pluggable delivery queue.
+- [Workload & Capacity Distribution](https://criticalpath.uchiage.app/core/workload-capacity/): Headless time-series aggregation for team capacity planning, stacked area charts, and organic D3 streamgraphs.
 
 ## Storage Adapters
 
