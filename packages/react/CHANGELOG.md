@@ -1,5 +1,15 @@
 # @critical-path/react
 
+## 0.14.20
+
+### Patch Changes
+
+- da8c69b: Packages now include `CHANGELOG.md`, so agents and developers can read breaking changes in `node_modules`. READMEs link the new upgrade guide (`UPGRADING.md`, also at /getting-started/upgrading/ on the docs site), which coding agents in consumer apps can follow to migrate on their own.
+- Updated dependencies [da8c69b]
+  - @critical-path/core@0.51.1
+  - @critical-path/client@0.25.1
+  - @critical-path/mcp@0.18.1
+
 ## 0.14.19
 
 ### Patch Changes

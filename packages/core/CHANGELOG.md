@@ -1,5 +1,11 @@
 # @critical-path/core
 
+## 0.51.1
+
+### Patch Changes
+
+- da8c69b: Packages now include `CHANGELOG.md`, so agents and developers can read breaking changes in `node_modules`. READMEs link the new upgrade guide (`UPGRADING.md`, also at /getting-started/upgrading/ on the docs site), which coding agents in consumer apps can follow to migrate on their own.
+
 ## 0.51.0
 
 ### Minor Changes
