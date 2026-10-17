@@ -22,6 +22,7 @@ jobs:
   test:
     name: Test & Build (Node 24)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -64,6 +65,7 @@ jobs:
   firestore-emulator:
     name: FirebaseStore conformance (Firestore emulator)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
