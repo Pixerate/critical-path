@@ -19,8 +19,8 @@
     "release": "changeset publish"
   },
   "devDependencies": {
-    "@changesets/cli": "^3.0.1",
-    "@types/node": "^26.6.4",
+    "@changesets/cli": "^3.0.3",
+    "@types/node": "^26.6.5",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
