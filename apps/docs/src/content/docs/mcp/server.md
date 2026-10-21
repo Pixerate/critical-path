@@ -26,6 +26,23 @@ npx @critical-path/mcp --api http://localhost:3000/api/critical-path
 npx @critical-path/mcp
 ```
 
+### Choosing which tools to expose
+```bash
+# Only scheduling and analytics tools, read-only, plus skills
+npx @critical-path/mcp --db ./my-project.db --toolsets scheduling,analytics,guidance --read-only
+
+# Exact tool names (combined with --toolsets)
+npx @critical-path/mcp --db ./my-project.db --tools list_tasks,get_task,update_task
+```
+
+### Installing agent skills
+```bash
+# Writes .claude/skills/<name>/SKILL.md for coding agents such as Claude Code
+npx @critical-path/mcp skills install
+```
+
+See [Agent Discovery, Toolsets & Skills](/mcp/agent-discovery/) for the toolsets, the instructions the server sends on connect, and the bundled skills.
+
 ---
 
 ## 🖥️ Claude Desktop Integration
@@ -82,10 +99,9 @@ const engine = new CriticalPathEngine({ store });
 // 2. Create the MCP Server instance
 const server = createCriticalPathMcpServer({
   engine,
-  serverInfo: {
-    name: 'custom-critical-path-mcp',
-    version: '1.0.0'
-  }
+  name: 'custom-critical-path-mcp',
+  version: '1.0.0',
+  toolsets: ['core', 'collaboration', 'guidance'] // optional; default: every tool
 });
 
 // 3. Connect to stdio transport
@@ -102,6 +118,7 @@ In addition to tools, the server exposes:
 - `criticalpath://projects`: Dynamic JSON resource listing all active projects.
 - `criticalpath://tasks`: Dynamic JSON list of all tasks.
 - `criticalpath://tasks/{id}`: Live snapshot of a specific task with dependencies.
+- `criticalpath://skills/{name}`: A bundled agent skill (markdown playbook), for example `criticalpath://skills/report-status`.
 
 ### Prompts
 - `summarize_project`: Automatically formats an executive summary prompt with total tasks, status breakdowns, and deliverables for a target `projectId`.

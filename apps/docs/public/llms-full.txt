@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-12T11:06:58.432Z
+> Documentation generated on: 2026-10-21T07:43:27.024Z
 
 ================================================================================
 
@@ -395,6 +395,11 @@ Work through the items whose version is newer than the version you started from 
 
 - **Check:** `GET /workload`, `GET /projects/:id/workload` or `GET /projects/:id/ladder` query strings; CLI `propose`/`subtask`, `client.createSubtask` or MCP `create_task` relying on `draft`/`todo`.
 - **Fix:** use the documented values (`interval`: `day|week|month`; `groupBy`: `assignee|team|taskType|priority|status`; `metric`: `scheduled|logged|remaining|blended`; dates as `YYYY-MM-DD`; `level`: `macro|standard|concrete|all`). New tasks start in the workflow's default status unless you pass `status`.
+
+### mcp 0.19: tool results, selection and annotations
+
+- **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.
+- **Fix:** list results are objects: read `result.projects`, `result.deliverables` and `result.comments`. A lookup that finds nothing now throws (an `isError` result over MCP) instead of returning `null`. Every name in `tools` must exist, or `createCriticalPathMcpServer` / `registerWebMcpTools` throws. Annotations are the standard MCP names (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`); use `destructiveHint` where you used `requiresConfirmation`. Custom tools built with `defineTool` need a `toolset` and an `outputZodSchema`.
 
 ### If the app implements a storage adapter
 
@@ -2976,6 +2981,8 @@ Rather than treating AI as an external consumer that must screen-scrape UIs or g
 1. **Standard Server MCP** (`@critical-path/mcp/server`): Stdio or network transport connecting IDE agents (Claude Desktop, Cursor, Antigravity, cline) directly to local SQLite databases or remote Critical Path APIs.
 2. **Client-Side WebMCP** (`@critical-path/mcp/web`): In-browser tool registration following the **W3C Web Machine Learning Community Group (WebML CG)** WebMCP specification, enabling browser copilots to interact with project state using ambient project scoping.
 
+Both share the same toolsets, agent instructions and bundled [agent skills](/mcp/agent-discovery/), so agents can find the right tool and follow a proven playbook for multi-step jobs.
+
 ---
 
 ## 🏛️ Architecture
@@ -2988,7 +2995,7 @@ graph TD
   end
 
   subgraph Critical Path MCP Layer
-    ToolDefs[12 Unified Tool Definitions<br/>Zod Schemas & Executors]
+    ToolDefs[20 Unified Tool Definitions<br/>Toolsets, Zod Schemas & Executors]
     StdioServer[createCriticalPathMcpServer<br/>Stdio Transport]
     WebMcp[registerWebMcpTools<br/>document.modelContext]
   end
@@ -3017,22 +3024,32 @@ graph TD
 
 ## 🛠️ Complete Tool Registry
 
-`@critical-path/mcp` provides 12 strongly-typed tools covering project management, task tracking, deliverable rollups, and threaded conversations:
+`@critical-path/mcp` provides 20 tools in five toolsets. Hosts can expose only the toolsets an agent needs; see [Agent Discovery, Toolsets & Skills](/mcp/agent-discovery/).
 
-| Tool Name | Description | Key Arguments |
-| :--- | :--- | :--- |
-| `list_projects` | List all projects with optional query filter | `query`, `limit` |
-| `get_project` | Get detailed project information by ID or slug | `id` |
-| `create_project` | Create a new project workspace | `name`, `key`, `description` |
-| `list_tasks` | List tasks filtered by project, status, priority, assignee or iteration; paginated (`{ tasks, nextCursor }`) | `projectId`, `status`, `assigneeId`, `iterationId`, `limit`, `cursor` |
-| `get_task` | Fetch full task details including dependencies | `id` |
-| `create_task` | Create a new task within a project | `projectId`, `title`, `status`, `priority` |
-| `update_task` | Update title, status, priority, description, or custom fields | `id`, `status`, `priority`, `title` |
-| `delete_task` | Remove a task permanently | `id` |
-| `list_deliverables` | List deliverables for a project with format and container specs | `projectId` |
-| `create_deliverable`| Create a high-level creative deliverable | `projectId`, `title`, `format` |
-| `list_comments` | Retrieve threaded discussion comments for a task | `taskId` |
-| `add_comment` | Post a discussion comment or agent reply (authored by the server's actor) | `taskId`, `content` |
+| Tool | Toolset | Use it for | Key arguments |
+| :--- | :--- | :--- | :--- |
+| `list_projects` | core | Finding project ids; returns `{ projects }` | — |
+| `get_project` | core | A project's workflow statuses, custom fields and calendar | `id` |
+| `create_project` | core | A new, empty project | `name`, `key`, `description` |
+| `list_tasks` | core | Finding tasks by project, status, priority, assignee, iteration, deliverable, container or parent; returns `{ tasks, nextCursor }` | `projectId`, `status`, `priority`, `assigneeId`, `parentId`, `limit`, `cursor` |
+| `get_task` | core | One task's full record | `id` |
+| `create_task` | core | Adding work | `projectId`, `title`, `estimatedHours`, `priority`, `assigneeId` |
+| `update_task` | core | Changing status, priority, assignee, estimates, logged hours, blocked state | `id`, plus the fields to change |
+| `delete_task` | core | Permanent deletion (destructive) | `id` |
+| `list_deliverables` | collaboration | A project's milestones; returns `{ deliverables }` | `projectId` |
+| `create_deliverable` | collaboration | A dated milestone grouping tasks | `projectId`, `title`, `dueDate`, `taskIds` |
+| `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `taskId` |
+| `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `taskId`, `content` |
+| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort` |
+| `calculate_portfolio_critical_path` | scheduling | Several projects sharing people | `projectIds`, `projectOrder`, `calendars`, `levelResources` |
+| `get_workload_distribution` | scheduling | Hours and utilization per person, team or category over time | `projectId`, `groupBy`, `interval`, `metric`, `startDate`, `endDate` |
+| `get_timeline_ladder` | analytics | Project status: phase health, timeline, evidence of work | `projectId`, `level` |
+| `get_task_ladder` | analytics | One task's phase, schedule position and evidence | `taskId` |
+| `get_task_metrics` | analytics | Progress, variance and earned value (CPI, SPI) for a task | `taskId` |
+| `get_task_progress_history` | analytics | Progress over time and curve shape (stalled, late rush, ...) | `taskId` |
+| `get_skill` | guidance | Loading a playbook for a multi-step job | `name` |
+
+Every tool declares an `outputSchema` and returns structured content, and every tool sends the standard MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`).
 
 ---
 
@@ -3091,6 +3108,23 @@ npx @critical-path/mcp --api http://localhost:3000/api/critical-path
 npx @critical-path/mcp
 ```
 
+### Choosing which tools to expose
+```bash
+# Only scheduling and analytics tools, read-only, plus skills
+npx @critical-path/mcp --db ./my-project.db --toolsets scheduling,analytics,guidance --read-only
+
+# Exact tool names (combined with --toolsets)
+npx @critical-path/mcp --db ./my-project.db --tools list_tasks,get_task,update_task
+```
+
+### Installing agent skills
+```bash
+# Writes .claude/skills/<name>/SKILL.md for coding agents such as Claude Code
+npx @critical-path/mcp skills install
+```
+
+See [Agent Discovery, Toolsets & Skills](/mcp/agent-discovery/) for the toolsets, the instructions the server sends on connect, and the bundled skills.
+
 ---
 
 ## 🖥️ Claude Desktop Integration
@@ -3147,10 +3181,9 @@ const engine = new CriticalPathEngine({ store });
 // 2. Create the MCP Server instance
 const server = createCriticalPathMcpServer({
   engine,
-  serverInfo: {
-    name: 'custom-critical-path-mcp',
-    version: '1.0.0'
-  }
+  name: 'custom-critical-path-mcp',
+  version: '1.0.0',
+  toolsets: ['core', 'collaboration', 'guidance'] // optional; default: every tool
 });
 
 // 3. Connect to stdio transport
@@ -3167,6 +3200,7 @@ In addition to tools, the server exposes:
 - `criticalpath://projects`: Dynamic JSON resource listing all active projects.
 - `criticalpath://tasks`: Dynamic JSON list of all tasks.
 - `criticalpath://tasks/{id}`: Live snapshot of a specific task with dependencies.
+- `criticalpath://skills/{name}`: A bundled agent skill (markdown playbook), for example `criticalpath://skills/report-status`.
 
 ### Prompts
 - `summarize_project`: Automatically formats an executive summary prompt with total tasks, status breakdowns, and deliverables for a target `projectId`.
@@ -3234,6 +3268,13 @@ export default function App() {
 
 The hook automatically cleans up and unregisters all tools when the component unmounts via `AbortController`.
 
+The hook also accepts `toolsets` and `readOnly` (see [Agent Discovery, Toolsets & Skills](/mcp/agent-discovery/)) and returns `instructions`: a briefing on the data model, which tool to use and the available skills. WebMCP has no standard channel for it, so add it to your copilot's system prompt:
+
+```tsx
+const { instructions } = useWebMCP({ projectId, toolsets: ['core', 'analytics', 'guidance'] });
+// systemPrompt = `${basePrompt}\n\n${instructions}`
+```
+
 ---
 
 ## 🍊 Svelte 5 Integration (`WebMcpState` & `createWebMcpState`)
@@ -3271,6 +3312,8 @@ For Svelte 5 applications, `@critical-path/svelte` provides first-class Runes st
 </div>
 ```
 
+`WebMcpState` also takes `toolsets` and `readOnly`, and exposes `mcp.instructions` for your copilot's system prompt.
+
 ---
 
 ## 🌐 Vanilla JS / Direct Registration
@@ -3284,11 +3327,15 @@ import { CriticalPathClient } from '@critical-path/client';
 const client = new CriticalPathClient({ baseUrl: '/api/critical-path' });
 const controller = new AbortController();
 
-const { tools, unregister } = registerWebMcpTools({
+const { getRegisteredTools, instructions, unregister } = registerWebMcpTools({
   client,
   projectId: 'proj_123',
+  toolsets: ['core', 'analytics', 'guidance'], // optional; default: every tool
   signal: controller.signal
 });
+
+// Give the agent its briefing (data model, which tool to use, skills):
+// systemPrompt += '\n\n' + instructions;
 
 // Access registered tools globally:
 // window.__CRITICAL_PATH_WEBMCP__.tools
@@ -3297,6 +3344,132 @@ const { tools, unregister } = registerWebMcpTools({
 // Teardown when done:
 // controller.abort(); OR unregister();
 ```
+
+--------------------------------------------------------------------------------
+
+## Agent Discovery, Toolsets & Skills
+URL: https://criticalpath.uchiage.app/mcp/agent-discovery/
+Description: How agents find and use the right Critical Path MCP tools, with toolsets, server instructions, structured results, recovery hints and bundled agent skills.
+
+An agent chooses tools from their names, descriptions and schemas alone. `@critical-path/mcp` gives it more to go on, so it picks the right tool and uses it well:
+
+| Layer | What the agent gets |
+| :--- | :--- |
+| **Toolsets** | Only the tools the host chose to expose, so the list stays short |
+| **Server instructions** | A briefing sent on connect: the data model, where ids come from, which tool fits which request, and the available skills |
+| **Tool descriptions** | What question each tool answers, when to use it, what it returns, and which sibling to use instead |
+| **Output schemas** | The shape of every result (`outputSchema` + `structuredContent`), so the agent knows which fields to pass on |
+| **Recovery hints** | Errors that say what to do next (for example "find valid ids with `list_tasks`") |
+| **Skills** | Step-by-step playbooks for multi-step jobs: planning, triage, schedule risk, status reports, capacity, investigating a task |
+
+---
+
+## 🧰 Toolsets
+
+Tools are grouped into toolsets. Expose only the groups an agent needs:
+
+| Toolset | Tools |
+| :--- | :--- |
+| `core` | `list_projects`, `get_project`, `create_project`, `list_tasks`, `get_task`, `create_task`, `update_task`, `delete_task` |
+| `collaboration` | `list_deliverables`, `create_deliverable`, `list_comments`, `add_comment` |
+| `scheduling` | `calculate_critical_path`, `calculate_portfolio_critical_path`, `get_workload_distribution` |
+| `analytics` | `get_timeline_ladder`, `get_task_ladder`, `get_task_metrics`, `get_task_progress_history` |
+| `guidance` | `get_skill` |
+
+```ts
+// A read-only reporting agent
+createCriticalPathMcpServer({ engine, toolsets: ['scheduling', 'analytics', 'guidance'], readOnly: true });
+
+// Toolsets and exact names combine: everything in `core`, plus get_skill
+registerWebMcpTools({ client, toolsets: ['core'], tools: ['get_skill'] });
+```
+
+From the CLI:
+
+```bash
+npx @critical-path/mcp --db ./app.db --toolsets scheduling,analytics,guidance --read-only
+```
+
+- With neither `tools` nor `toolsets`, every tool is exposed.
+- `readOnly: true` keeps only tools annotated `readOnlyHint`.
+- Unknown tool or toolset names throw, so a typo cannot leave an agent without its tools.
+- `selectTools({ tools, toolsets, readOnly })` returns the same selection for your own integrations.
+
+---
+
+## 🧭 Server instructions
+
+The MCP server sends `instructions` when a client connects, and MCP clients add them to the agent's context. They are built from the exposed tools (`buildAgentInstructions`), so they never mention a tool the agent cannot call. They cover:
+
+- the data model (projects, tasks, deliverables, comments);
+- working rules: never guess ids, page with `nextCursor`, read status keys from `get_project`, confirm before destructive tools;
+- which tool answers which kind of request;
+- the skill index, when `get_skill` is exposed.
+
+WebMCP has no standard channel for instructions, so the registration returns them for you to add to your copilot's system prompt:
+
+```ts
+const handle = registerWebMcpTools({ client, projectId });
+systemPrompt += '\n\n' + handle.instructions; // also mentions the ambient project
+```
+
+`useWebMCP()` (React) and `WebMcpState` (Svelte) expose the same text as `instructions`.
+
+---
+
+## 📦 Structured results and annotations
+
+- Every tool declares an `outputSchema` and returns `structuredContent` (plus the same JSON as text for older clients). Results are always objects: list tools return `{ projects }`, `{ tasks, nextCursor }`, `{ deliverables }` or `{ comments }`.
+- A lookup that finds nothing (`get_task` with an unknown id, for example) is an error, not `null`.
+- Errors carry a recovery hint: a not-found error points to `list_projects` / `list_tasks`, invalid arguments point back to the input schema, and a permission error tells the agent to stop and tell the user.
+- Every tool sends the standard MCP annotations `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`. Only `delete_task` is destructive.
+
+---
+
+## 📚 Agent skills
+
+Skills are playbooks for multi-step project management jobs, in the [Agent Skills](https://agentskills.io) format (a `SKILL.md` with `name` and `description` frontmatter). They name the exact tools and arguments to use, how to read the results and how to report back.
+
+| Skill | Use it for |
+| :--- | :--- |
+| `plan-project` | Turning a goal or brief into a project with deliverables and estimated, prioritized tasks |
+| `triage-tasks` | Setting priority, estimates, tags and blocked state across a backlog |
+| `analyze-schedule` | Finding what drives the end date, slack and double-booking, and recommending fixes |
+| `report-status` | Writing a project status report: progress, phase health, forecast, risks |
+| `plan-capacity` | Finding overloaded or idle people and rebalancing assignments |
+| `investigate-task` | Working out why one task is late, stalled or over budget |
+
+Agents reach skills in three ways:
+
+1. **`get_skill` tool** (MCP and WebMCP): `get_skill {}` lists the skills, `get_skill { name: "report-status" }` returns one. The server instructions tell the agent to load a skill before a multi-step job.
+2. **MCP resources**: `criticalpath://skills/{name}` (`text/markdown`), for clients that attach resources.
+3. **Skill files** for coding agents such as Claude Code: install them into your repository.
+
+```bash
+# Writes .claude/skills/<name>/SKILL.md (edited files are kept unless you pass --force)
+npx @critical-path/mcp skills install
+
+# Another location
+npx @critical-path/mcp skills install --dir .agents/skills
+
+# List them
+npx @critical-path/mcp skills list
+```
+
+The `SKILL.md` files also ship in the package at `@critical-path/mcp/skills/<name>/SKILL.md`, and `SKILLS` / `getSkill()` are exported for your own agents.
+
+---
+
+## 🧪 Measuring tool choice
+
+The package includes a tool-selection eval: natural-language requests, each with the tool(s) a good agent would call first. It sends each request to Claude with the tool descriptions and server instructions, and scores the first tool chosen.
+
+```bash
+pnpm --filter @critical-path/mcp build
+ANTHROPIC_API_KEY=... pnpm --filter @critical-path/mcp eval:tools
+```
+
+Run it after renaming tools or rewriting descriptions, and compare the score with the previous run. Unit tests also lint every description (it must say what it returns, describe every argument, reference only real tools, and differ from every other description), so drift is caught in CI without an API key.
 
 --------------------------------------------------------------------------------
 

@@ -1,14 +1,21 @@
 import type { CriticalPathClient } from '@critical-path/client';
-import { ALL_TOOLS, parseToolArgs, type ToolDefinition } from '../tools/definitions.js';
+import { selectTools, runTool, type ToolDefinition, type ToolsetName } from '../tools/definitions.js';
+import { buildAgentInstructions } from '../tools/instructions.js';
+
+export { TOOLSETS, type ToolsetName } from '../tools/definitions.js';
+export { SKILLS, getSkill, type Skill } from '../skills/index.js';
 
 export interface WebMcpToolRegistration {
   name: string;
   title?: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
   annotations?: {
     readOnlyHint?: boolean;
     destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
   };
   execute: (input: any) => Promise<any>;
 }
@@ -23,7 +30,12 @@ export interface ModelContextInterface {
 export interface RegisterWebMcpOptions {
   client: CriticalPathClient;
   projectId?: string;
+  /** Exact tool names to expose. Combined with `toolsets`; unknown names throw. */
   tools?: string[];
+  /** Tool groups to expose (`core`, `collaboration`, `scheduling`, `analytics`, `guidance`). Default: all. */
+  toolsets?: ToolsetName[];
+  /** Expose only tools that change nothing. */
+  readOnly?: boolean;
   signal?: AbortSignal;
   document?: any;
   navigator?: any;
@@ -34,6 +46,11 @@ export interface RegisterWebMcpOptions {
 export interface WebMcpRegistryHandle {
   unregister: () => void;
   getRegisteredTools: () => WebMcpToolRegistration[];
+  /**
+   * Orientation for the agent: data model, id flow, which tool to use and the available skills.
+   * WebMCP has no standard channel for it, so add it to your copilot's system prompt.
+   */
+  instructions: string;
 }
 
 /**
@@ -93,9 +110,8 @@ export function registerWebMcpTools(options: RegisterWebMcpOptions): WebMcpRegis
     modelContext = ensureModelContextShim(doc) ?? undefined;
   }
 
-  const selectedTools: ToolDefinition[] = options.tools
-    ? ALL_TOOLS.filter((t) => options.tools!.includes(t.name))
-    : ALL_TOOLS;
+  const selectedTools: ToolDefinition[] = selectTools({ tools: options.tools, toolsets: options.toolsets, readOnly: options.readOnly });
+  const instructions = buildAgentInstructions(selectedTools, { projectId: options.projectId });
 
   const registeredTools: WebMcpToolRegistration[] = [];
   const abortController = new AbortController();
@@ -103,7 +119,7 @@ export function registerWebMcpTools(options: RegisterWebMcpOptions): WebMcpRegis
   // Combine caller signal with our internal abort controller. An already-aborted signal
   // registers nothing (the component unmounted before registration).
   if (options.signal?.aborted) {
-    return { unregister: () => {}, getRegisteredTools: () => [] };
+    return { unregister: () => {}, getRegisteredTools: () => [], instructions };
   }
   if (options.signal) {
     options.signal.addEventListener('abort', () => abortController.abort(), { once: true });
@@ -115,14 +131,11 @@ export function registerWebMcpTools(options: RegisterWebMcpOptions): WebMcpRegis
       title: toolDef.title,
       description: toolDef.description,
       inputSchema: toolDef.inputSchema,
-      // Standard MCP annotations (as the stdio server sends them), not the internal flags
-      annotations: {
-        readOnlyHint: toolDef.annotations?.readOnlyHint ?? false,
-        destructiveHint: toolDef.annotations?.requiresConfirmation ?? false
-      },
+      outputSchema: toolDef.outputSchema,
+      annotations: { ...toolDef.annotations },
       execute: async (input: any) => {
         const ambientContext = options.projectId ? { projectId: options.projectId } : undefined;
-        const result = await toolDef.execute(parseToolArgs(toolDef, input), options.client, ambientContext);
+        const result = await runTool(toolDef, input, options.client, ambientContext);
         options.onToolExecuted?.(toolDef.name, input, result);
         return result;
       }
@@ -143,6 +156,7 @@ export function registerWebMcpTools(options: RegisterWebMcpOptions): WebMcpRegis
   if (win) {
     win.__CRITICAL_PATH_WEBMCP__ = {
       projectId: options.projectId,
+      instructions,
       tools: registeredTools,
       execute: async (name: string, input: any) => {
         const tool = registeredTools.find((t) => t.name === name);
@@ -166,6 +180,7 @@ export function registerWebMcpTools(options: RegisterWebMcpOptions): WebMcpRegis
 
   return {
     unregister,
-    getRegisteredTools: () => registeredTools
+    getRegisteredTools: () => registeredTools,
+    instructions
   };
 }

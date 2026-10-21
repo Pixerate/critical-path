@@ -14,7 +14,7 @@ When an AI agent maintains, extends, or consumes project management features usi
    - `@critical-path/core`: Types, `CriticalPathEngine`, plugins, storage adapters (`InMemoryStore`, `SQLiteStore`, `FirebaseStore`).
    - `@critical-path/server`: Route handlers and framework adapters (`createNextHandler`, `createSvelteKitHandler`).
    - `@critical-path/client`: `CriticalPathClient` type-safe SDK.
-   - `@critical-path/mcp`: Model Context Protocol server (`createCriticalPathMcpServer`) & client WebMCP (`registerWebMcpTools`).
+   - `@critical-path/mcp`: Model Context Protocol server (`createCriticalPathMcpServer`), client WebMCP (`registerWebMcpTools`), tool selection (`selectTools`, `TOOLSETS`), agent instructions (`buildAgentInstructions`) and bundled agent skills (`SKILLS`, `getSkill`).
    - `@critical-path/react`: `CriticalPathProvider`, `useProjects`, `useTasks`, `useKanban`, `useWebMCP`.
    - `@critical-path/svelte`: `createCriticalPathClient`, `createProjectState`, `createTaskState`, `ProjectState`, `TaskState`, `WebMcpState`, `createWebMcpState`.
 
@@ -52,6 +52,19 @@ Whenever an agent makes code changes or pushes to this repository, the agent MUS
 ### 5. 💡 Maintain & Check `GOTCHAS.md`
 - Always check [`GOTCHAS.md`](./GOTCHAS.md) before starting tasks or debugging to review known issues, pitfalls, and established workarounds.
 - Whenever you encounter or resolve non-obvious bugs, tricky edge cases, setup quirks, or pitfalls, document them in [`GOTCHAS.md`](./GOTCHAS.md) alongside their root cause, solution, and workarounds.
+
+### 6. 🧭 Keep Agent Tools Discoverable (MCP tools & skills)
+`@critical-path/mcp` is used by agents that only see tool names, descriptions, schemas, the server instructions and the bundled skills. Any change to the engine, client or tools that agents can reach MUST keep those accurate:
+
+- **Adding or changing a tool** (`packages/mcp/src/tools/definitions.ts`):
+  - Prefer extending an existing tool (a new argument) over adding a near-duplicate; a short tool list is easier to choose from than a complete one. Do not mirror engine methods one-to-one.
+  - Give it a `toolset` (`core`, `collaboration`, `scheduling`, `analytics`, `guidance`) and annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`).
+  - Write the description as: what question it answers, when to use it, `Returns { ... }`, and which sibling to use instead (in backticks) when the two could be confused. Describe every argument with `.describe()`.
+  - Give it an `outputZodSchema` (see `src/tools/outputs.ts`, always `passthrough()`), and return a JSON object, not an array or `null`.
+  - Add a routing line for it in `src/tools/instructions.ts` and a case in `evals/tool-selection.cases.json`.
+- **Skills** (`packages/mcp/skills/<name>/SKILL.md`, Agent Skills format): when a tool, argument, result field or workflow changes, update every skill that mentions it. When a new feature enables a multi-step job agents will be asked to do (e.g. dependencies, time logging, sprints), add or extend a skill for it. Skills must only reference tools that exist; `pnpm build` regenerates `src/skills/catalog.generated.ts`.
+- **Verify:** `pnpm --filter @critical-path/mcp test` runs the description lint (length, `Returns`, described arguments, distinct descriptions, valid tool references in descriptions and skills) and checks every tool's output against its schema. With Anthropic credentials, also run `pnpm --filter @critical-path/mcp eval:tools` after renaming tools or rewriting descriptions, and report the score in the PR.
+- **Document** new tools, toolsets and skills in `packages/mcp/README.md` and `apps/docs/src/content/docs/mcp/` (tool registry in `overview.md`, skills in `agent-discovery.md`).
 
 ---
 

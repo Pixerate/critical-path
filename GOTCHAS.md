@@ -387,3 +387,22 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: Code that worked against a bare engine now fails with `NotFoundError` (unknown `projectId` or dependency task) or `ValidationError` (a `workflowId` from another tenant or one that does not exist). Updates that included `projectId`, `taskId` or `authorId` silently keep the original values.
 - **Root Cause**: Without an `authorize` policy or tenant, access checks returned early and existence was never checked, which allowed orphaned records, duplicate dependency edges and cross-tenant workflows. Only the HTTP schemas stripped ownership fields, so plugin routes and direct callers could move records between projects.
 - **Solution / Workaround**: Create the project first and use ids that exist. `createWorkflow` assigns a new id, so reference the returned workflow's `id`, not a constant's `id`. To move a record, create it in the new project. Adding an existing dependency again returns the existing one.
+
+### MCP Output Schemas Are Only Checked After `listTools`, and Must Allow Extra Fields
+- **Area / Package**: `@critical-path/mcp`, `@modelcontextprotocol/sdk`
+- **Symptom / Behavior**: A test calling tools through the SDK `Client` passes even though a tool's result does not match its `outputSchema`; or, in a real client, a tool call fails with `Structured content does not match the tool's output schema`.
+- **Root Cause**: The SDK `Client` caches output validators when it lists tools, so `callTool` without a prior `listTools()` validates nothing. Real clients always list first, and they reject any result with a field the schema forbids: a plain `z.object()` becomes `additionalProperties: false`.
+- **Solution / Workaround**: Call `await client.listTools()` before `callTool` in tests (see `src/agent-discovery.test.ts`, which calls every tool). Build output schemas with the `obj()` helper in `src/tools/outputs.ts` (`z.object().passthrough()`), mark fields that can be missing or `null` with `opt()`, and return objects, never arrays or `null` (`runTool` turns `null` into a not-found error).
+
+### Bundled Agent Skills Are Generated Into Source
+- **Area / Package**: `@critical-path/mcp`, `skills/*/SKILL.md`
+- **Symptom / Behavior**: After editing a `SKILL.md`, the `bundles every skills/<name>/SKILL.md unchanged` test fails, or `get_skill` still returns the old text.
+- **Root Cause**: Skills are served from `src/skills/catalog.generated.ts` (so the browser build needs no file access), which `scripts/generate-skills.mjs` writes from the `SKILL.md` files.
+- **Solution / Workaround**: Run `pnpm --filter @critical-path/mcp build` (or `generate:skills`) after editing a skill and commit the regenerated catalog. A skill's folder name must match its `name` frontmatter, and its description must be one line.
+
+
+### Dependabot Minor Bumps of 0.x Docs Dependencies Break the Astro Build
+- **Area / Package**: `apps/docs`, Dependabot, `@astrojs/starlight`
+- **Symptom / Behavior**: `pnpm run build` fails in `apps/docs` with `The requested module 'astro/zod' does not provide an export named 'locales'`.
+- **Root Cause**: Dependabot groups "minor" updates, but for 0.x packages a minor bump is breaking. `@astrojs/starlight` 0.42 requires Astro ^7, while the docs site is on Astro 5.
+- **Solution / Workaround**: Starlight is pinned to `^0.32.0`, and `.github/dependabot.yml` ignores Starlight `>=0.33.0`. Upgrade Astro and Starlight together by hand, then update both `pnpm-lock.yaml` and `apps/docs/package-lock.json` (`cd apps/docs && npm install --package-lock-only`).

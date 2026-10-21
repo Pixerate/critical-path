@@ -134,6 +134,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** `GET /workload`, `GET /projects/:id/workload` or `GET /projects/:id/ladder` query strings; CLI `propose`/`subtask`, `client.createSubtask` or MCP `create_task` relying on `draft`/`todo`.
 - **Fix:** use the documented values (`interval`: `day|week|month`; `groupBy`: `assignee|team|taskType|priority|status`; `metric`: `scheduled|logged|remaining|blended`; dates as `YYYY-MM-DD`; `level`: `macro|standard|concrete|all`). New tasks start in the workflow's default status unless you pass `status`.
 
+### mcp 0.19: tool results, selection and annotations
+
+- **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.
+- **Fix:** list results are objects: read `result.projects`, `result.deliverables` and `result.comments`. A lookup that finds nothing now throws (an `isError` result over MCP) instead of returning `null`. Every name in `tools` must exist, or `createCriticalPathMcpServer` / `registerWebMcpTools` throws. Annotations are the standard MCP names (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`); use `destructiveHint` where you used `requiresConfirmation`. Custom tools built with `defineTool` need a `toolset` and an `outputZodSchema`.
+
 ### If the app implements a storage adapter
 
 Run the conformance suite after every upgrade. It checks every contract the engine relies on:

@@ -3,10 +3,24 @@ export interface CliOptions {
   api?: string;
   headers: string[];
   help?: boolean;
+  tools?: string[];
+  toolsets?: string[];
+  readOnly?: boolean;
+  /** `skills list` / `skills install`. */
+  command?: 'skills';
+  subcommand?: string;
+  dir?: string;
+  force?: boolean;
 }
+
+const list = (value: string) => value.split(',').map((s) => s.trim()).filter(Boolean);
 
 export function parseArgs(args: string[]): CliOptions {
   const options: CliOptions = { headers: [] };
+  if (args[0] === 'skills') {
+    options.command = 'skills';
+    options.subcommand = args[1] && !args[1].startsWith('-') ? args[1] : 'list';
+  }
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--help' || arg === '-h') {
@@ -17,6 +31,16 @@ export function parseArgs(args: string[]): CliOptions {
       options.api = args[++i];
     } else if (arg === '--header' && args[i + 1]) {
       options.headers.push(args[++i]);
+    } else if (arg === '--tools' && args[i + 1]) {
+      options.tools = list(args[++i]);
+    } else if (arg === '--toolsets' && args[i + 1]) {
+      options.toolsets = list(args[++i]);
+    } else if (arg === '--read-only') {
+      options.readOnly = true;
+    } else if (arg === '--dir' && args[i + 1]) {
+      options.dir = args[++i];
+    } else if (arg === '--force') {
+      options.force = true;
     }
   }
   return options;

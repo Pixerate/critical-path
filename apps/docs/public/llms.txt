@@ -57,6 +57,7 @@ Critical Path decouples project management logic from the presentation layer. It
 - [MCP & WebMCP Overview](https://criticalpath.uchiage.app/mcp/overview/): Dual Model Context Protocol architecture for AI coding agents and in-browser AI copilots in Critical Path.
 - [Standard Server MCP](https://criticalpath.uchiage.app/mcp/server/): Connecting Claude Desktop, Cursor, and autonomous AI agents to Critical Path via stdio and network transports.
 - [Client-Side WebMCP](https://criticalpath.uchiage.app/mcp/webmcp/): In-browser AI Copilots with W3C WebML CG WebMCP, React hooks, and Svelte 5 runes in Critical Path.
+- [Agent Discovery, Toolsets & Skills](https://criticalpath.uchiage.app/mcp/agent-discovery/): How agents find and use the right Critical Path MCP tools, with toolsets, server instructions, structured results, recovery hints and bundled agent skills.
 
 ## Reference & AI
 

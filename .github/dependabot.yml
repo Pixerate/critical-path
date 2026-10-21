@@ -6,6 +6,10 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 3
+    ignore:
+      # Starlight 0.33+ needs a newer Astro major; upgrade both together by hand.
+      - dependency-name: "@astrojs/starlight"
+        versions: [">=0.33.0"]
     groups:
       minor-and-patch:
         patterns:
@@ -21,6 +25,10 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    ignore:
+      # Starlight 0.33+ needs a newer Astro major; upgrade both together by hand.
+      - dependency-name: "@astrojs/starlight"
+        versions: [">=0.33.0"]
     groups:
       docs-minor-and-patch:
         patterns:
@@ -35,6 +43,10 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    ignore:
+      # Starlight 0.33+ needs a newer Astro major; upgrade both together by hand.
+      - dependency-name: "@astrojs/starlight"
+        versions: [">=0.33.0"]
     groups:
       actions:
         patterns:
