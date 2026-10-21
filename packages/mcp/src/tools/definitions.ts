@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import type { CriticalPathEngine } from '@critical-path/core';
+import type { CriticalPathEngine, Task, TaskDependency, TaskDependencyGraph } from '@critical-path/core';
 import type { CriticalPathClient } from '@critical-path/client';
 import {
   ProjectOutput,
   TaskOutput,
+  TaskWithDependenciesOutput,
+  DependencyOutput,
   DeliverableOutput,
   CommentOutput,
   CriticalPathOutput,
@@ -25,7 +27,7 @@ export type BackendContext = CriticalPathEngine | CriticalPathClient;
  * keeps the tool list short and tool choice accurate.
  */
 export const TOOLSETS = {
-  core: 'Projects and tasks: find, read, create, update and delete',
+  core: 'Projects, tasks and task dependencies: find, read, create, update and delete',
   collaboration: 'Deliverables (milestones) and task comments',
   scheduling: 'Critical path, portfolio scheduling and workload/capacity',
   analytics: 'Project status ladder, task metrics, earned value and progress history',
@@ -219,21 +221,67 @@ export const listTasksTool = defineTool<{
   }
 });
 
-export const getTaskTool = defineTool<{ id: string }>({
+export const getTaskTool = defineTool<{ id: string; includeDependencies?: boolean }>({
   name: 'get_task',
   title: 'Get Task',
   description:
-    'Get one task by id: status, priority, assignee, estimate, logged hours, dates, blocked state and custom fields. Returns the task. For its discussion use `list_comments`; for progress and variance use `get_task_metrics`.',
+    'Get one task by id: status, priority, assignee, estimate, logged hours, dates, blocked state and custom fields. Set includeDependencies to also see which tasks it waits for and which wait for it. Returns the task, with { dependencies: { dependsOn, dependents } } when asked. For its discussion use `list_comments`; for progress and variance use `get_task_metrics`.',
   toolset: 'core',
-  outputZodSchema: TaskOutput,
+  outputZodSchema: TaskWithDependenciesOutput,
   zodSchema: z.object({
-    id: z.string().describe('The task ID')
+    id: z.string().describe('The task ID'),
+    includeDependencies: z
+      .boolean()
+      .optional()
+      .describe('Also return the tasks this one waits for (dependsOn) and the tasks waiting for it (dependents)')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target) => {
-    return target.getTask(args.id);
+    const task = await target.getTask(args.id);
+    if (!task || !args.includeDependencies) return task;
+    const graph = await getDependencyGraph(target, args.id);
+    const related = new Map<string, Task>([...graph.upstreamTasks, ...graph.downstreamTasks].map((t) => [t.id, t]));
+    const dependsOn: DependencyLink[] = [];
+    const dependents: DependencyLink[] = [];
+    for (const dependency of graph.dependencies) {
+      const { waiting, waitedFor } = dependencyDirection(dependency);
+      const otherId = waiting === args.id ? waitedFor : waiting;
+      const other = related.get(otherId);
+      // Tasks the caller cannot read are left out.
+      if (!other || otherId === args.id) continue;
+      const link = { dependencyId: dependency.id, taskId: other.id, title: other.title, status: other.status, type: linkType(dependency) };
+      (waiting === args.id ? dependsOn : dependents).push(link);
+    }
+    return { ...task, dependencies: { dependsOn, dependents } };
   }
 });
+
+interface DependencyLink {
+  dependencyId: string;
+  taskId: string;
+  title: string;
+  status: string;
+  type: 'blocking' | 'relates_to';
+}
+
+/**
+ * Which task waits for which. A `blocked_by` record is stored the other way round: its
+ * `dependsOnTaskId` waits for its `taskId` (see the scheduler in `@critical-path/core`).
+ */
+function dependencyDirection(dependency: TaskDependency): { waiting: string; waitedFor: string } {
+  return dependency.type === 'blocked_by'
+    ? { waiting: dependency.dependsOnTaskId, waitedFor: dependency.taskId }
+    : { waiting: dependency.taskId, waitedFor: dependency.dependsOnTaskId };
+}
+
+const linkType = (dependency: TaskDependency): DependencyLink['type'] => (dependency.type === 'relates_to' ? 'relates_to' : 'blocking');
+
+async function getDependencyGraph(target: BackendContext, taskId: string): Promise<TaskDependencyGraph> {
+  const { isEngine } = await resolveBackend(target);
+  return isEngine
+    ? (target as CriticalPathEngine).getTaskDependencyGraph(taskId)
+    : (target as CriticalPathClient).getTaskDependencies(taskId);
+}
 
 export const createTaskTool = defineTool<{
   projectId?: string;
@@ -365,6 +413,66 @@ export const deleteTaskTool = defineTool<{ id: string }>({
   execute: async (args, target) => {
     const success = await target.deleteTask(args.id);
     return { success };
+  }
+});
+
+export const addDependencyTool = defineTool<{ taskId: string; dependsOnTaskId: string; type?: 'blocking' | 'relates_to' }>({
+  name: 'add_dependency',
+  title: 'Add Dependency',
+  description:
+    'Record that a task cannot start until another task finishes, so the critical path schedules them in order. Use it when planning or re-sequencing work. Adding a link that already exists returns it; a link that would make a loop is refused. Returns the dependency { id, taskId, dependsOnTaskId, type }. To undo use `remove_dependency`.',
+  toolset: 'core',
+  outputZodSchema: DependencyOutput,
+  zodSchema: z.object({
+    taskId: z.string().describe('The task that waits'),
+    dependsOnTaskId: z.string().describe('The task that must finish first'),
+    type: z
+      .enum(['blocking', 'relates_to'])
+      .optional()
+      .describe("'blocking' (default) affects the schedule; 'relates_to' only links the tasks for reference")
+  }),
+  annotations: { idempotentHint: true },
+  execute: async (args, target) => {
+    const type = args.type ?? 'blocking';
+    const { isEngine } = await resolveBackend(target);
+    if (isEngine) {
+      return (target as CriticalPathEngine).addDependency({ taskId: args.taskId, dependsOnTaskId: args.dependsOnTaskId, type });
+    }
+    return (target as CriticalPathClient).addDependency(args.taskId, { dependsOnTaskId: args.dependsOnTaskId, type });
+  }
+});
+
+export const removeDependencyTool = defineTool<{ taskId: string; dependsOnTaskId: string; type?: 'blocking' | 'relates_to' }>({
+  name: 'remove_dependency',
+  title: 'Remove Dependency',
+  description:
+    'Stop a task waiting for another task, for example when the order was wrong or the work no longer depends on it. Identify the link by its two task ids, as given to `add_dependency`. Removing a link that does not exist is not an error. Returns { removed, dependencyIds } with the number of links removed.',
+  toolset: 'core',
+  outputZodSchema: z.object({
+    removed: z.number().describe('How many dependency records were removed (0 if none matched)'),
+    dependencyIds: z.array(z.string()).describe('Ids of the removed records')
+  }),
+  zodSchema: z.object({
+    taskId: z.string().describe('The task that waits'),
+    dependsOnTaskId: z.string().describe('The task it waits for'),
+    type: z.enum(['blocking', 'relates_to']).optional().describe('Remove only links of this type (default: both)')
+  }),
+  annotations: { idempotentHint: true },
+  execute: async (args, target) => {
+    const graph = await getDependencyGraph(target, args.taskId);
+    const matches = graph.dependencies.filter((dependency) => {
+      const { waiting, waitedFor } = dependencyDirection(dependency);
+      return waiting === args.taskId && waitedFor === args.dependsOnTaskId && (!args.type || linkType(dependency) === args.type);
+    });
+    const { isEngine } = await resolveBackend(target);
+    const dependencyIds: string[] = [];
+    for (const dependency of matches) {
+      const removed = isEngine
+        ? await (target as CriticalPathEngine).removeDependency(dependency.id)
+        : await (target as CriticalPathClient).removeDependency(dependency.taskId, dependency.id);
+      if (removed) dependencyIds.push(dependency.id);
+    }
+    return { removed: dependencyIds.length, dependencyIds };
   }
 });
 
@@ -690,6 +798,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   createTaskTool,
   updateTaskTool,
   deleteTaskTool,
+  addDependencyTool,
+  removeDependencyTool,
   listDeliverablesTool,
   createDeliverableTool,
   listCommentsTool,
@@ -780,6 +890,9 @@ function withRecoveryHint(tool: ToolDefinition, err: any): string {
   }
   if (err instanceof ToolNotFoundError || err?.name === 'NotFoundError' || err?.status === 404 || /not found/i.test(message)) {
     return `${message} ${ID_RECOVERY}`;
+  }
+  if (err?.name === 'CircularDependencyError' || /circular/i.test(message)) {
+    return `${message} The tasks are already ordered the other way round. Check with \`get_task\` and includeDependencies, and ask the user which order is right rather than retrying.`;
   }
   if (err?.name === 'ForbiddenError' || err?.status === 403) {
     return `${message} You do not have permission for this; tell the user rather than retrying.`;

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CriticalPathEngine, InMemoryStore } from '@critical-path/core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { ALL_TOOLS, SKILLS, createCriticalPathMcpServer, registerWebMcpTools, selectTools } from './index.js';
+import { ALL_TOOLS, SKILLS, TOOL_MAP, createCriticalPathMcpServer, registerWebMcpTools, runTool, selectTools } from './index.js';
 
 async function connect(options: Parameters<typeof createCriticalPathMcpServer>[0]) {
   const server = createCriticalPathMcpServer(options);
@@ -84,8 +84,11 @@ describe('agent tool discovery', () => {
         ['create_project', { name: 'Other' }],
         ['list_tasks', { projectId: project.id }],
         ['get_task', { id: design.id }],
+        ['get_task', { id: build.id, includeDependencies: true }],
         ['create_task', { projectId: project.id, title: 'Ship', estimatedHours: 2, assigneeId: 'ana' }],
         ['update_task', { id: build.id, priority: 'high' }],
+        ['add_dependency', { taskId: build.id, dependsOnTaskId: design.id }],
+        ['remove_dependency', { taskId: build.id, dependsOnTaskId: design.id, type: 'relates_to' }],
         ['create_deliverable', { projectId: project.id, title: 'Beta', taskIds: [design.id] }],
         ['list_deliverables', { projectId: project.id }],
         ['add_comment', { taskId: design.id, content: 'Started' }],
@@ -139,6 +142,89 @@ describe('agent tool discovery', () => {
       expect(contents[0].mimeType).toBe('text/markdown');
       expect((contents[0] as { text: string }).text).toContain('name: report-status');
       await expect(client.readResource({ uri: 'criticalpath://skills/nope' })).rejects.toThrow(/not found/);
+    });
+  });
+
+  describe('task dependencies', () => {
+    const call = async (client: Client, name: string, args: Record<string, unknown>) => {
+      const result = await client.callTool({ name, arguments: args });
+      expect(result.isError, `${name}: ${result.isError ? text(result) : ''}`).toBeFalsy();
+      return result.structuredContent as any;
+    };
+
+    it('lets an agent order tasks, read the links and undo them', async () => {
+      const project = await engine.createProject({ name: 'Launch' });
+      const design = await engine.createTask({ projectId: project.id, title: 'Design', estimatedHours: 8 });
+      const build = await engine.createTask({ projectId: project.id, title: 'Build', estimatedHours: 16 });
+      const client = await connect({ engine });
+
+      const dependency = await call(client, 'add_dependency', { taskId: build.id, dependsOnTaskId: design.id });
+      expect(dependency).toMatchObject({ taskId: build.id, dependsOnTaskId: design.id, type: 'blocking' });
+      // Adding it again returns the same record.
+      expect((await call(client, 'add_dependency', { taskId: build.id, dependsOnTaskId: design.id })).id).toBe(dependency.id);
+
+      const schedule = await call(client, 'calculate_critical_path', { projectId: project.id });
+      expect(schedule.criticalTaskIds).toEqual([design.id, build.id]);
+
+      const buildView = await call(client, 'get_task', { id: build.id, includeDependencies: true });
+      expect(buildView.dependencies).toEqual({
+        dependsOn: [{ dependencyId: dependency.id, taskId: design.id, title: 'Design', status: design.status, type: 'blocking' }],
+        dependents: []
+      });
+      const designView = await call(client, 'get_task', { id: design.id, includeDependencies: true });
+      expect(designView.dependencies.dependents.map((d: any) => d.taskId)).toEqual([build.id]);
+      expect((await call(client, 'get_task', { id: design.id })).dependencies).toBeUndefined();
+
+      const loop = await client.callTool({ name: 'add_dependency', arguments: { taskId: design.id, dependsOnTaskId: build.id } });
+      expect(loop.isError).toBe(true);
+      expect(text(loop)).toMatch(/circular[\s\S]*includeDependencies/i);
+
+      // Only the link in the given direction is removed.
+      expect(await call(client, 'remove_dependency', { taskId: design.id, dependsOnTaskId: build.id })).toEqual({ removed: 0, dependencyIds: [] });
+      expect(await call(client, 'remove_dependency', { taskId: build.id, dependsOnTaskId: design.id })).toEqual({
+        removed: 1,
+        dependencyIds: [dependency.id]
+      });
+      expect((await call(client, 'get_task', { id: build.id, includeDependencies: true })).dependencies.dependsOn).toEqual([]);
+
+      const missing = await client.callTool({ name: 'add_dependency', arguments: { taskId: build.id, dependsOnTaskId: 'nope' } });
+      expect(text(missing)).toMatch(/list_tasks/);
+    });
+
+    it('reads blocked_by records in the direction the scheduler uses', async () => {
+      const project = await engine.createProject({ name: 'Launch' });
+      const design = await engine.createTask({ projectId: project.id, title: 'Design' });
+      const build = await engine.createTask({ projectId: project.id, title: 'Build' });
+      // Stored the other way round: build (dependsOnTaskId) waits for design (taskId).
+      const record = await engine.addDependency({ taskId: design.id, dependsOnTaskId: build.id, type: 'blocked_by' });
+      const client = await connect({ engine });
+
+      const buildView = await call(client, 'get_task', { id: build.id, includeDependencies: true });
+      expect(buildView.dependencies.dependsOn).toEqual([expect.objectContaining({ taskId: design.id, type: 'blocking' })]);
+      expect(await call(client, 'remove_dependency', { taskId: build.id, dependsOnTaskId: design.id })).toMatchObject({ dependencyIds: [record.id] });
+    });
+
+    it('works against a CriticalPathClient backend', async () => {
+      const project = await engine.createProject({ name: 'Launch' });
+      const design = await engine.createTask({ projectId: project.id, title: 'Design' });
+      const build = await engine.createTask({ projectId: project.id, title: 'Build' });
+      // Same shapes as CriticalPathClient, which takes the task id separately.
+      const httpClient: any = {
+        getTask: (id: string) => engine.getTask(id),
+        addDependency: (taskId: string, body: any) => engine.addDependency({ taskId, ...body }),
+        removeDependency: async (taskId: string, id: string) => {
+          expect(taskId).toBe(build.id);
+          return engine.removeDependency(id);
+        },
+        getTaskDependencies: (taskId: string) => engine.getTaskDependencyGraph(taskId)
+      };
+
+      const added = await runTool(TOOL_MAP.get('add_dependency')!, { taskId: build.id, dependsOnTaskId: design.id, type: 'relates_to' }, httpClient);
+      expect(added).toMatchObject({ type: 'relates_to' });
+      const view = await runTool(TOOL_MAP.get('get_task')!, { id: build.id, includeDependencies: true }, httpClient);
+      expect((view as any).dependencies.dependsOn).toEqual([expect.objectContaining({ taskId: design.id, type: 'relates_to' })]);
+      expect(await runTool(TOOL_MAP.get('remove_dependency')!, { taskId: build.id, dependsOnTaskId: design.id, type: 'blocking' }, httpClient)).toMatchObject({ removed: 0 });
+      expect(await runTool(TOOL_MAP.get('remove_dependency')!, { taskId: build.id, dependsOnTaskId: design.id }, httpClient)).toMatchObject({ removed: 1 });
     });
   });
 

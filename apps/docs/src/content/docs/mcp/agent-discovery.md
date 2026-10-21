@@ -22,7 +22,7 @@ Tools are grouped into toolsets. Expose only the groups an agent needs:
 
 | Toolset | Tools |
 | :--- | :--- |
-| `core` | `list_projects`, `get_project`, `create_project`, `list_tasks`, `get_task`, `create_task`, `update_task`, `delete_task` |
+| `core` | `list_projects`, `get_project`, `create_project`, `list_tasks`, `get_task`, `create_task`, `update_task`, `delete_task`, `add_dependency`, `remove_dependency` |
 | `collaboration` | `list_deliverables`, `create_deliverable`, `list_comments`, `add_comment` |
 | `scheduling` | `calculate_critical_path`, `calculate_portfolio_critical_path`, `get_workload_distribution` |
 | `analytics` | `get_timeline_ladder`, `get_task_ladder`, `get_task_metrics`, `get_task_progress_history` |
@@ -84,7 +84,7 @@ Skills are playbooks for multi-step project management jobs, in the [Agent Skill
 
 | Skill | Use it for |
 | :--- | :--- |
-| `plan-project` | Turning a goal or brief into a project with deliverables and estimated, prioritized tasks |
+| `plan-project` | Turning a goal or brief into a project with deliverables, estimated, prioritized tasks and their dependencies |
 | `triage-tasks` | Setting priority, estimates, tags and blocked state across a backlog |
 | `analyze-schedule` | Finding what drives the end date, slack and double-booking, and recommending fixes |
 | `report-status` | Writing a project status report: progress, phase health, forecast, risks |

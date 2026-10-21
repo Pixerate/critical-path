@@ -20,7 +20,7 @@ description: Find what drives a project's end date, how much each task can slip 
 - `levelingDelayHours` and `waitingOn` show a task that waited for its assignee to finish another task.
 - `overallocations` lists periods where a person (`assigneeId`) or team (`teamId`) is booked above `capacity`; `allocation` 1.5 means 150%.
 
-Look up titles for the task ids you mention with `get_task` or `list_tasks`; report titles, not ids.
+Look up titles for the task ids you mention with `get_task` or `list_tasks`; report titles, not ids. To see why a critical task cannot start earlier, call `get_task` with `includeDependencies: true`: `dependencies.dependsOn` lists what it waits for and `dependencies.dependents` what waits for it.
 
 ## 3. Recommend
 
@@ -28,10 +28,11 @@ Rank fixes by how much they pull the end date in:
 
 1. **Unblock critical tasks.** A critical task with `isBlocked: true` delays everything; say what it waits for.
 2. **Move work off the bottleneck person.** If critical tasks wait on one assignee (`waitingOn`), suggest reassigning a non-critical task of theirs.
-3. **Split long critical tasks** so parts can run in parallel.
-4. **Cut or defer** tasks feeding late deliverables, if dates are fixed.
+3. **Remove false dependencies.** A critical task waiting on work it does not really need (`dependencies.dependsOn`) can start earlier once the link is removed.
+4. **Split long critical tasks** so parts can run in parallel.
+5. **Cut or defer** tasks feeding late deliverables, if dates are fixed.
 
-Show the recommendation to the user. Change tasks (`update_task`) only when they ask.
+Show the recommendation to the user. Change tasks (`update_task`) or dependencies (`add_dependency`, `remove_dependency`) only when they ask, then run the schedule again to show the effect.
 
 ## Report format
 

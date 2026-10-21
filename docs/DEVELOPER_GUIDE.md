@@ -783,6 +783,7 @@ Agents choose tools from names and descriptions alone, so the package helps them
 
 - **Toolsets** (`core`, `collaboration`, `scheduling`, `analytics`, `guidance`) limit what an agent sees. `createCriticalPathMcpServer`, `registerWebMcpTools`, `useWebMCP` and `createWebMcpState` accept `toolsets`, `tools` and `readOnly`; unknown names throw.
 - **Instructions** are sent when an MCP client connects (data model, id flow, which tool to use, skill index). WebMCP returns them as `handle.instructions` for your copilot's system prompt.
+- **Dependencies:** `add_dependency` and `remove_dependency` (core toolset) let agents order tasks by their two task ids; `get_task` with `includeDependencies: true` returns `dependencies.dependsOn` and `dependencies.dependents`. `plan-project` creates the dependencies of the plans it writes.
 - **Structured results:** every tool has an `outputSchema` and returns `structuredContent`; errors carry recovery hints.
 - **Skills** (`packages/mcp/skills/<name>/SKILL.md`): `plan-project`, `triage-tasks`, `analyze-schedule`, `report-status`, `plan-capacity`, `investigate-task`. Agents load them with `get_skill`, as `criticalpath://skills/{name}` resources, or as files via `npx @critical-path/mcp skills install`.
 

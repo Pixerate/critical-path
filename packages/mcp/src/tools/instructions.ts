@@ -6,6 +6,8 @@ const ROUTING: Array<{ when: string; tools: string[] }> = [
   { when: 'Find a project or task id', tools: ['list_projects', 'list_tasks'] },
   { when: 'Read one task, then its discussion', tools: ['get_task', 'list_comments'] },
   { when: 'Add or change work', tools: ['create_task', 'update_task', 'create_deliverable'] },
+  { when: 'Order work: task B cannot start until task A finishes', tools: ['add_dependency', 'remove_dependency'] },
+  { when: 'What a task waits for and what waits for it', tools: ['get_task'] },
   { when: 'Record a decision or note on a task', tools: ['add_comment'] },
   { when: '"When will it finish?" / "What is critical?"', tools: ['calculate_critical_path'] },
   { when: 'Dates and conflicts across several projects', tools: ['calculate_portfolio_critical_path'] },
