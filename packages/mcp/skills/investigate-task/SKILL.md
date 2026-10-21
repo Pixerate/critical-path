@@ -11,9 +11,9 @@ If the user named the task rather than giving its id, find it with `list_tasks` 
 
 ## 2. Gather evidence
 
-1. `get_task`: status, assignee, estimate, logged hours, due date, `isBlocked` and `blockedReason`.
+1. `get_task` with `includeDependencies: true`: status, assignee, estimate, logged hours, due date, `isBlocked` and `blockedReason`, plus the tasks it waits for (`dependencies.dependsOn`, with their status) and the tasks waiting on it (`dependencies.dependents`).
 2. `get_task_metrics`: progress and variance.
-3. `get_task_ladder`: its phase (`macroPhase`) and that phase's health; its schedule in `standard.cpm` (`isCritical`, `slackWorkingHours`); the tasks it waits for (`standard.blockingTaskIds`) and the tasks waiting on it (`standard.dependentTaskIds`).
+3. `get_task_ladder`: its phase (`macroPhase`) and that phase's health, and its schedule in `standard.cpm` (`isCritical`, `slackWorkingHours`).
 4. `list_comments`: what people said about it, especially recent blockers or decisions.
 
 ## 3. Diagnose
@@ -22,7 +22,7 @@ Check these in order and stop at the ones that explain the problem:
 
 | Signal | Meaning |
 | --- | --- |
-| `isBlocked` true, unfinished `blockingTaskIds`, or comments mention waiting | Blocked. Name what it waits for (look up blocking tasks with `get_task`) and how long. |
+| `isBlocked` true, an unfinished task in `dependencies.dependsOn`, or comments mention waiting | Blocked. Name what it waits for and its status; investigate that task the same way if it is late too. |
 | `progressHistory.curveProfile` is `stalled` | No progress recently. Check whether the assignee moved to other work. |
 | `realityDelta.isOverEstimate` true or `evm.costPerformanceIndex` below 0.9 | Taking more effort than estimated. The estimate was too low or scope grew. |
 | `evm.schedulePerformanceIndex` below 0.9 or `realityDelta.isOverdue` | Behind schedule. Give `scheduleVarianceWorkingDays`. |
@@ -32,7 +32,7 @@ Check these in order and stop at the ones that explain the problem:
 ## 4. Assess the impact
 
 - If the task is critical (`standard.cpm.isCritical`), every day it slips moves the project end. Say so plainly.
-- Count the tasks waiting on it (`standard.dependentTaskIds`); they slip with it.
+- List the tasks waiting on it (`dependencies.dependents`, by title); they slip with it.
 - Otherwise, report how much slack it has left before it becomes critical.
 - Name the phase or deliverable it endangers.
 

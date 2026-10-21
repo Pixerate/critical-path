@@ -1,11 +1,11 @@
 ---
 name: plan-project
-description: Turn a goal, brief or feature list into a Critical Path project with deliverables and estimated, prioritized tasks. Use when the user asks to plan, scope or break down work.
+description: Turn a goal, brief or feature list into a Critical Path project with deliverables, estimated and prioritized tasks, and the dependencies between them. Use when the user asks to plan, scope or break down work.
 ---
 
 # Plan a project
 
-Turn a goal into deliverables (dated outcomes) and tasks (estimated units of work) the scheduler can use.
+Turn a goal into deliverables (dated outcomes), tasks (estimated units of work) and dependencies (which task waits for which) the scheduler can use.
 
 ## 1. Find or create the project
 
@@ -22,7 +22,7 @@ Break the goal down in your reply first and show it to the user:
   - starts with a verb and is small enough for one person (about 2-24 hours);
   - has `estimatedHours` (effort, not elapsed time);
   - has a `priority`: `urgent` only for work that blocks others now, `high` for the critical outcome, `medium` by default, `low` for nice-to-haves;
-  - lists the tasks it must wait for (its dependencies), so the schedule makes sense.
+  - lists the tasks it must wait for (its dependencies). Only add a dependency when the work truly cannot start earlier; every extra one lengthens the schedule.
 - Note anything you assumed (team size, dates, scope) as a question.
 
 Ask the user to confirm or adjust before creating anything. A plan is cheap to change in chat and tedious to change once created.
@@ -31,11 +31,12 @@ Ask the user to confirm or adjust before creating anything. A plan is cheap to c
 
 1. Create tasks with `create_task` (`projectId`, `title`, `description` with acceptance criteria, `estimatedHours`, `priority`, `assigneeId` if known). Leave `status` out so tasks start in the workflow's default status.
 2. Create each deliverable with `create_deliverable`, passing the ids of its tasks in `taskIds`.
-3. Dependencies cannot be set through these tools. List the dependencies from your plan for the user (or the app) to add, or record them in each task's description as "Depends on: <task title>".
+3. Add each dependency from your plan with `add_dependency`: `taskId` is the task that waits, `dependsOnTaskId` the task that must finish first. Use the ids `create_task` returned. If one is refused as circular, your plan has a loop: fix the order with the user instead of retrying.
+4. If the project already had tasks, check what they wait for with `get_task` and `includeDependencies: true` before linking new work to them.
 
 ## 4. Check the result
 
-1. Call `calculate_critical_path` for the project and report the forecast `projectEndDate` and the `criticalTaskIds` (by title).
+1. Call `calculate_critical_path` for the project and report the forecast `projectEndDate` and the `criticalTaskIds` (by title). If every task is critical or the end date looks too early, a dependency is probably missing or reversed.
 2. If the end date misses a deliverable's due date, say so and suggest what to cut, split or reassign. The `analyze-schedule` skill covers this in depth.
 
 ## Guardrails

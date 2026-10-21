@@ -176,10 +176,12 @@ handle.unregister();
 | `get_project` | core | Workflow statuses, custom fields and calendar of a project | `{ id }` |
 | `create_project` | core | A new, empty project | `{ name, description?, key? }` |
 | `list_tasks` | core | Finding tasks; returns `{ tasks, nextCursor }` | `{ projectId?, status?, priority?, assigneeId?, iterationId?, deliverableId?, containerId?, parentId? ('none' = top-level), limit?, cursor? }` |
-| `get_task` | core | One task's full record | `{ id }` |
+| `get_task` | core | One task's full record; with `includeDependencies`, what it waits for (`dependsOn`) and what waits for it (`dependents`) | `{ id, includeDependencies? }` |
 | `create_task` | core | Adding work (auto-scoped in WebMCP) | `{ projectId?, title, description?, priority?, status?, estimatedHours?, allocation? }` |
 | `update_task` | core | Changing status, priority, assignee, estimates, logged hours | `{ id, title?, status?, priority?, assigneeId?, allocation?, loggedHours? }` |
 | `delete_task` | core | Permanent deletion (`destructiveHint`) | `{ id }` |
+| `add_dependency` | core | Making a task wait for another, so the critical path orders them; idempotent, refuses loops | `{ taskId, dependsOnTaskId, type? ('blocking' \| 'relates_to') }` |
+| `remove_dependency` | core | Removing that link, by the same two task ids; returns `{ removed, dependencyIds }` | `{ taskId, dependsOnTaskId, type? }` |
 | `list_deliverables` | collaboration | A project's milestones; returns `{ deliverables }` | `{ projectId? }` |
 | `create_deliverable` | collaboration | A dated milestone grouping tasks | `{ projectId?, title, dueDate?, taskIds? }` |
 | `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `{ taskId }` |
@@ -209,7 +211,7 @@ Agents choose tools from their descriptions. This package helps them choose well
 
 | Skill | Use it for |
 | :--- | :--- |
-| `plan-project` | Turning a goal into a project with deliverables and estimated, prioritized tasks |
+| `plan-project` | Turning a goal into a project with deliverables, estimated, prioritized tasks and their dependencies |
 | `triage-tasks` | Setting priority, estimates, tags and blocked state across a backlog |
 | `analyze-schedule` | Finding what drives the end date and recommending fixes |
 | `report-status` | Writing a project status report |

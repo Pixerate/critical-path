@@ -31,6 +31,30 @@ export const TaskOutput = obj({
   isBlocked: opt(z.boolean())
 }).describe('A task');
 
+const DependencyLinkOutput = obj({
+  dependencyId: z.string().describe('Id of the dependency record'),
+  taskId: z.string().describe('The other task'),
+  title: z.string(),
+  status: z.string(),
+  type: z.string().describe("'blocking' (the waiting task cannot start until the other finishes) or 'relates_to' (informational)")
+});
+
+export const TaskWithDependenciesOutput = TaskOutput.extend({
+  dependencies: opt(
+    obj({
+      dependsOn: z.array(DependencyLinkOutput).describe('Tasks this task waits for (upstream)'),
+      dependents: z.array(DependencyLinkOutput).describe('Tasks waiting for this task (downstream)')
+    })
+  ).describe('Present when includeDependencies is true')
+}).describe('A task');
+
+export const DependencyOutput = obj({
+  id: z.string(),
+  taskId: z.string().describe('The task that waits'),
+  dependsOnTaskId: z.string().describe('The task it waits for'),
+  type: z.string().describe('blocking or relates_to')
+}).describe('A dependency between two tasks');
+
 export const DeliverableOutput = obj({
   id: z.string(),
   projectId: z.string(),
