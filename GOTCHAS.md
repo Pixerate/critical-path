@@ -45,6 +45,12 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
   cd apps/docs && npm install --package-lock-only
   ```
 
+### Dependabot Bumps Starlight Past the Installed Astro Major
+- **Area / Package**: `apps/docs`, Dependabot, `@astrojs/starlight`
+- **Symptom / Behavior**: `pnpm --filter @critical-path/docs build` fails with `The requested module 'astro/zod' does not provide an export named 'locales'` (or a similar missing export from `astro/*`).
+- **Root Cause**: Starlight is pre-1.0, so a Starlight "minor" bump can raise its `astro` peer dependency by a major (0.38 needs Astro 6, 0.41 needs Astro 7). Dependabot groups it with other minor/patch updates and the auto-merge workflow merges it, but nothing upgrades `astro`; pnpm and npm only warn about the unmet peer, so the lockfiles keep Astro 5 next to an incompatible Starlight.
+- **Solution / Workaround**: `apps/docs` pins `"@astrojs/starlight": "~0.37.7"`, the last line that supports Astro 5, and `.github/dependabot.yml` ignores Starlight minor bumps and Astro major bumps. Upgrade Starlight and Astro (plus `@astrojs/*` integrations) together by hand: check `npm view @astrojs/starlight@<version> peerDependencies` first, then regenerate both `pnpm-lock.yaml` and `apps/docs/package-lock.json`. Starlight 0.33 also changed `social` in `astro.config.mjs` from an object to an array of `{ icon, label, href }`.
+
 ### Greedy Subpath Stripping in Server Router with Repeated Route Names
 - **Area / Package**: `@critical-path/server`, `CriticalPathRouter`
 - **Symptom / Behavior**: Requests to endpoints such as `/api/critical-path/projects/:id/critical-path` return 404 Not Found even though the subresource route handler is defined.

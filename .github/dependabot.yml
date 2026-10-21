@@ -6,6 +6,13 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 3
+    # Starlight 0.x minors raise the required Astro major (0.38 needs Astro 6, 0.41 needs Astro 7).
+    # Upgrade Starlight and Astro together by hand.
+    ignore:
+      - dependency-name: "@astrojs/starlight"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "astro"
+        update-types: ["version-update:semver-major"]
     groups:
       minor-and-patch:
         patterns:
@@ -21,6 +28,13 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    # Starlight 0.x minors raise the required Astro major (0.38 needs Astro 6, 0.41 needs Astro 7).
+    # Upgrade Starlight and Astro together by hand.
+    ignore:
+      - dependency-name: "@astrojs/starlight"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "astro"
+        update-types: ["version-update:semver-major"]
     groups:
       docs-minor-and-patch:
         patterns:

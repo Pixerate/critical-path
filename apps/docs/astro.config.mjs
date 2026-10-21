@@ -17,9 +17,9 @@ export default defineConfig({
         src: './src/assets/logo.svg',
         replacesTitle: false,
       },
-      social: {
-        github: 'https://github.com/Pixerate/Critical-Path',
-      },
+      social: [
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/Pixerate/Critical-Path' },
+      ],
       customCss: ['./src/styles/custom.css'],
       head: [
         {
