@@ -400,3 +400,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Skills are served from `src/skills/catalog.generated.ts` (so the browser build needs no file access), which `scripts/generate-skills.mjs` writes from the `SKILL.md` files.
 - **Solution / Workaround**: Run `pnpm --filter @critical-path/mcp build` (or `generate:skills`) after editing a skill and commit the regenerated catalog. A skill's folder name must match its `name` frontmatter, and its description must be one line.
 
+
+### Dependabot Minor Bumps of 0.x Docs Dependencies Break the Astro Build
+- **Area / Package**: `apps/docs`, Dependabot, `@astrojs/starlight`
+- **Symptom / Behavior**: `pnpm run build` fails in `apps/docs` with `The requested module 'astro/zod' does not provide an export named 'locales'`.
+- **Root Cause**: Dependabot groups "minor" updates, but for 0.x packages a minor bump is breaking. `@astrojs/starlight` 0.42 requires Astro ^7, while the docs site is on Astro 5.
+- **Solution / Workaround**: Starlight is pinned to `^0.32.0`, and `.github/dependabot.yml` ignores Starlight `>=0.33.0`. Upgrade Astro and Starlight together by hand, then update both `pnpm-lock.yaml` and `apps/docs/package-lock.json` (`cd apps/docs && npm install --package-lock-only`).
