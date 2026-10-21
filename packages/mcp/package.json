@@ -1,7 +1,7 @@
 {
   "name": "@critical-path/mcp",
   "version": "0.18.1",
-  "description": "Standard Model Context Protocol (MCP) server and client-side WebMCP support for Critical Path",
+  "description": "Model Context Protocol (MCP) server, client-side WebMCP tools and agent skills for Critical Path",
   "author": "Jack James",
   "license": "MIT",
   "repository": {
@@ -29,12 +29,15 @@
     "./web": {
       "types": "./dist/web/index.d.ts",
       "import": "./dist/web/index.js"
-    }
+    },
+    "./skills/*": "./skills/*"
   },
   "scripts": {
-    "build": "tsc --build",
+    "build": "node scripts/generate-skills.mjs && tsc --build",
     "test": "vitest run",
-    "clean": "rm -rf dist *.tsbuildinfo"
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "generate:skills": "node scripts/generate-skills.mjs",
+    "eval:tools": "node evals/tool-selection.mjs"
   },
   "dependencies": {
     "@critical-path/client": "workspace:*",
@@ -44,6 +47,7 @@
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.137.0",
     "@types/node": "^26.6.5",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
@@ -53,6 +57,7 @@
   },
   "files": [
     "dist",
+    "skills",
     "CHANGELOG.md",
     "!dist/**/*.test.*"
   ]

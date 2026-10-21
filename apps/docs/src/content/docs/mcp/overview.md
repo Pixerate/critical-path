@@ -10,6 +10,8 @@ Rather than treating AI as an external consumer that must screen-scrape UIs or g
 1. **Standard Server MCP** (`@critical-path/mcp/server`): Stdio or network transport connecting IDE agents (Claude Desktop, Cursor, Antigravity, cline) directly to local SQLite databases or remote Critical Path APIs.
 2. **Client-Side WebMCP** (`@critical-path/mcp/web`): In-browser tool registration following the **W3C Web Machine Learning Community Group (WebML CG)** WebMCP specification, enabling browser copilots to interact with project state using ambient project scoping.
 
+Both share the same toolsets, agent instructions and bundled [agent skills](/mcp/agent-discovery/), so agents can find the right tool and follow a proven playbook for multi-step jobs.
+
 ---
 
 ## 🏛️ Architecture
@@ -22,7 +24,7 @@ graph TD
   end
 
   subgraph Critical Path MCP Layer
-    ToolDefs[12 Unified Tool Definitions<br/>Zod Schemas & Executors]
+    ToolDefs[20 Unified Tool Definitions<br/>Toolsets, Zod Schemas & Executors]
     StdioServer[createCriticalPathMcpServer<br/>Stdio Transport]
     WebMcp[registerWebMcpTools<br/>document.modelContext]
   end
@@ -51,22 +53,32 @@ graph TD
 
 ## 🛠️ Complete Tool Registry
 
-`@critical-path/mcp` provides 12 strongly-typed tools covering project management, task tracking, deliverable rollups, and threaded conversations:
+`@critical-path/mcp` provides 20 tools in five toolsets. Hosts can expose only the toolsets an agent needs; see [Agent Discovery, Toolsets & Skills](/mcp/agent-discovery/).
 
-| Tool Name | Description | Key Arguments |
-| :--- | :--- | :--- |
-| `list_projects` | List all projects with optional query filter | `query`, `limit` |
-| `get_project` | Get detailed project information by ID or slug | `id` |
-| `create_project` | Create a new project workspace | `name`, `key`, `description` |
-| `list_tasks` | List tasks filtered by project, status, priority, assignee or iteration; paginated (`{ tasks, nextCursor }`) | `projectId`, `status`, `assigneeId`, `iterationId`, `limit`, `cursor` |
-| `get_task` | Fetch full task details including dependencies | `id` |
-| `create_task` | Create a new task within a project | `projectId`, `title`, `status`, `priority` |
-| `update_task` | Update title, status, priority, description, or custom fields | `id`, `status`, `priority`, `title` |
-| `delete_task` | Remove a task permanently | `id` |
-| `list_deliverables` | List deliverables for a project with format and container specs | `projectId` |
-| `create_deliverable`| Create a high-level creative deliverable | `projectId`, `title`, `format` |
-| `list_comments` | Retrieve threaded discussion comments for a task | `taskId` |
-| `add_comment` | Post a discussion comment or agent reply (authored by the server's actor) | `taskId`, `content` |
+| Tool | Toolset | Use it for | Key arguments |
+| :--- | :--- | :--- | :--- |
+| `list_projects` | core | Finding project ids; returns `{ projects }` | — |
+| `get_project` | core | A project's workflow statuses, custom fields and calendar | `id` |
+| `create_project` | core | A new, empty project | `name`, `key`, `description` |
+| `list_tasks` | core | Finding tasks by project, status, priority, assignee, iteration, deliverable, container or parent; returns `{ tasks, nextCursor }` | `projectId`, `status`, `priority`, `assigneeId`, `parentId`, `limit`, `cursor` |
+| `get_task` | core | One task's full record | `id` |
+| `create_task` | core | Adding work | `projectId`, `title`, `estimatedHours`, `priority`, `assigneeId` |
+| `update_task` | core | Changing status, priority, assignee, estimates, logged hours, blocked state | `id`, plus the fields to change |
+| `delete_task` | core | Permanent deletion (destructive) | `id` |
+| `list_deliverables` | collaboration | A project's milestones; returns `{ deliverables }` | `projectId` |
+| `create_deliverable` | collaboration | A dated milestone grouping tasks | `projectId`, `title`, `dueDate`, `taskIds` |
+| `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `taskId` |
+| `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `taskId`, `content` |
+| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort` |
+| `calculate_portfolio_critical_path` | scheduling | Several projects sharing people | `projectIds`, `projectOrder`, `calendars`, `levelResources` |
+| `get_workload_distribution` | scheduling | Hours and utilization per person, team or category over time | `projectId`, `groupBy`, `interval`, `metric`, `startDate`, `endDate` |
+| `get_timeline_ladder` | analytics | Project status: phase health, timeline, evidence of work | `projectId`, `level` |
+| `get_task_ladder` | analytics | One task's phase, schedule position and evidence | `taskId` |
+| `get_task_metrics` | analytics | Progress, variance and earned value (CPI, SPI) for a task | `taskId` |
+| `get_task_progress_history` | analytics | Progress over time and curve shape (stalled, late rush, ...) | `taskId` |
+| `get_skill` | guidance | Loading a playbook for a multi-step job | `name` |
+
+Every tool declares an `outputSchema` and returns structured content, and every tool sends the standard MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`).
 
 ---
 

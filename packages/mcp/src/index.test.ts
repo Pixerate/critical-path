@@ -51,7 +51,7 @@ describe('@critical-path/mcp', () => {
 
       // 2. List projects
       const listProjTool = TOOL_MAP.get('list_projects')!;
-      const projects = await listProjTool.execute({}, engine);
+      const { projects } = await listProjTool.execute({}, engine);
       expect(projects).toHaveLength(1);
       expect(projects[0].id).toBe(project.id);
 
@@ -347,8 +347,18 @@ describe('@critical-path/mcp', () => {
       const mockClient: any = { getTasks: () => Promise.resolve([]) };
       const handle = registerWebMcpTools({ client: mockClient, document: mockDoc, window: mockWin });
       const tools = handle.getRegisteredTools();
-      expect(tools.find((t) => t.name === 'delete_task')?.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
-      expect(tools.find((t) => t.name === 'list_tasks')?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false });
+      expect(tools.find((t) => t.name === 'delete_task')?.annotations).toEqual({
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false
+      });
+      expect(tools.find((t) => t.name === 'list_tasks')?.annotations).toEqual({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      });
       handle.unregister();
 
       const controller = new AbortController();

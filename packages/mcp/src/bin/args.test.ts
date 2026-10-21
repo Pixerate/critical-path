@@ -25,4 +25,18 @@ describe('MCP CLI arguments', () => {
     expect(isInsecureRemote('http://localhost:3000/api')).toBe(false);
     expect(isInsecureRemote('http://127.0.0.1:3000')).toBe(false);
   });
+
+  it('parses tool selection flags and the skills command', () => {
+    const options = parseArgs(['--db', 'x.db', '--toolsets', 'core, scheduling', '--tools', 'get_skill', '--read-only']);
+    expect(options).toMatchObject({ db: 'x.db', toolsets: ['core', 'scheduling'], tools: ['get_skill'], readOnly: true });
+    expect(options.command).toBeUndefined();
+
+    expect(parseArgs(['skills', 'install', '--dir', 'agents/skills', '--force'])).toMatchObject({
+      command: 'skills',
+      subcommand: 'install',
+      dir: 'agents/skills',
+      force: true
+    });
+    expect(parseArgs(['skills']).subcommand).toBe('list');
+  });
 });

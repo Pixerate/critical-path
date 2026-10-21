@@ -2,32 +2,96 @@ import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { CriticalPathEngine } from '@critical-path/core';
 import type { CriticalPathClient } from '@critical-path/client';
+import {
+  ProjectOutput,
+  TaskOutput,
+  DeliverableOutput,
+  CommentOutput,
+  CriticalPathOutput,
+  PortfolioCriticalPathOutput,
+  TimelineLadderOutput,
+  TaskLadderOutput,
+  TaskMetricsOutput,
+  TaskProgressHistoryOutput,
+  WorkloadDistributionOutput,
+  SkillOutput
+} from './outputs.js';
+import { SKILLS, getSkill } from '../skills/index.js';
 
 export type BackendContext = CriticalPathEngine | CriticalPathClient;
+
+/**
+ * Groups of related tools. Hosts expose only the groups an agent needs (`toolsets` option), which
+ * keeps the tool list short and tool choice accurate.
+ */
+export const TOOLSETS = {
+  core: 'Projects and tasks: find, read, create, update and delete',
+  collaboration: 'Deliverables (milestones) and task comments',
+  scheduling: 'Critical path, portfolio scheduling and workload/capacity',
+  analytics: 'Project status ladder, task metrics, earned value and progress history',
+  guidance: 'Skills: step-by-step playbooks for multi-step jobs'
+} as const;
+
+export type ToolsetName = keyof typeof TOOLSETS;
+
+/** Standard MCP tool annotations. */
+export interface ToolAnnotations {
+  /** The tool does not change anything. */
+  readOnlyHint: boolean;
+  /** The tool may delete or irreversibly overwrite data; hosts should confirm with the user. */
+  destructiveHint: boolean;
+  /** Calling it again with the same arguments has no further effect. */
+  idempotentHint: boolean;
+  /** The tool reaches systems outside this Critical Path backend. */
+  openWorldHint: boolean;
+}
 
 export interface ToolDefinition<TParams = any, TResult = any> {
   name: string;
   title: string;
+  /**
+   * What the model reads to choose a tool. Say what question it answers, when to use it, what it
+   * returns, and which sibling tool to use instead (in backticks) when the two could be confused.
+   */
   description: string;
+  toolset: ToolsetName;
   zodSchema: z.ZodObject<any>;
   /** JSON Schema shown to MCP clients. Generated from `zodSchema` by `defineTool`. */
   inputSchema: Record<string, unknown>;
-  annotations?: {
-    readOnlyHint?: boolean;
-    requiresConfirmation?: boolean;
-  };
+  /** Shape of the result. Results are always JSON objects so they can be sent as structured content. */
+  outputZodSchema: z.ZodTypeAny;
+  /** JSON Schema of the result shown to MCP clients. Generated from `outputZodSchema` by `defineTool`. */
+  outputSchema: Record<string, unknown>;
+  annotations: ToolAnnotations;
   execute: (args: TParams, target: BackendContext, ambientContext?: { projectId?: string }) => Promise<TResult>;
 }
 
+type ToolSpec<TParams, TResult> = Omit<ToolDefinition<TParams, TResult>, 'inputSchema' | 'outputSchema' | 'annotations'> & {
+  annotations?: Partial<ToolAnnotations>;
+};
+
+function toJsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
+  const { $schema: _schema, ...json } = zodToJsonSchema(schema, { $refStrategy: 'none' }) as Record<string, unknown>;
+  return json;
+}
+
 /**
- * Declares a tool, generating its JSON Schema `inputSchema` from `zodSchema` so the schema the
- * model sees and the one arguments are validated against cannot drift apart.
+ * Declares a tool, generating its JSON Schema `inputSchema` and `outputSchema` from the zod schemas
+ * so the schemas the model sees and the ones values are checked against cannot drift apart.
  */
-export function defineTool<TParams = any, TResult = any>(
-  spec: Omit<ToolDefinition<TParams, TResult>, 'inputSchema'>
-): ToolDefinition<TParams, TResult> {
-  const { $schema: _schema, ...inputSchema } = zodToJsonSchema(spec.zodSchema, { $refStrategy: 'none' }) as Record<string, unknown>;
-  return { ...spec, inputSchema };
+export function defineTool<TParams = any, TResult = any>(spec: ToolSpec<TParams, TResult>): ToolDefinition<TParams, TResult> {
+  const readOnlyHint = spec.annotations?.readOnlyHint ?? false;
+  return {
+    ...spec,
+    inputSchema: toJsonSchema(spec.zodSchema),
+    outputSchema: toJsonSchema(spec.outputZodSchema),
+    annotations: {
+      readOnlyHint,
+      destructiveHint: spec.annotations?.destructiveHint ?? false,
+      idempotentHint: spec.annotations?.idempotentHint ?? readOnlyHint,
+      openWorldHint: spec.annotations?.openWorldHint ?? false
+    }
+  };
 }
 
 export class ToolArgumentError extends Error {
@@ -62,18 +126,24 @@ export async function resolveBackend(target: BackendContext) {
 export const listProjectsTool = defineTool({
   name: 'list_projects',
   title: 'List Projects',
-  description: 'Retrieve all projects in the workspace.',
+  description:
+    'List every project you can read, with its id, name and key. Start here to find a projectId; never guess ids. Returns { projects }.',
+  toolset: 'core',
+  outputZodSchema: z.object({ projects: z.array(ProjectOutput) }),
   zodSchema: z.object({}),
   annotations: { readOnlyHint: true },
   execute: async (_args, target) => {
-    return target.getProjects();
+    return { projects: await target.getProjects() };
   }
 });
 
 export const getProjectTool = defineTool<{ id: string }>({
   name: 'get_project',
   title: 'Get Project',
-  description: 'Get details of a specific project by its ID.',
+  description:
+    'Get one project by id: name, key, workflow statuses, custom field definitions and calendar. Use it before creating or moving tasks to learn the valid status keys and custom fields. Returns the project. For its tasks use `list_tasks`.',
+  toolset: 'core',
+  outputZodSchema: ProjectOutput,
   zodSchema: z.object({
     id: z.string().describe('The project ID')
   }),
@@ -86,7 +156,10 @@ export const getProjectTool = defineTool<{ id: string }>({
 export const createProjectTool = defineTool<{ name: string; description?: string; key?: string; customFields?: Record<string, unknown> }>({
   name: 'create_project',
   title: 'Create Project',
-  description: 'Create a new project workspace.',
+  description:
+    'Create a new, empty project. Use only when the user wants a new project; to add work to an existing one use `create_task`. Returns the created project with its id.',
+  toolset: 'core',
+  outputZodSchema: ProjectOutput,
   zodSchema: z.object({
     name: z.string().describe('Name of the project'),
     description: z.string().optional().describe('Description of the project'),
@@ -113,7 +186,9 @@ export const listTasksTool = defineTool<{
   name: 'list_tasks',
   title: 'List Tasks',
   description:
-    'List tasks (oldest first), optionally filtered by project, status, priority, assignee, iteration, deliverable, container or parent task (\'none\' for top-level tasks). Returns { tasks, nextCursor }; pass nextCursor back as cursor to get the next page.',
+    'Find tasks, oldest first, filtered by project, status, priority, assignee, iteration, deliverable, container or parent task (\'none\' for top-level tasks only). Use it for questions like "what is blocked / assigned to X / in progress" and to look up task ids. Returns { tasks, nextCursor }; pass nextCursor back as cursor for the next page. For one task\'s full record use `get_task`.',
+  toolset: 'core',
+  outputZodSchema: z.object({ tasks: z.array(TaskOutput), nextCursor: z.string().nullable().optional() }),
   zodSchema: z.object({
     projectId: z.string().optional().describe('Filter by project ID'),
     status: z.string().optional().describe('Filter by task status key'),
@@ -147,7 +222,10 @@ export const listTasksTool = defineTool<{
 export const getTaskTool = defineTool<{ id: string }>({
   name: 'get_task',
   title: 'Get Task',
-  description: 'Get task details by ID.',
+  description:
+    'Get one task by id: status, priority, assignee, estimate, logged hours, dates, blocked state and custom fields. Returns the task. For its discussion use `list_comments`; for progress and variance use `get_task_metrics`.',
+  toolset: 'core',
+  outputZodSchema: TaskOutput,
   zodSchema: z.object({
     id: z.string().describe('The task ID')
   }),
@@ -174,7 +252,10 @@ export const createTaskTool = defineTool<{
 }>({
   name: 'create_task',
   title: 'Create Task',
-  description: 'Create a new task within a project.',
+  description:
+    'Create a task in a project. Check with `list_tasks` first so you do not add a duplicate. Without a status the task starts in the project\'s default workflow status. Returns the created task with its id.',
+  toolset: 'core',
+  outputZodSchema: TaskOutput,
   zodSchema: z.object({
     projectId: z.string().optional().describe('Project ID (inferred from active view in browser if omitted)'),
     title: z.string().describe('Title of the task'),
@@ -198,7 +279,7 @@ export const createTaskTool = defineTool<{
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
     if (!projectId) {
-      throw new Error('projectId is required to create a task, but none was provided or active in context.');
+      throw new Error('projectId is required to create a task, but none was provided or active in context. Find one with `list_projects`.');
     }
     const input: any = {
       projectId,
@@ -238,28 +319,32 @@ export const updateTaskTool = defineTool<{
 }>({
   name: 'update_task',
   title: 'Update Task',
-  description: 'Update fields of an existing task (e.g. title, status, priority, assignee).',
+  description:
+    'Change an existing task: title, description, status, priority, assignee, due date, estimate, logged hours, allocation, blocked state, tags or custom fields. Only the fields you pass change. Use it to move a task through its workflow or re-plan it. Returns the updated task.',
+  toolset: 'core',
+  outputZodSchema: TaskOutput,
   zodSchema: z.object({
     id: z.string().describe('The task ID'),
-    title: z.string().optional(),
-    description: z.string().optional(),
-    status: z.string().optional(),
-    priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional(),
-    assigneeId: z.string().optional(),
-    dueDate: z.string().optional(),
-    tags: z.array(z.string()).optional(),
-    estimatedHours: z.number().optional(),
+    title: z.string().optional().describe('New title'),
+    description: z.string().optional().describe('New description (markdown)'),
+    status: z.string().optional().describe("Status key from the project's workflow (see `get_project`)"),
+    priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().describe('New priority'),
+    assigneeId: z.string().optional().describe('User ID to assign the task to'),
+    dueDate: z.string().optional().describe('Due date (ISO string)'),
+    tags: z.array(z.string()).optional().describe('Replaces all tags'),
+    estimatedHours: z.number().optional().describe('Estimated effort in hours'),
     allocation: z
       .number()
       .gt(0)
       .max(1)
       .optional()
       .describe("Share of the assignee's time the task takes, in (0, 1]; e.g. 0.5 for half-time. Estimates are effort, so a 0.5 task takes twice as long"),
-    loggedHours: z.number().optional(),
+    loggedHours: z.number().optional().describe('Total hours worked so far'),
     isBlocked: z.boolean().optional().describe('Whether the task is blocked'),
     blockedReason: z.string().optional().describe('Reason why the task is blocked'),
     customFields: z.record(z.unknown()).optional().describe('Custom field values as a JSON object (validated against the project\'s field definitions for tasks)')
   }),
+  annotations: { idempotentHint: true },
   execute: async (args, target) => {
     const { id, ...updates } = args;
     return target.updateTask(id, updates);
@@ -269,11 +354,14 @@ export const updateTaskTool = defineTool<{
 export const deleteTaskTool = defineTool<{ id: string }>({
   name: 'delete_task',
   title: 'Delete Task',
-  description: 'Delete a task by ID.',
+  description:
+    'Permanently delete a task by id. This cannot be undone: confirm with the user first, and prefer `update_task` with a canceled status when the history should be kept. Returns { success }.',
+  toolset: 'core',
+  outputZodSchema: z.object({ success: z.boolean() }),
   zodSchema: z.object({
     id: z.string().describe('The task ID to delete')
   }),
-  annotations: { requiresConfirmation: true },
+  annotations: { destructiveHint: true, idempotentHint: true },
   execute: async (args, target) => {
     const success = await target.deleteTask(args.id);
     return { success };
@@ -283,18 +371,21 @@ export const deleteTaskTool = defineTool<{ id: string }>({
 export const listDeliverablesTool = defineTool<{ projectId?: string }>({
   name: 'list_deliverables',
   title: 'List Deliverables',
-  description: 'List deliverables/milestones for a project.',
+  description:
+    'List a project\'s deliverables: milestones that group tasks toward a dated outcome. Use it to see what is due and which tasks feed each milestone. Returns { deliverables }.',
+  toolset: 'collaboration',
+  outputZodSchema: z.object({ deliverables: z.array(DeliverableOutput) }),
   zodSchema: z.object({
-    projectId: z.string().optional().describe('Project ID')
+    projectId: z.string().optional().describe('Project ID (falls back to ambient context if omitted)')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
-    if (!projectId) throw new Error('projectId is required to list deliverables.');
+    if (!projectId) throw new Error('projectId is required to list deliverables. Find one with `list_projects`.');
     if ('getDeliverables' in target && typeof (target as any).getDeliverables === 'function') {
-      return (target as any).getDeliverables(projectId);
+      return { deliverables: await (target as any).getDeliverables(projectId) };
     }
-    return [];
+    return { deliverables: [] };
   }
 });
 
@@ -308,18 +399,21 @@ export const createDeliverableTool = defineTool<{
 }>({
   name: 'create_deliverable',
   title: 'Create Deliverable',
-  description: 'Create a milestone deliverable within a project.',
+  description:
+    'Create a deliverable (milestone) in a project, optionally linking existing tasks by id. Use it when planning a dated outcome that several tasks build toward. Returns the created deliverable.',
+  toolset: 'collaboration',
+  outputZodSchema: DeliverableOutput,
   zodSchema: z.object({
-    projectId: z.string().optional(),
-    title: z.string(),
-    description: z.string().optional(),
-    dueDate: z.string().optional(),
-    taskIds: z.array(z.string()).optional(),
+    projectId: z.string().optional().describe('Project ID (falls back to ambient context if omitted)'),
+    title: z.string().describe('Name of the deliverable'),
+    description: z.string().optional().describe('What the deliverable is and how it is accepted'),
+    dueDate: z.string().optional().describe('Due date (ISO string)'),
+    taskIds: z.array(z.string()).optional().describe('IDs of existing tasks that feed this deliverable'),
     customFields: z.record(z.unknown()).optional().describe('Custom field values as a JSON object (validated against the project\'s field definitions for tasks)')
   }),
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
-    if (!projectId) throw new Error('projectId is required to create a deliverable.');
+    if (!projectId) throw new Error('projectId is required to create a deliverable. Find one with `list_projects`.');
     if ('createDeliverable' in target && typeof (target as any).createDeliverable === 'function') {
       return (target as any).createDeliverable({
         ...args,
@@ -333,23 +427,29 @@ export const createDeliverableTool = defineTool<{
 export const listCommentsTool = defineTool<{ taskId: string }>({
   name: 'list_comments',
   title: 'List Comments',
-  description: 'List comments associated with a task.',
+  description:
+    'List the comments on a task. Use it to read the discussion, decisions or blockers recorded there. Returns { comments }.',
+  toolset: 'collaboration',
+  outputZodSchema: z.object({ comments: z.array(CommentOutput) }),
   zodSchema: z.object({
     taskId: z.string().describe('The task ID')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target) => {
     if ('getComments' in target && typeof (target as any).getComments === 'function') {
-      return (target as any).getComments(args.taskId);
+      return { comments: await (target as any).getComments(args.taskId) };
     }
-    return [];
+    return { comments: [] };
   }
 });
 
 export const addCommentTool = defineTool<{ taskId: string; content: string; customFields?: Record<string, unknown> }>({
   name: 'add_comment',
   title: 'Add Comment',
-  description: 'Add a comment to a task. The comment is attributed to the identity this MCP server runs as.',
+  description:
+    'Post a comment on a task, attributed to the identity this server runs as. Use it to record a decision, status note, question or the reasoning behind a change you made. Returns the created comment.',
+  toolset: 'collaboration',
+  outputZodSchema: CommentOutput,
   zodSchema: z.object({
     taskId: z.string().describe('The task ID'),
     content: z.string().describe('Comment body/markdown'),
@@ -372,7 +472,9 @@ export const calculatePortfolioCriticalPathTool = defineTool<{
   name: 'calculate_portfolio_critical_path',
   title: 'Calculate Portfolio Critical Path',
   description:
-    'Critical path analysis across several projects at once (or every readable project). With calendars "assignee" and levelResources, people and teams are shared across projects, so nobody is double-booked between them.',
+    'Schedule several projects together (default: every project you can read) so people and teams shared between them are not double-booked. Use it for cross-project delivery dates and resource conflicts. Returns { projects, projectEndDate, overallocations } with one analysis per project. For a single project use `calculate_critical_path`.',
+  toolset: 'scheduling',
+  outputZodSchema: PortfolioCriticalPathOutput,
   zodSchema: z.object({
     projectIds: z.array(z.string()).optional().describe('Projects to include (default: every project you can read)'),
     projectOrder: z.array(z.string()).optional().describe('Project ids in priority order for levelling; unlisted projects come last'),
@@ -404,7 +506,10 @@ export const calculateCriticalPathTool = defineTool<{
 }>({
   name: 'calculate_critical_path',
   title: 'Calculate Critical Path',
-  description: 'Calculate Critical Path Method (CPM) schedule, early/late start and finish, total slack, and critical bottlenecks for a project.',
+  description:
+    'Schedule one project with the Critical Path Method: which tasks drive the end date, each task\'s early and late start and finish, and how much it can slip (slack). Use it for "when will this finish?", "what is on the critical path?" or "can this task slip?". Set calendars \'assignee\' with levelResources so each person works on one task at a time. Returns { projectEndDate, criticalTaskIds, tasks, overallocations }. For several projects that share people use `calculate_portfolio_critical_path`.',
+  toolset: 'scheduling',
+  outputZodSchema: CriticalPathOutput,
   zodSchema: z.object({
     projectId: z.string().optional().describe('Project ID (falls back to ambient context if omitted)'),
     calendars: z
@@ -428,7 +533,7 @@ export const calculateCriticalPathTool = defineTool<{
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
     if (!projectId) {
-      throw new Error('projectId is required to calculate critical path.');
+      throw new Error('projectId is required to calculate the critical path. Find one with `list_projects`.');
     }
     const { calendars, levelResources, levelingPriority, effort } = args;
     return (target as any).calculateCriticalPath(projectId, { calendars, levelResources, levelingPriority, effort });
@@ -443,7 +548,10 @@ export const getTimelineLadderTool = defineTool<{
 }>({
   name: 'get_timeline_ladder',
   title: 'Get Timeline Ladder of Abstraction',
-  description: 'Retrieve Ladder of Abstraction for a project timeline across macro phase envelopes, standard Gantt tasks & CPM, and concrete deliverables/time/attachments.',
+  description:
+    'Project status at three zoom levels: \'macro\' phases with health (on_track, at_risk, blocked, overdue) and progress, \'standard\' task timeline with the critical path and dependencies, and \'concrete\' evidence of work (time logged, attachments) per task. Use it for project status reports; level \'macro\' gives a compact summary. Returns { macro, standard, concrete }. For a single task use `get_task_ladder`.',
+  toolset: 'analytics',
+  outputZodSchema: TimelineLadderOutput,
   zodSchema: z.object({
     projectId: z.string().optional().describe('Project ID (falls back to ambient context if omitted)'),
     level: z.enum(['macro', 'standard', 'concrete', 'all']).optional().describe('Abstraction level (macro, standard, concrete, or all)'),
@@ -454,7 +562,7 @@ export const getTimelineLadderTool = defineTool<{
   execute: async (args, target, ambientContext) => {
     const projectId = args.projectId || ambientContext?.projectId;
     if (!projectId) {
-      throw new Error('projectId is required to get timeline ladder.');
+      throw new Error('projectId is required to get the timeline ladder. Find one with `list_projects`.');
     }
     return (target as any).getTimelineLadder(projectId, {
       level: args.level,
@@ -467,7 +575,10 @@ export const getTimelineLadderTool = defineTool<{
 export const getTaskLadderTool = defineTool<{ taskId: string }>({
   name: 'get_task_ladder',
   title: 'Get Task Ladder View',
-  description: 'Retrieve multi-scale ladder view for a single task, connecting its macro phase, standard CPM timeline position, and concrete work evidence.',
+  description:
+    'One task in context: the phase it belongs to and that phase\'s health, its place in the schedule (dates, slack, critical or not) and evidence of work done. Use it to explain where a task fits and whether it puts its phase at risk. Returns { macroPhase, standard, concrete, metrics }. For the numbers alone use `get_task_metrics`.',
+  toolset: 'analytics',
+  outputZodSchema: TaskLadderOutput,
   zodSchema: z.object({
     taskId: z.string().describe('The task ID')
   }),
@@ -480,7 +591,10 @@ export const getTaskLadderTool = defineTool<{ taskId: string }>({
 export const getTaskMetricsTool = defineTool<{ taskId: string }>({
   name: 'get_task_metrics',
   title: 'Get Task Metrics',
-  description: 'Retrieve multi-dimensional task metrics including inferred actuals, active working duration, effort/duration/schedule variances, progress inference, and Earned Value Management (EVM) metrics.',
+  description:
+    'Is a task on track? Progress percentage, actual against estimated hours, schedule variance, overdue flags and earned value (CPI, SPI). Use it to diagnose a late or over-budget task. Returns { progress, realityDelta, evm, inferredActuals, progressHistory }.',
+  toolset: 'analytics',
+  outputZodSchema: TaskMetricsOutput,
   zodSchema: z.object({
     taskId: z.string().describe('The task ID')
   }),
@@ -493,7 +607,10 @@ export const getTaskMetricsTool = defineTool<{ taskId: string }>({
 export const getTaskProgressHistoryTool = defineTool<{ taskId: string }>({
   name: 'get_task_progress_history',
   title: 'Get Task Progress History',
-  description: 'Retrieve time-series progress data points and curve shape classification (linear, s_curve, early_surge, late_rush, stalled) for a task.',
+  description:
+    'How a task\'s progress has moved over time: dated progress points and a curve shape (linear, s_curve, early_surge, late_rush, stalled). Use it to tell whether work is stalling or being rushed at the end. Returns { points, curveProfile }. `get_task_metrics` includes the same history alongside variance and earned value.',
+  toolset: 'analytics',
+  outputZodSchema: TaskProgressHistoryOutput,
   zodSchema: z.object({
     taskId: z.string().describe('The task ID')
   }),
@@ -514,7 +631,10 @@ export const getWorkloadDistributionTool = defineTool<{
 }>({
   name: 'get_workload_distribution',
   title: 'Get Workload Distribution',
-  description: 'Retrieve time-series workload and capacity distribution suitable for streamgraphs, stacked charts, and team capacity planning.',
+  description:
+    'Hours of work per person, team, task type, priority or status in each day, week or month, with capacity and utilization. Use it for "who is overloaded?" and capacity planning; a utilizationRatio above 1 means more work than capacity. Omit projectId for the whole workspace. Returns { buckets, seriesKeys, seriesLabels, totalHours, averageUtilization }.',
+  toolset: 'scheduling',
+  outputZodSchema: WorkloadDistributionOutput,
   zodSchema: z.object({
     projectId: z.string().optional().describe('Project ID (optional, defaults to workspace-wide or ambient project)'),
     startDate: z.string().optional().describe('Start date ISO (YYYY-MM-DD)'),
@@ -538,6 +658,29 @@ export const getWorkloadDistributionTool = defineTool<{
   }
 });
 
+export const getSkillTool = defineTool<{ name?: string }>({
+  name: 'get_skill',
+  title: 'Get Skill',
+  description:
+    'Load a step-by-step playbook for a multi-step project management job, such as planning a project, triaging tasks, finding schedule risk, writing a status report, checking capacity or investigating a late task. Call it before starting such a job and follow its steps. Omit name to list the skills. Returns { name, description, content }, or { skills } without a name.',
+  toolset: 'guidance',
+  outputZodSchema: SkillOutput,
+  zodSchema: z.object({
+    name: z.string().optional().describe('Skill name, e.g. "plan-project"; omit to list all skills')
+  }),
+  annotations: { readOnlyHint: true },
+  execute: async (args) => {
+    if (!args.name) {
+      return { skills: SKILLS.map(({ name, description }) => ({ name, description })) };
+    }
+    const skill = getSkill(args.name);
+    if (!skill) {
+      throw new Error(`Skill "${args.name}" not found. Available skills: ${SKILLS.map((s) => s.name).join(', ')}.`);
+    }
+    return skill;
+  }
+});
+
 export const ALL_TOOLS: ToolDefinition[] = [
   listProjectsTool,
   getProjectTool,
@@ -557,9 +700,89 @@ export const ALL_TOOLS: ToolDefinition[] = [
   getTaskLadderTool,
   getTaskMetricsTool,
   getTaskProgressHistoryTool,
-  getWorkloadDistributionTool
+  getWorkloadDistributionTool,
+  getSkillTool
 ];
 
 export const TOOL_MAP = new Map<string, ToolDefinition>(
   ALL_TOOLS.map((tool) => [tool.name, tool])
 );
+
+export interface ToolSelection {
+  /** Exact tool names to expose. Combined with `toolsets` (a tool in either is exposed). */
+  tools?: string[];
+  /** Tool groups to expose. Without `tools` or `toolsets`, every tool is exposed. */
+  toolsets?: ToolsetName[];
+  /** Expose only tools that change nothing. */
+  readOnly?: boolean;
+}
+
+/**
+ * Picks the tools a host exposes. Unknown tool or toolset names throw, so a typo cannot silently
+ * leave an agent without the tools it was meant to have. `get_skill` follows the same rules as
+ * other tools: include the `guidance` toolset (or name it) to keep skills reachable.
+ */
+export function selectTools(selection: ToolSelection = {}): ToolDefinition[] {
+  const { tools, toolsets, readOnly } = selection;
+  const unknownTools = (tools ?? []).filter((name) => !TOOL_MAP.has(name));
+  if (unknownTools.length > 0) {
+    throw new Error(`Unknown Critical Path tool(s): ${unknownTools.join(', ')}. Known tools: ${ALL_TOOLS.map((t) => t.name).join(', ')}.`);
+  }
+  const unknownSets = (toolsets ?? []).filter((name) => !(name in TOOLSETS));
+  if (unknownSets.length > 0) {
+    throw new Error(`Unknown Critical Path toolset(s): ${unknownSets.join(', ')}. Known toolsets: ${Object.keys(TOOLSETS).join(', ')}.`);
+  }
+  const filtered = !tools && !toolsets;
+  return ALL_TOOLS.filter(
+    (tool) =>
+      (filtered || tools?.includes(tool.name) || toolsets?.includes(tool.toolset)) &&
+      (!readOnly || tool.annotations.readOnlyHint)
+  );
+}
+
+export class ToolNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ToolNotFoundError';
+  }
+}
+
+const ID_RECOVERY =
+  'Check the id: find valid project ids with `list_projects` and task ids with `list_tasks`. Ids are never guessable, and items you cannot read are reported as not found.';
+
+/**
+ * Validates arguments, runs a tool and returns a JSON-safe object result. A missing record (a
+ * `null` result) becomes an error, and errors carry a hint for what to do next so the agent can
+ * recover on its own.
+ */
+export async function runTool(
+  tool: ToolDefinition,
+  args: unknown,
+  target: BackendContext,
+  ambientContext?: { projectId?: string }
+): Promise<Record<string, unknown>> {
+  try {
+    const result = await tool.execute(parseToolArgs(tool, args), target, ambientContext);
+    if (result === null || result === undefined) {
+      throw new ToolNotFoundError(`Nothing found for ${JSON.stringify(args ?? {})}.`);
+    }
+    // Round-trip through JSON: drops undefined fields and serializes dates, as a transport would.
+    return JSON.parse(JSON.stringify(result));
+  } catch (err: any) {
+    throw new Error(withRecoveryHint(tool, err));
+  }
+}
+
+function withRecoveryHint(tool: ToolDefinition, err: any): string {
+  const message: string = err?.message || String(err);
+  if (err instanceof ToolArgumentError) {
+    return `${message}. Fix the arguments to match the input schema of "${tool.name}" and call it again.`;
+  }
+  if (err instanceof ToolNotFoundError || err?.name === 'NotFoundError' || err?.status === 404 || /not found/i.test(message)) {
+    return `${message} ${ID_RECOVERY}`;
+  }
+  if (err?.name === 'ForbiddenError' || err?.status === 403) {
+    return `${message} You do not have permission for this; tell the user rather than retrying.`;
+  }
+  return message;
+}

@@ -12,7 +12,9 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Actor, CriticalPathEngine } from '@critical-path/core';
 import type { CriticalPathClient } from '@critical-path/client';
-import { ALL_TOOLS, parseToolArgs, type BackendContext } from '../tools/definitions.js';
+import { selectTools, runTool, type BackendContext, type ToolsetName } from '../tools/definitions.js';
+import { buildAgentInstructions } from '../tools/instructions.js';
+import { SKILLS, getSkill } from '../skills/index.js';
 
 
 /** Most tasks a resource or prompt puts into the model's context. */
@@ -22,7 +24,12 @@ export interface CriticalPathMcpServerOptions {
   client?: CriticalPathClient;
   name?: string;
   version?: string;
+  /** Exact tool names to expose. Combined with `toolsets`; unknown names throw. */
   tools?: string[];
+  /** Tool groups to expose (`core`, `collaboration`, `scheduling`, `analytics`, `guidance`). Default: all. */
+  toolsets?: ToolsetName[];
+  /** Expose only tools that change nothing. */
+  readOnly?: boolean;
   /**
    * Identity that changes made through an `engine` are attributed to (activity log, comment
    * authors, ...). Defaults to `DEFAULT_MCP_ACTOR`. With a `client`, identity comes from the API's
@@ -44,9 +51,7 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
   const serverName = options.name || 'critical-path-mcp';
   const serverVersion = options.version || '0.1.0';
 
-  const activeTools = options.tools
-    ? ALL_TOOLS.filter((t) => options.tools!.includes(t.name))
-    : ALL_TOOLS;
+  const activeTools = selectTools({ tools: options.tools, toolsets: options.toolsets, readOnly: options.readOnly });
   const activeToolMap = new Map(activeTools.map((tool) => [tool.name, tool]));
 
   const server = new Server(
@@ -59,7 +64,9 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
         tools: {},
         resources: {},
         prompts: {}
-      }
+      },
+      // Sent on connect; clients add it to the agent's context as orientation.
+      instructions: buildAgentInstructions(activeTools)
     }
   );
 
@@ -71,11 +78,8 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
         title: tool.title,
         description: tool.description,
         inputSchema: tool.inputSchema,
-        annotations: {
-          title: tool.title,
-          readOnlyHint: tool.annotations?.readOnlyHint ?? false,
-          destructiveHint: tool.annotations?.requiresConfirmation ?? false
-        }
+        outputSchema: tool.outputSchema,
+        annotations: { title: tool.title, ...tool.annotations }
       }))
     };
   });
@@ -93,14 +97,15 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
     try {
       // Plugin init and seeding must finish before tools touch the engine.
       if (options.engine) await options.engine.ready;
-      const result = await tool.execute(parseToolArgs(tool, args), target);
+      const result = await runTool(tool, args, target);
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify(result, null, 2)
           }
-        ]
+        ],
+        structuredContent: result
       };
     } catch (err: any) {
       return {
@@ -130,7 +135,13 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
           name: 'Critical Path Tasks',
           mimeType: 'application/json',
           description: 'Live list of all tasks across projects'
-        }
+        },
+        ...SKILLS.map((skill) => ({
+          uri: `criticalpath://skills/${skill.name}`,
+          name: `Skill: ${skill.name}`,
+          mimeType: 'text/markdown',
+          description: skill.description
+        }))
       ]
     };
   });
@@ -169,6 +180,15 @@ export function createCriticalPathMcpServer(options: CriticalPathMcpServerOption
           }
         ]
       };
+    }
+
+    const skillMatch = uri.match(/^criticalpath:\/\/skills\/([^/]+)$/);
+    if (skillMatch) {
+      const skill = getSkill(skillMatch[1]);
+      if (!skill) {
+        throw new McpError(ErrorCode.InvalidRequest, `Skill "${skillMatch[1]}" not found.`);
+      }
+      return { contents: [{ uri, mimeType: 'text/markdown', text: skill.content }] };
     }
 
     const taskMatch = uri.match(/^criticalpath:\/\/tasks\/([^/]+)$/);

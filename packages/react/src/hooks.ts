@@ -29,7 +29,7 @@ import type {
   WorkloadMetric
 } from '@critical-path/core';
 import { resolveStatusDefinition, isTempTaskId } from '@critical-path/core';
-import { registerWebMcpTools } from '@critical-path/mcp/web';
+import { registerWebMcpTools, type ToolsetName } from '@critical-path/mcp/web';
 import { useCriticalPathClient } from './provider.js';
 
 export function useWorkflows() {
@@ -778,22 +778,32 @@ export function useDeliverableSummary(deliverableId?: string) {
 
 export interface UseWebMCPOptions {
   projectId?: string;
+  /** Exact tool names to expose. Combined with `toolsets`. */
   tools?: string[];
+  /** Tool groups to expose (`core`, `collaboration`, `scheduling`, `analytics`, `guidance`). Default: all. */
+  toolsets?: ToolsetName[];
+  /** Expose only tools that change nothing. */
+  readOnly?: boolean;
   enabled?: boolean;
   onToolExecuted?: (toolName: string, input: any, result: any) => void;
 }
 
 export function useWebMCP(options: UseWebMCPOptions = {}) {
   const client = useCriticalPathClient();
-  const { projectId, tools, enabled = true, onToolExecuted } = options;
+  const { projectId, tools, toolsets, readOnly, enabled = true, onToolExecuted } = options;
+  // Keyed by content so inline arrays do not re-register the tools on every render.
+  const toolsKey = tools?.join(',');
+  const toolsetsKey = toolsets?.join(',');
   const [registered, setRegistered] = useState(false);
   const [registeredTools, setRegisteredTools] = useState<string[]>([]);
+  const [instructions, setInstructions] = useState('');
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     if (!enabled) {
       setRegistered(false);
       setRegisteredTools([]);
+      setInstructions('');
       return;
     }
 
@@ -802,11 +812,14 @@ export function useWebMCP(options: UseWebMCPOptions = {}) {
         client,
         projectId,
         tools,
+        toolsets,
+        readOnly,
         onToolExecuted
       });
 
       setRegistered(true);
       setRegisteredTools(handle.getRegisteredTools().map((t) => t.name));
+      setInstructions(handle.instructions);
       setError(null);
 
       return () => {
@@ -818,11 +831,14 @@ export function useWebMCP(options: UseWebMCPOptions = {}) {
       setError(err instanceof Error ? err : new Error(String(err)));
       setRegistered(false);
     }
-  }, [client, projectId, enabled, tools, onToolExecuted]);
+    // tools and toolsets are tracked by toolsKey / toolsetsKey
+  }, [client, projectId, enabled, toolsKey, toolsetsKey, readOnly, onToolExecuted]);
 
   return {
     registered,
     tools: registeredTools,
+    /** Orientation for the agent (data model, which tool to use, skills); add it to your copilot's system prompt. */
+    instructions,
     error
   };
 }

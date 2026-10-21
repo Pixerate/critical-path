@@ -1,9 +1,14 @@
 import type { CriticalPathClient } from '@critical-path/client';
-import { registerWebMcpTools, type WebMcpRegistryHandle } from '@critical-path/mcp/web';
+import { registerWebMcpTools, type WebMcpRegistryHandle, type ToolsetName } from '@critical-path/mcp/web';
 
 export interface WebMcpStateOptions {
   projectId?: string;
+  /** Exact tool names to expose. Combined with `toolsets`. */
   tools?: string[];
+  /** Tool groups to expose (`core`, `collaboration`, `scheduling`, `analytics`, `guidance`). Default: all. */
+  toolsets?: ToolsetName[];
+  /** Expose only tools that change nothing. */
+  readOnly?: boolean;
   autoRegister?: boolean;
   document?: any;
   navigator?: any;
@@ -15,6 +20,8 @@ export class WebMcpState {
   registered = $state<boolean>(false);
   activeProjectId = $state<string | undefined>(undefined);
   tools = $state<string[]>([]);
+  /** Orientation for the agent (data model, which tool to use, skills); add it to your copilot's system prompt. */
+  instructions = $state<string>('');
   error = $state<Error | null>(null);
 
   private handle: WebMcpRegistryHandle | null = null;
@@ -37,6 +44,8 @@ export class WebMcpState {
         client: this.client,
         projectId: this.activeProjectId,
         tools: this.options.tools,
+        toolsets: this.options.toolsets,
+        readOnly: this.options.readOnly,
         signal: this.abortController.signal,
         document: this.options.document,
         navigator: this.options.navigator,
@@ -46,6 +55,7 @@ export class WebMcpState {
         }
       });
       this.tools = this.handle.getRegisteredTools().map((t) => t.name);
+      this.instructions = this.handle.instructions;
       this.registered = true;
     } catch (err) {
       this.error = err instanceof Error ? err : new Error(String(err));
@@ -61,6 +71,7 @@ export class WebMcpState {
     this.abortController = null;
     this.registered = false;
     this.tools = [];
+    this.instructions = '';
   }
 
   setProjectId(projectId?: string): void {

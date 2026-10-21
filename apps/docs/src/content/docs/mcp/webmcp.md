@@ -59,6 +59,13 @@ export default function App() {
 
 The hook automatically cleans up and unregisters all tools when the component unmounts via `AbortController`.
 
+The hook also accepts `toolsets` and `readOnly` (see [Agent Discovery, Toolsets & Skills](/mcp/agent-discovery/)) and returns `instructions`: a briefing on the data model, which tool to use and the available skills. WebMCP has no standard channel for it, so add it to your copilot's system prompt:
+
+```tsx
+const { instructions } = useWebMCP({ projectId, toolsets: ['core', 'analytics', 'guidance'] });
+// systemPrompt = `${basePrompt}\n\n${instructions}`
+```
+
 ---
 
 ## 🍊 Svelte 5 Integration (`WebMcpState` & `createWebMcpState`)
@@ -96,6 +103,8 @@ For Svelte 5 applications, `@critical-path/svelte` provides first-class Runes st
 </div>
 ```
 
+`WebMcpState` also takes `toolsets` and `readOnly`, and exposes `mcp.instructions` for your copilot's system prompt.
+
 ---
 
 ## 🌐 Vanilla JS / Direct Registration
@@ -109,11 +118,15 @@ import { CriticalPathClient } from '@critical-path/client';
 const client = new CriticalPathClient({ baseUrl: '/api/critical-path' });
 const controller = new AbortController();
 
-const { tools, unregister } = registerWebMcpTools({
+const { getRegisteredTools, instructions, unregister } = registerWebMcpTools({
   client,
   projectId: 'proj_123',
+  toolsets: ['core', 'analytics', 'guidance'], // optional; default: every tool
   signal: controller.signal
 });
+
+// Give the agent its briefing (data model, which tool to use, skills):
+// systemPrompt += '\n\n' + instructions;
 
 // Access registered tools globally:
 // window.__CRITICAL_PATH_WEBMCP__.tools

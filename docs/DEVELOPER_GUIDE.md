@@ -762,6 +762,9 @@ npx @critical-path/mcp --db ./app.db
 
 # Remote Next.js / SvelteKit endpoint
 npx @critical-path/mcp --api http://localhost:3000/api/critical-path
+
+# Only the tools a reporting agent needs, read-only
+npx @critical-path/mcp --db ./app.db --toolsets scheduling,analytics,guidance --read-only
 ```
 
 Or instantiate programmatically in server runtimes:
@@ -773,6 +776,17 @@ const engine = new CriticalPathEngine({ store: new SQLiteStore({ filename: 'prod
 const server = createCriticalPathMcpServer({ engine });
 await startStdioServer(server);
 ```
+
+### Agent discovery: toolsets, instructions and skills
+
+Agents choose tools from names and descriptions alone, so the package helps them choose well:
+
+- **Toolsets** (`core`, `collaboration`, `scheduling`, `analytics`, `guidance`) limit what an agent sees. `createCriticalPathMcpServer`, `registerWebMcpTools`, `useWebMCP` and `createWebMcpState` accept `toolsets`, `tools` and `readOnly`; unknown names throw.
+- **Instructions** are sent when an MCP client connects (data model, id flow, which tool to use, skill index). WebMCP returns them as `handle.instructions` for your copilot's system prompt.
+- **Structured results:** every tool has an `outputSchema` and returns `structuredContent`; errors carry recovery hints.
+- **Skills** (`packages/mcp/skills/<name>/SKILL.md`): `plan-project`, `triage-tasks`, `analyze-schedule`, `report-status`, `plan-capacity`, `investigate-task`. Agents load them with `get_skill`, as `criticalpath://skills/{name}` resources, or as files via `npx @critical-path/mcp skills install`.
+
+When you add or change a tool or a feature agents can reach, follow "Keep Agent Tools Discoverable" in [`AGENTS.md`](../AGENTS.md): description format, toolset, output schema, instructions routing, eval case, and the skills that mention it.
 
 ### 2. Client-Side WebMCP (W3C WebML CG Compliant)
 
