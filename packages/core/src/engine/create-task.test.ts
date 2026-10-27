@@ -24,6 +24,8 @@ const SAMPLE: Required<Omit<CreateTaskPayload, 'projectId'>> = {
   actualEndDate: '2026-10-05T00:00:00.000Z',
   completedAt: '2026-10-05T00:00:00.000Z',
   dueDate: '2026-10-09T00:00:00.000Z',
+  deadline: '2026-10-16',
+  isMilestone: true,
   estimatedHours: 12,
   allocation: 0.5,
   loggedHours: 3,

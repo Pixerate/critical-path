@@ -134,6 +134,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** `GET /workload`, `GET /projects/:id/workload` or `GET /projects/:id/ladder` query strings; CLI `propose`/`subtask`, `client.createSubtask` or MCP `create_task` relying on `draft`/`todo`.
 - **Fix:** use the documented values (`interval`: `day|week|month`; `groupBy`: `assignee|team|taskType|priority|status`; `metric`: `scheduled|logged|remaining|blended`; dates as `YYYY-MM-DD`; `level`: `macro|standard|concrete|all`). New tasks start in the workflow's default status unless you pass `status`.
 
+### core 0.52: milestones and deadlines
+
+- **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
+- **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
+
 ### mcp 0.19: tool results, selection and annotations
 
 - **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.

@@ -18,6 +18,7 @@ Turn a goal into deliverables (dated outcomes), tasks (estimated units of work) 
 Break the goal down in your reply first and show it to the user:
 
 - **Deliverables**: 2-6 outcomes someone could accept or reject, each with a due date if the user gave one.
+- **Milestones** for dated checkpoints (a release, a sign-off, a review): a task with `isMilestone: true`, a `deadline` if the date is fixed, and dependencies on the tasks that must finish first. The schedule then reports whether each date will be met.
 - **Tasks** under each deliverable. Each task:
   - starts with a verb and is small enough for one person (about 2-24 hours);
   - has `estimatedHours` (effort, not elapsed time);
@@ -37,7 +38,7 @@ Ask the user to confirm or adjust before creating anything. A plan is cheap to c
 ## 4. Check the result
 
 1. Call `calculate_critical_path` for the project and report the forecast `projectEndDate` and the `criticalTaskIds` (by title). If every task is critical or the end date looks too early, a dependency is probably missing or reversed.
-2. If the end date misses a deliverable's due date, say so and suggest what to cut, split or reassign. The `analyze-schedule` skill covers this in depth.
+2. If the end date misses a deliverable's due date, or `missedDeadlineTaskIds` is not empty, say so and suggest what to cut, split or reassign. The `analyze-schedule` skill covers this in depth.
 
 ## Guardrails
 

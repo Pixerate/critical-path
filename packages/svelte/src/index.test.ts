@@ -656,6 +656,7 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
         calculatedAt: '2026-09-11T12:00:00Z',
         totalDurationHours: 42,
         criticalTaskIds: ['t1', 't2'],
+        missedDeadlineTaskIds: [],
         tasks: []
       };
 

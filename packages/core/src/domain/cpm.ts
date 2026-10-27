@@ -16,11 +16,14 @@ import {
   getWorkingHoursBetween,
   nextWorkingTime,
   previousWorkingTime,
-  parseDate
+  parseDate,
+  toDateString
 } from './calendar.js';
 import { isTaskInProgress } from '../utils/status.js';
 
 export function getTaskDurationHours(task: Task): number {
+  // A milestone is a point in time: it never takes effort, whatever its estimates say
+  if (task.isMilestone) return 0;
   if (typeof task.estimatedHours === 'number' && task.estimatedHours >= 0) {
     return task.estimatedHours;
   }
@@ -118,6 +121,27 @@ export function resolveTaskSchedule(
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * The instant a task's `deadline` falls on for `calendar`: the last working moment at or before it.
+ * A date-only deadline means the end of that day, so `2026-10-09` is the close of work on the 9th.
+ */
+export function getDeadlineInstant(deadline: string, calendar: WorkSchedule = DEFAULT_WORK_SCHEDULE): Date {
+  const limit = /^\d{4}-\d{2}-\d{2}$/.test(deadline)
+    ? toDateString(new Date(parseDate(deadline).getTime() + 24 * 60 * 60 * 1000))
+    : deadline;
+  return previousWorkingTime(limit, calendar);
+}
+
+/** Tasks whose forecast finish is after their deadline. */
+const missedDeadlines = (schedules: TaskCriticalPathSchedule[]) =>
+  schedules.filter((s) => (s.deadlineVarianceHours ?? 0) < -0.001).map((s) => s.taskId);
+
+/** Output fields that describe a task's milestone flag and deadline. */
+const milestoneFields = (task: Task, deadline: Date | undefined, varianceHours: number | undefined) => ({
+  ...(task.isMilestone ? { isMilestone: true as const } : {}),
+  ...(deadline ? { deadlineDate: deadline.toISOString(), deadlineVarianceHours: round2(varianceHours!) } : {})
+});
 
 const allocationField = (task: Task) => (getTaskAllocation(task) < 1 ? { allocation: getTaskAllocation(task) } : {});
 
@@ -267,7 +291,13 @@ function scheduleOnDates(
     })
   );
   const durationOf = new Map(taskIds.map((id) => [id, getTaskScheduledHours(taskMap.get(id)!, options.effort)]));
-  const ctx: PassContext = { taskMap, calendarOf, durationOf, startOf: (id) => segmentOf.get(id)!.start };
+  const deadlineOf = new Map(
+    taskIds.flatMap((id) => {
+      const deadline = taskMap.get(id)!.deadline;
+      return deadline ? [[id, getDeadlineInstant(deadline, calendarOf.get(id)!)] as const] : [];
+    })
+  );
+  const ctx: PassContext = { taskMap, calendarOf, durationOf, deadlineOf, startOf: (id) => segmentOf.get(id)!.start };
   const endOfProjects = (dates: Dates) => {
     const ends = new Map(segments.map((seg) => [seg.projectId, latest(seg.taskIds.map((id) => dates.finish.get(id)!), seg.start)]));
     return (id: string) => ends.get(segmentOf.get(id)!.projectId)!;
@@ -324,6 +354,8 @@ interface PassContext {
   taskMap: Map<string, Task>;
   calendarOf: Map<string, WorkSchedule>;
   durationOf: Map<string, number>;
+  /** Tasks' deadlines on their own calendars; they cap late finishes. */
+  deadlineOf: Map<string, Date>;
   /** Earliest start for a task: its project's start. */
   startOf: (id: string) => Date;
 }
@@ -340,11 +372,24 @@ function latest(dates: Iterable<Date>, floor: Date): Date {
 }
 
 function slackHours(earlyFinish: Date, lateFinish: Date, calendar: WorkSchedule): number {
-  return round2(
-    lateFinish >= earlyFinish
-      ? getWorkingHoursBetween(earlyFinish, lateFinish, calendar)
-      : -getWorkingHoursBetween(lateFinish, earlyFinish, calendar)
+  // `|| 0` turns -0 into 0
+  return (
+    round2(
+      lateFinish >= earlyFinish
+        ? getWorkingHoursBetween(earlyFinish, lateFinish, calendar)
+        : -getWorkingHoursBetween(lateFinish, earlyFinish, calendar)
+    ) || 0
   );
+}
+
+/**
+ * When a task that becomes ready at `ready` starts: the next working time, except that a
+ * zero-duration task (a milestone, or finished work) stays at the moment its predecessors finish
+ * when that is working time or the close of a window, rather than moving to the next morning.
+ */
+function startTime(ready: Date, duration: number, calendar: WorkSchedule): Date {
+  if (duration === 0 && previousWorkingTime(ready, calendar).getTime() === ready.getTime()) return ready;
+  return nextWorkingTime(ready, calendar);
 }
 
 /** Earliest dates ignoring resource limits. */
@@ -358,14 +403,15 @@ function forwardPass(order: string[], prerequisites: Map<string, Set<string>>, c
       if (f && f > ready) ready = f;
     }
     const calendar = ctx.calendarOf.get(id)!;
-    const es = nextWorkingTime(ready, calendar);
+    const duration = ctx.durationOf.get(id)!;
+    const es = startTime(ready, duration, calendar);
     start.set(id, es);
-    finish.set(id, addWorkingHours(es, ctx.durationOf.get(id)!, calendar));
+    finish.set(id, addWorkingHours(es, duration, calendar));
   }
   return { start, finish };
 }
 
-/** Latest dates; `order` must list every successor before its predecessors. */
+/** Latest dates; `order` must list every successor before its predecessors. Deadlines cap them. */
 function backwardPass(order: string[], successorsOf: (id: string) => Iterable<string>, endOf: (id: string) => Date, ctx: PassContext): Dates {
   const start = new Map<string, Date>();
   const finish = new Map<string, Date>();
@@ -375,6 +421,8 @@ function backwardPass(order: string[], successorsOf: (id: string) => Iterable<st
       const ls = start.get(s);
       if (ls && ls < due) due = ls;
     }
+    const deadline = ctx.deadlineOf.get(id);
+    if (deadline && deadline < due) due = deadline;
     const calendar = ctx.calendarOf.get(id)!;
     const lf = previousWorkingTime(due, calendar);
     finish.set(id, lf);
@@ -458,7 +506,7 @@ function levelSchedule(
     const duration = ctx.durationOf.get(id)!;
     const resources = duration > 0 ? resourcesOf(taskMap.get(id)!) : [];
     const allocation = getTaskAllocation(taskMap.get(id)!);
-    let es = nextWorkingTime(ready, calendar);
+    let es = startTime(ready, duration, calendar);
     let ef = addWorkingHours(es, duration, calendar);
     for (;;) {
       let release: Booking | undefined;
@@ -629,7 +677,7 @@ function buildAnalysis(
   ctx: PassContext,
   extra: (id: string) => Partial<TaskCriticalPathSchedule> = () => ({})
 ): CriticalPathAnalysis {
-  const { calendarOf, durationOf, taskMap } = ctx;
+  const { calendarOf, durationOf, deadlineOf, taskMap } = ctx;
   const offset = (date: Date) =>
     date >= projectStart
       ? getWorkingHoursBetween(projectStart, date, projectSchedule)
@@ -660,6 +708,7 @@ function buildAnalysis(
       lateFinishDate: lf.toISOString(),
       ...(calendar.id ? { scheduleId: calendar.id } : {}),
       ...allocationField(taskMap.get(id)!),
+      ...milestoneFields(taskMap.get(id)!, deadlineOf.get(id), deadlineOf.has(id) ? slackHours(ef, deadlineOf.get(id)!, calendar) : undefined),
       ...extra(id)
     });
   }
@@ -674,6 +723,7 @@ function buildAnalysis(
     projectStartDate: projectStart.toISOString(),
     projectEndDate: projectEnd.toISOString(),
     criticalTaskIds,
+    missedDeadlineTaskIds: missedDeadlines(schedules),
     tasks: schedules
   };
 }
@@ -775,6 +825,7 @@ export function calculateCPM(
       projectStartDate: projectStartDate ? projectStartDate.toISOString() : undefined,
       projectEndDate: projectStartDate ? projectStartDate.toISOString() : undefined,
       criticalTaskIds: [],
+      missedDeadlineTaskIds: [],
       tasks: []
     };
   }
@@ -785,6 +836,22 @@ export function calculateCPM(
   }
   if (options.calendars === 'assignee') {
     return calculateCalendarCPM(projectId, calculatedAt, { taskMap, taskIds, prerequisites, successors, topoOrder }, options);
+  }
+
+  // Deadlines as project-calendar hours from the start. Without a start date there is nothing to
+  // place them against, so they are ignored.
+  const deadlineHours = new Map<string, number>();
+  if (projectStartDate) {
+    for (const task of tasks) {
+      if (!task.deadline) continue;
+      const deadline = getDeadlineInstant(task.deadline, schedule);
+      deadlineHours.set(
+        task.id,
+        deadline >= projectStartDate
+          ? getWorkingHoursBetween(projectStartDate, deadline, schedule)
+          : -getWorkingHoursBetween(deadline, projectStartDate, schedule)
+      );
+    }
   }
 
   // --- FORWARD PASS ---
@@ -844,7 +911,7 @@ export function calculateCPM(
       }
     }
 
-    const lf = minSuccLateStart;
+    const lf = Math.min(minSuccLateStart, deadlineHours.get(id) ?? Infinity);
     const ls = lf - duration;
 
     lateFinish.set(id, lf);
@@ -895,6 +962,11 @@ export function calculateCPM(
       isCritical,
       durationHours: duration,
       ...allocationField(task),
+      ...milestoneFields(
+        task,
+        deadlineHours.has(id) ? getDeadlineInstant(task.deadline!, schedule) : undefined,
+        deadlineHours.has(id) ? deadlineHours.get(id)! - ef : undefined
+      ),
       slackWorkingHours: totalSlack,
       earlyStartDate,
       earlyFinishDate,
@@ -915,6 +987,7 @@ export function calculateCPM(
     projectStartDate: projectStartDate ? projectStartDate.toISOString() : undefined,
     projectEndDate,
     criticalTaskIds,
+    missedDeadlineTaskIds: missedDeadlines(schedules),
     tasks: schedules
   };
 }
