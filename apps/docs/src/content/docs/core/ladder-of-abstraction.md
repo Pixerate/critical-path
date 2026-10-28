@@ -30,7 +30,7 @@ In **Critical Path**, this is materialized as a multi-scale timeline framework c
                                     ▼
 +------------------------------------------------------------------------+
 | 3. Concrete Rung (Low Abstraction - Tangible Ground Truth)            |
-|    - Physical Deliverables (format specs, resolutions, output URLs)   |
+|    - Physical Deliverables (output URLs, custom fields)              |
 |    - Real-world Attachments & File Assets (render frames, Figma, docs) |
 |    - Daily Effort Distributions & Timesheet Work Logs                  |
 |    - Reality Delta: Planned vs. Actual duration & schedule drift       |
@@ -55,7 +55,7 @@ Answers tactical questions: *How do parts connect, and where are the real bottle
 
 ### 3. Concrete Rung: Tangible Ground Truth & Reality Delta
 Answers empirical questions: *What was actually built? Where is the real work?*
-- Links tasks to concrete deliverables (render specs, resolution, output URLs).
+- Links tasks to concrete deliverables (output URLs and their custom fields).
 - Aggregates file attachments and uploaded assets.
 - Timesheet log breakdown by day (`dailyEffort`).
 - **Reality Delta**: Calculates exact variance between planned estimates and actual logged hours (`hoursDelta`, `scheduleStatus`).

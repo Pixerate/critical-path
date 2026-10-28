@@ -34,6 +34,7 @@ const EXTRA_TABLES = [
   'containers',
   'iterations',
   'comments',
+  'deliverables',
   'time_entries',
   'dependencies',
   'webhooks'
@@ -781,8 +782,8 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       newDeliverable.title,
       newDeliverable.description || null,
       newDeliverable.status,
-      newDeliverable.format || null,
-      newDeliverable.specs ? JSON.stringify(newDeliverable.specs) : null,
+      null, // format (removed; legacy column)
+      null, // specs (removed; legacy column)
       newDeliverable.leadId || null,
       newDeliverable.reviewerId || null,
       newDeliverable.dueDate || null,
@@ -792,6 +793,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       newDeliverable.createdAt,
       newDeliverable.updatedAt
     );
+    this.writeExtra('deliverables', newDeliverable);
     return newDeliverable;
   }
 
@@ -815,8 +817,8 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       updated.title,
       updated.description || null,
       updated.status,
-      updated.format || null,
-      updated.specs ? JSON.stringify(updated.specs) : null,
+      null, // format (removed; legacy column)
+      null, // specs (removed; legacy column)
       updated.leadId || null,
       updated.reviewerId || null,
       updated.dueDate || null,
@@ -826,6 +828,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       updated.updatedAt,
       id
     );
+    this.writeExtra('deliverables', updated);
     return updated;
   }
 
@@ -1648,11 +1651,16 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
   }
 
   private mapDeliverable(row: any): Deliverable {
+    const { format, specs, ...rest } = this.expandExtra(row);
+    const customFields = row.customFields ? JSON.parse(row.customFields) : {};
+    // Databases from before 0.58 may hold the removed `format` / `specs` columns: surface them as
+    // custom fields instead of dropping them.
+    if (format && customFields.format === undefined) customFields.format = format;
+    if (specs && customFields.specs === undefined) customFields.specs = JSON.parse(specs);
     return dropNulls({
-      ...row,
-      specs: row.specs ? JSON.parse(row.specs) : undefined,
+      ...rest,
       outputUrls: row.outputUrls ? JSON.parse(row.outputUrls) : [],
-      customFields: row.customFields ? JSON.parse(row.customFields) : {}
+      customFields
     });
   }
 }

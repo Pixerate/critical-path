@@ -277,8 +277,6 @@ The dependency graph enforces a strict **Directed Acyclic Graph (DAG)** invarian
 
 ## Domain Aggregates & Event Contracts
 
-In addition to DTO interfaces, `@critical-path/core` provides rich Domain Aggregates:
-- `TaskEntity`: Manages state transitions, duration calculations, and raises uncommitted domain events (`task.created`, `task.status_changed`, `time.logged`).
-- `ProjectEntity`: Manages key generation and schema validation for custom fields.
+Domain rules live in `CriticalPathEngine` (there is no separate entity layer):
 - `DomainEventBus`: Dispatches strongly typed events (`DomainEvent<T>`) across the domain boundary.
 

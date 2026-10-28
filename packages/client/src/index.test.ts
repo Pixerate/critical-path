@@ -141,7 +141,7 @@ describe('@critical-path/client Tests', () => {
       projectId: 'p1',
       title: 'Hero Cut 30s',
       status: 'planned' as const,
-      format: 'ProRes 422',
+      customFields: { format: 'ProRes 422' },
       outputUrls: [],
       createdAt: '2026-09-04T00:00:00Z',
       updatedAt: '2026-09-04T00:00:00Z'
@@ -203,7 +203,7 @@ describe('@critical-path/client Tests', () => {
     const created = await client.createDeliverable({
       projectId: 'p1',
       title: 'Hero Cut 15s',
-      format: 'ProRes 422'
+      customFields: { format: 'ProRes 422' }
     });
     expect(created.id).toBe('d2');
 

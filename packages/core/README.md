@@ -1,6 +1,6 @@
 # `@critical-path/core`
 
-> The foundational domain engine, Domain-Driven Design (DDD) aggregate roots, domain event bus, graph cycle detection, and storage adapters for **Critical Path**.
+> The foundational domain engine, domain event bus, graph cycle detection, and storage adapters for **Critical Path**.
 
 > **Upgrading?** Upgrade every `@critical-path/*` package together. Coding agents: follow [UPGRADING.md](https://github.com/Pixerate/critical-path/blob/main/UPGRADING.md); breaking changes are marked **BREAKING** in this package's `CHANGELOG.md`.
 
@@ -9,7 +9,7 @@
 
 ## 📦 Features
 
-- **Domain-Driven Design (DDD) Engine**: Rich aggregates (`TaskEntity`, `ProjectEntity`) encapsulating lifecycle invariants, state transitions, time tracking, and uncommitted domain events.
+- **One engine, one set of rules**: `CriticalPathEngine` enforces every invariant (workflow statuses and transitions, derived fields, references, permissions) for direct callers, the HTTP API, the client and MCP alike.
 - **Typed Domain Event Bus**: In-memory pub/sub `DomainEventBus` enabling reactive subscriptions to granular domain events (`task.created`, `task.status_changed`, `time.logged`, `dependency.added`, etc.).
 - **DAG Graph Cycle Invariant**: Built-in topological validation (`detectDependencyCycle`, `CircularDependencyError`) to ensure strict acyclic task dependency graphs. Dependencies are `blocking` or `relates_to` (informational, never part of the schedule or cycle check); `precedenceOf` reads a dependency's direction.
 - **Custom Field Value Object Validation**: Strict type-checking (`validateCustomFieldValues`, `CustomFieldValidationError`) against configured project field schemas.
@@ -31,9 +31,9 @@
   - Symmetrical transition helpers (`getAllowedNextStatuses`, `getAllowedPreviousStatuses`) and engine methods for moving tasks backwards and forwards through customized workflow states.
 - **Universal Semantic Status & Implied Status Framework**:
   - Clean 3-tier status architecture: Universal Semantic Statuses (`not_started`, `in_progress`, `completed`, `canceled`), customizable workflow-defined statuses mapped by `category`, and automatic system-derived implied statuses (`isReady`, `isBlocked`, `blockingTaskIds`, `isOverdue`, `isUpcoming`, `isUnplanned`, `isUnassigned`, `isStalled`, `isOverEstimate`, `isPaceWarning`).
-- **Creative Workflows & First-Class Deliverables**:
-  - `DeliverableEntity` aggregate with automatic delivery timestamps (`deliveredAt`) and URL registry (`outputUrls`).
-  - `DEFAULT_CREATIVE_WORKFLOW` template tailored for creative agencies and content production pipelines.
+- **Deliverables**:
+  - Outputs a project produces, linked to the tasks that produce them, with a configurable status set mapped to semantic categories (`deliverableStatusDefinitions`; default `DEFAULT_DELIVERABLE_STATUSES`), an automatic `deliveredAt`, and `outputUrls`.
+  - Presets for creative production: `CREATIVE_DELIVERABLE_STATUSES` and the `DEFAULT_CREATIVE_WORKFLOW` task workflow.
   - Rollup calculations via `getDeliverableSummary()` delivering progress percentages, completed tasks, and total estimated/logged hours across assigned tasks.
 - **Ladder of Abstraction & Critical Path Method (CPM)**:
   - Multi-scale timeline synthesis: Macro bird's-eye phase rollups (`getTimelineLadder({ level: 'macro' })`), Standard Gantt view with topological CPM forward/backward passes and total float/slack, and Concrete grounding (attachments, deliverables, checklist items, daily effort histograms, and reality deltas).
@@ -90,28 +90,20 @@ const engine = new CriticalPathEngine({
 });
 ```
 
-### 2. Rich Entities & Invariant Enforcement
+### 2. Invariants Live in the Engine
 
 ```ts
-import { TaskEntity, DEFAULT_SOFTWARE_WORKFLOW } from '@critical-path/core';
+import { CriticalPathEngine } from '@critical-path/core';
 
-// Create a rich Task Aggregate Root
-const task = TaskEntity.create({
-  projectId: 'proj_123',
-  title: 'Implement Payment Gateway',
-  status: 'todo',
-  priority: 'high'
-});
+const engine = new CriticalPathEngine();
+const project = await engine.createProject({ name: 'Payments' });
+const task = await engine.createTask({ projectId: project.id, title: 'Implement Payment Gateway', priority: 'high' });
 
-// Perform valid state transitions with workflow enforcement
-task.transitionTo('in_progress', DEFAULT_SOFTWARE_WORKFLOW);
+// Workflow transitions are enforced; semanticStatus and timestamps are derived
+await engine.updateTask(task.id, { status: 'in_progress' });
 
-// Log time on aggregate
-task.logTime({ hours: 3.5, isBillable: true });
-
-// Read and dispatch uncommitted events
-const events = task.getUncommittedEvents();
-task.clearEvents();
+// Hours come from time entries
+await engine.logTime({ taskId: task.id, hours: 3.5, isBillable: true });
 ```
 
 ### 3. DAG Dependency Cycle Prevention
@@ -225,16 +217,17 @@ Other domain errors are exported for callers and route handlers to map: `Validat
 ### 4. Tracking Creative Deliverables & Rollup Metrics
 
 ```ts
-import { CriticalPathEngine, DEFAULT_CREATIVE_WORKFLOW } from '@critical-path/core';
+import { CriticalPathEngine, CREATIVE_DELIVERABLE_STATUSES } from '@critical-path/core';
 
 const engine = new CriticalPathEngine();
+// Creative statuses for this project's deliverables (the default set is planned / in_progress / in_review / delivered / canceled)
+await engine.updateProject('proj_1', { deliverableStatusDefinitions: CREATIVE_DELIVERABLE_STATUSES });
 
-// 1. Create deliverable
+// 1. Create deliverable; domain-specific details go in customFields
 const deliverable = await engine.createDeliverable({
   projectId: 'proj_1',
   title: 'Brand Hero Video 30s',
-  format: 'ProRes 422HQ',
-  specs: { resolution: '3840x2160', fps: 24 }
+  customFields: { format: 'ProRes 422HQ', resolution: '3840x2160', fps: 24 }
 });
 
 // 2. Attach tasks to deliverable

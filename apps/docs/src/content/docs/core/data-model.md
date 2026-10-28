@@ -19,28 +19,40 @@ type SemanticStatus = 'not_started' | 'in_progress' | 'completed' | 'canceled';
 type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled' | (string & {});
 
 interface Task {
+  // Abridged: every field is in packages/core/src/types/index.ts
   id: string;
   projectId: string;
+  key?: string;                    // e.g. "MOB-12"
   title: string;
   description?: string;
-  status: TaskStatus;
-  semanticStatus?: SemanticStatus;
+  status: TaskStatus;              // must be one of the project's statuses
+  semanticStatus?: SemanticStatus; // derived from status
   priority: Priority;
-  assigneeId?: string;
+  taskType?: string;
+  assigneeId?: string;             // primary assignee; scheduling uses it
+  assignees?: TaskAssignee[];      // everyone on the task; includes assigneeId
   reporterId?: string;
-  sprintId?: string;
-  dueDate?: string;            // ISO-8601 string (e.g. 2026-09-15T00:00:00Z); informational
-  deadline?: string;           // Latest acceptable finish, enforced by critical path analysis
-  earliestStart?: string;      // Start no earlier than, enforced by critical path analysis
-  isMilestone?: boolean;       // Zero-duration checkpoint (release, sign-off); estimates are ignored
-  estimatedHours?: number;     // Effort, used for Critical Path calculations
-  allocation?: number;         // Share of the assignee's time, (0, 1], default 1
-  loggedHours?: number;
+  reviewerId?: string;
+  iterationId?: string;            // sprint or cycle
+  teamId?: string;
+  containerId?: string;
+  deliverableId?: string;
+  parentId?: string;               // a task with subtasks is a summary of them
+  plannedStartDate?: string;       // informational
+  dueDate?: string;                // informational
+  deadline?: string;               // latest finish, enforced by critical path analysis
+  earliestStart?: string;          // start no earlier than, enforced by critical path analysis
+  isMilestone?: boolean;           // zero-duration checkpoint
+  estimatedHours?: number;         // effort
+  allocation?: number;             // share of the assignee's time, (0, 1]; default 1
+  loggedHours?: number;            // derived: sum of time entries
+  progress?: number;               // 0-100
+  isBlocked?: boolean;             // manual block; dependency blocking is derived
+  blockedReason?: string | null;
   tags?: string[];
   customFields?: Record<string, unknown>;
-  parentId?: string;           // Parent task: must exist in the same project and cannot create a cycle. A parent is a summary of its subtasks
-  createdAt: string;           // ISO-8601
-  updatedAt: string;           // ISO-8601
+  createdAt: string;
+  updatedAt: string;
 }
 ```
 
@@ -114,6 +126,20 @@ interface Project {
 ```
 
 ---
+
+## Deliverable Entity
+
+A deliverable is an output the project produces (a document, a build, an asset), linked to the tasks that produce it (`task.deliverableId`). Like tasks, its `status` is a key from a status set with semantic categories:
+
+- `project.deliverableStatusDefinitions`, else `DEFAULT_DELIVERABLE_STATUSES`: `planned`, `in_progress`, `in_review` (in progress), `delivered` (completed), `canceled`.
+- `CREATIVE_DELIVERABLE_STATUSES` is a preset for production pipelines (`draft` … `client_review`, `revision_requested`, `approved`, `delivered`, `canceled`).
+
+Unknown statuses are rejected. `semanticStatus` is derived, and `deliveredAt` is set when the deliverable first reaches a completed status. Domain-specific details (a format, resolution, page count) go in `customFields`. For a dated checkpoint the schedule should enforce, use a milestone task with a `deadline` instead.
+
+```typescript
+await engine.updateProject(projectId, { deliverableStatusDefinitions: CREATIVE_DELIVERABLE_STATUSES });
+await engine.createDeliverable({ projectId, title: 'Hero video', customFields: { format: 'ProRes 422HQ' } });
+```
 
 ## Dependency Entity
 

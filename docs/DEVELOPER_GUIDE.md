@@ -74,27 +74,38 @@ export interface Project {
 ### Task
 ```ts
 export interface Task {
+  // Abridged: every field is in packages/core/src/types/index.ts
   id: string;
   projectId: string;
+  key?: string;                    // e.g. "MOB-12"
   title: string;
   description?: string;
-  status: 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled' | (string & {});
-  semanticStatus?: SemanticStatus;
-  priority: 'urgent' | 'high' | 'medium' | 'low' | 'none';
-  taskType?: 'task' | 'bug' | 'feature' | 'epic' | 'subtask' | (string & {});
-  assigneeId?: string;
-  assignees?: TaskAssignee[];
+  status: TaskStatus;              // must be one of the project's statuses
+  semanticStatus?: SemanticStatus; // derived from status
+  priority: Priority;
+  taskType?: string;
+  assigneeId?: string;             // primary assignee; scheduling uses it
+  assignees?: TaskAssignee[];      // everyone on the task; includes assigneeId
   reporterId?: string;
-  sprintId?: string;
-  dueDate?: string;       // informational
-  deadline?: string;      // latest acceptable finish, enforced by critical path analysis
-  isMilestone?: boolean;  // zero-duration checkpoint
-  estimatedHours?: number;
-  allocation?: number; // share of the assignee's time, (0, 1]; default 1
-  loggedHours?: number;
+  reviewerId?: string;
+  iterationId?: string;            // sprint or cycle
+  teamId?: string;
+  containerId?: string;
+  deliverableId?: string;
+  parentId?: string;               // a task with subtasks is a summary of them
+  plannedStartDate?: string;       // informational
+  dueDate?: string;                // informational
+  deadline?: string;               // latest finish, enforced by critical path analysis
+  earliestStart?: string;          // start no earlier than, enforced by critical path analysis
+  isMilestone?: boolean;           // zero-duration checkpoint
+  estimatedHours?: number;         // effort
+  allocation?: number;             // share of the assignee's time, (0, 1]; default 1
+  loggedHours?: number;            // derived: sum of time entries
+  progress?: number;               // 0-100
+  isBlocked?: boolean;             // manual block; dependency blocking is derived
+  blockedReason?: string | null;
   tags?: string[];
   customFields?: Record<string, unknown>;
-  parentId?: string;      // Subtask parent
   createdAt: string;
   updatedAt: string;
 }
@@ -168,7 +179,8 @@ export interface Workflow {
 
 ### Deliverable
 ```ts
-export type DeliverableStatus = 'planned' | 'in_progress' | 'in_review' | 'approved' | 'delivered' | 'canceled';
+/** A key from the project's deliverableStatusDefinitions (default: planned, in_progress, in_review, delivered, canceled). */
+export type DeliverableStatus = string;
 
 export interface Deliverable {
   id: string;
@@ -176,12 +188,11 @@ export interface Deliverable {
   title: string;
   description?: string;
   status: DeliverableStatus;
+  semanticStatus?: SemanticStatus;    // derived from status
   dueDate?: string;
-  deliveredAt?: string;
-  leadId?: string;
-  reviewerId?: string;
-  format?: string;
-  specs?: Record<string, unknown>;
+  deliveredAt?: string;               // when it first reached a completed status
+  leadId?: string;                    // owner
+  reviewerId?: string;                // who accepts it
   outputUrls?: string[];
   customFields?: Record<string, unknown>;
   createdAt: string;
@@ -702,28 +713,8 @@ engine.events.subscribe('*', (event) => {
 });
 ```
 
-### Rich Domain Entities & Aggregates
-Encapsulate internal state invariants, transition validation, and uncommitted event accumulation:
-```ts
-import { TaskEntity, DEFAULT_SOFTWARE_WORKFLOW } from '@critical-path/core';
-
-const task = TaskEntity.create({
-  projectId: 'proj_1',
-  title: 'Implement Core Feature',
-  status: 'todo',
-  priority: 'high'
-});
-
-// Invariant-validated state transition
-task.transitionTo('in_progress', DEFAULT_SOFTWARE_WORKFLOW);
-
-// Domain time tracking
-task.logTime({ hours: 2.5, isBillable: true });
-
-// Read & dispatch events
-const events = task.getUncommittedEvents();
-task.clearEvents();
-```
+### Invariants Live in the Engine
+`CriticalPathEngine` is the single implementation of the domain rules: workflow statuses and transitions, derived fields (`semanticStatus`, hour totals, timers), reference and ownership checks, permissions, and domain events. Direct callers, the router, the client and MCP all go through it, so there is no separate entity layer to keep in step.
 
 ### DAG Graph Dependency Invariants
 Prevents cyclic dependencies in task dependency graphs:
@@ -861,7 +852,7 @@ In **Critical Path**, this is materialized as a multi-scale timeline framework c
                                     ▼
 +------------------------------------------------------------------------+
 | 3. Concrete Rung (Low Abstraction - Tangible Ground Truth)            |
-|    - Physical Deliverables (format specs, resolutions, output URLs)   |
+|    - Physical Deliverables (output URLs, custom fields)              |
 |    - Real-world Attachments & File Assets (render frames, Figma, docs) |
 |    - Daily Effort Distributions & Timesheet Work Logs                  |
 |    - Reality Delta: Planned vs. Actual duration & schedule drift       |

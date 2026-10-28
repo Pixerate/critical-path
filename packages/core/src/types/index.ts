@@ -154,6 +154,8 @@ export interface Project {
   workflow?: Workflow;
   taskTypes?: TaskTypeDefinition[];
   statusDefinitions?: StatusDefinition[];
+  /** Statuses deliverables may have, with their categories. Default `DEFAULT_DELIVERABLE_STATUSES`. */
+  deliverableStatusDefinitions?: StatusDefinition[];
   priorityDefinitions?: Array<{ key: string; label: string; level?: number }>;
   customFieldDefinitions?: CustomFieldDefinition[];
   schedule?: WorkSchedule;
@@ -228,7 +230,12 @@ export interface Task {
   semanticStatus?: SemanticStatus;
   priority: Priority;
   taskType?: string; // e.g. "bug", "feature", "task", "epic"
+  /**
+   * The primary assignee. Critical path analysis, levelling and workload schedule the task on this
+   * person (their calendar and capacity). When `assignees` is set, it must be one of them.
+   */
   assigneeId?: string;
+  /** Everyone working on the task (people, agents, teams), for display and filtering. Scheduling uses `assigneeId`. */
   assignees?: TaskAssignee[];
   reporterId?: string;
   reviewerId?: string;
@@ -311,31 +318,31 @@ export type CreateTaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'sta
   priority?: Priority;
 };
 
-export type DeliverableStatus =
-  | 'draft'
-  | 'planned'
-  | 'in_production'
-  | 'internal_review'
-  | 'client_review'
-  | 'revision_requested'
-  | 'approved'
-  | 'delivered'
-  | 'canceled'
-  | (string & {});
+/**
+ * A key from the project's deliverable statuses (`Project.deliverableStatusDefinitions`, else
+ * `DEFAULT_DELIVERABLE_STATUSES`: `planned`, `in_progress`, `in_review`, `delivered`, `canceled`).
+ */
+export type DeliverableStatus = string;
 
+/** An output the project produces (a document, a build, an asset), and the tasks that produce it. */
 export interface Deliverable {
   id: string;
   projectId: string;
   title: string;
   description?: string;
   status: DeliverableStatus;
-  format?: string; // e.g., '16:9 4K ProRes', 'Figma', 'PDF'
-  specs?: Record<string, unknown>; // Technical specifications (resolution, frame rate, etc.)
-  leadId?: string; // Creative director or lead creator
-  reviewerId?: string; // Approver or client reviewer
+  /** Derived from `status` through the project's deliverable status definitions. */
+  semanticStatus?: SemanticStatus;
+  /** Who owns the deliverable. */
+  leadId?: string;
+  /** Who accepts it. */
+  reviewerId?: string;
   dueDate?: string;
+  /** When it first reached a completed status. */
   deliveredAt?: string;
-  outputUrls?: string[]; // Links to final rendered assets, exports, or storage keys
+  /** Links to what was delivered (files, builds, storage keys). */
+  outputUrls?: string[];
+  /** Your own data, such as a format or technical specs. */
   customFields?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;

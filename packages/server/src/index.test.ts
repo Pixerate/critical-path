@@ -241,7 +241,7 @@ describe('@critical-path/server Router Tests', () => {
       body: JSON.stringify({
         projectId: proj.id,
         title: 'Brand Video 30s',
-        format: 'ProRes 422'
+        customFields: { format: 'ProRes 422' }
       })
     });
     const createRes = await router.handleRequest(createReq);
