@@ -27,6 +27,8 @@ export interface FirestoreDocRef {
   id: string;
   get(): Promise<FirestoreSnapshot>;
   set(data: any, options?: { merge?: boolean }): Promise<void>;
+  /** Firestore's `update`: changes fields of an existing document and fails if it does not exist. */
+  update?(data: any): Promise<unknown>;
   delete(): Promise<void>;
 }
 
@@ -129,6 +131,13 @@ export interface FirebaseStoreConfig {
    * Firestore instance or mockable DB interface. Required.
    */
   db: FirestoreDBInterface;
+  /**
+   * Firestore's `FieldValue` (from `firebase-admin/firestore` or `@google-cloud/firestore`). When
+   * given, hour totals are added with `FieldValue.increment`, which is atomic and never contends.
+   * Without it they are added in a transaction, which is also safe but slower when many time
+   * entries are logged on one task at once.
+   */
+  fieldValue?: { increment(n: number): unknown };
 }
 
 /**
@@ -161,7 +170,10 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
       );
     }
     this.db = config.db;
+    this.fieldValue = config.fieldValue;
   }
+
+  private fieldValue?: { increment(n: number): unknown };
 
   /**
    * Reads a document, applies `change` and writes the whole result (so fields cleared with
@@ -633,8 +645,28 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
     return this.modify<TimeEntry>('time_entries', id, (existing) => ({ ...existing, ...updates, id, taskId: existing.taskId }));
   }
 
-  /** Adds to a task's hour totals in one transaction (when the db supports them), so concurrent logs are not lost. */
+  /**
+   * Adds to a task's hour totals without losing concurrent logs: with `FieldValue.increment` when
+   * `fieldValue` is configured, otherwise in a transaction (when the db supports them).
+   */
   async incrementTaskHours(taskId: string, deltas: TaskHourDeltas): Promise<Task | null> {
+    const ref = this.db.collection('tasks').doc(taskId);
+    if (this.fieldValue && ref.update) {
+      const increments = Object.fromEntries(
+        (Object.entries(deltas) as Array<[keyof TaskHourDeltas, number | undefined]>)
+          .filter(([, delta]) => delta)
+          .map(([field, delta]) => [field, this.fieldValue!.increment(delta!)])
+      );
+      try {
+        await ref.update({ ...increments, updatedAt: new Date().toISOString() });
+      } catch (err) {
+        // NOT_FOUND: the task does not exist
+        const code = (err as { code?: unknown }).code;
+        if (code === 5 || code === 'not-found') return null;
+        throw err;
+      }
+      return this.getTask(taskId);
+    }
     return this.modify<Task>('tasks', taskId, (task) => {
       const next = { ...task, updatedAt: new Date().toISOString() };
       for (const [field, delta] of Object.entries(deltas) as Array<[keyof TaskHourDeltas, number | undefined]>) {

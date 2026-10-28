@@ -7,7 +7,7 @@
  * Skipped unless FIRESTORE_EMULATOR_HOST is set (firebase emulators:exec sets it).
  */
 import { describe, it, expect, afterAll } from 'vitest';
-import { Firestore } from '@google-cloud/firestore';
+import { Firestore, FieldValue } from '@google-cloud/firestore';
 import { runStorageAdapterConformance } from '../testing/index.js';
 import { FirebaseStore, type FirestoreDBInterface } from './firebase.js';
 
@@ -18,7 +18,7 @@ const clients: Firestore[] = [];
 function createStore() {
   const db = new Firestore({ projectId: `demo-cp-${crypto.randomUUID().slice(0, 8)}` });
   clients.push(db);
-  return new FirebaseStore({ db: db as unknown as FirestoreDBInterface });
+  return new FirebaseStore({ db: db as unknown as FirestoreDBInterface, fieldValue: FieldValue });
 }
 
 afterAll(async () => {

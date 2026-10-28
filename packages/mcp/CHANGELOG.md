@@ -1,5 +1,103 @@
 # @critical-path/mcp
 
+## 0.24.1
+
+### Patch Changes
+
+- Updated dependencies [0ac16b5]
+  - @critical-path/core@0.58.0
+  - @critical-path/client@0.27.2
+
+## 0.24.0
+
+### Minor Changes
+
+- 224ad51: One scheduling engine, start constraints and dependency lag.
+  
+  - **BREAKING:** project-calendar critical path analysis now runs on the same date-based passes as assignee mode (every task on the project calendar), so the two cannot drift. Offsets are unchanged; dates now show a successor starting at the next working moment after its predecessor finishes (09:00 the next morning rather than 17:00), and results include `overallocations` and `scheduleId` as in assignee mode. Without a start date the analysis has offsets only, as before.
+  - New `Task.earliestStart`: start no earlier than this date (a date-only value is the start of that day). Applies in critical path analysis and levelling, and on a summary task to every leaf under it.
+  - New `TaskDependency.lagHours`: working hours to wait after the predecessor finishes (negative for a lead), accepted by `addDependency`, `POST /tasks/:id/dependencies` and MCP `add_dependency`. Links that differ only in lag are separate dependencies; the longer wait applies.
+  - Levelling orders its backward pass topologically over dependency and resource links, so leads cannot break slack.
+  - MCP `create_task` / `update_task` accept `earliestStart`.
+
+### Patch Changes
+
+- Updated dependencies [224ad51]
+  - @critical-path/core@0.57.0
+  - @critical-path/client@0.27.1
+
+## 0.23.0
+
+### Minor Changes
+
+- 42ecdb9: Clearing fields over HTTP, validated dates, and correctable time entries.
+  
+  - Update bodies accept `null` to remove an optional field (tasks, projects, deliverables, containers, iterations and time entries); parsing turns it into `undefined`, which every store treats as removal. Required fields (titles, names, task `status` and `priority`) still reject it. New `applyUpdate(record, updates)` applies payloads the same way for optimistic UI state; the React and Svelte task and deliverable state use it.
+  - **BREAKING:** every date field in request bodies must be an ISO date or date-time (`400` otherwise). Free-text dates used to be stored and then broke levelling, metrics and the ladder.
+  - Time entries can be corrected and deleted: `engine.getTimeEntry` / `updateTimeEntry` / `deleteTimeEntry`, `GET | PATCH | DELETE /time-entries/:id`, and the matching client methods. The task's hour totals move by the difference, and `time.updated` / `time.deleted` events are published. A new `time.manage` permission (project managers and admins) covers other people's entries; anyone with `time.log` can manage their own.
+  - `logTime` always requires the task to exist (it used to store orphan entries when no policy was enforced), and logs inside a transaction where the store supports one.
+  - **BREAKING (custom adapters):** `TimeEntryRepository` gains `getTimeEntry(id)` and `updateTimeEntry(id, updates)`.
+  - `FirebaseStore` updates every document inside `runTransaction` when the db supports it and implements `incrementTaskHours`, so concurrent updates and time logs are no longer lost. Pass Firestore's `FieldValue` as the new `fieldValue` option to add hour totals with `FieldValue.increment` (atomic, no contention) instead of transactions.
+  - MCP: new `update_time_entry` and `delete_time_entry` tools.
+
+### Patch Changes
+
+- Updated dependencies [42ecdb9]
+  - @critical-path/core@0.56.0
+  - @critical-path/client@0.27.0
+
+## 0.22.0
+
+### Minor Changes
+
+- 5dbf25b: Effort and progress roll-ups agree, count subtasks once and leave canceled work out.
+  
+  - New `getTaskEstimateHours(task)` is the one place that reads an estimate (0 for milestones; an explicit 0 counts). Critical path analysis, workload, the ladder, metrics/EVM and deliverable summaries all use it, along with `getSummaryTaskIds` / `getLeafTasks`.
+  - **BREAKING:** a task with subtasks is a summary task. Critical path analysis schedules only leaf tasks: dependencies and deadlines on a summary apply to every leaf under it, and the summary is reported as a roll-up (`isSummary: true`; not in `criticalTaskIds`). Workload, the ladder and deliverable summaries count effort from leaves only, so an epic's estimate no longer doubles its subtasks'.
+  - **BREAKING:** canceled tasks leave estimate totals and progress denominators in the ladder and deliverable summaries (their logged hours still count), so a project can reach 100% and `completed`. Canceled tasks have zero planned and earned value in EVM. The ladder and deliverable summaries use inferred progress (`inferTaskProgress`) like task metrics.
+  - Unestimated tasks are listed in `unestimatedTaskIds`, and the hours assumed for them are configurable: `defaultEstimateHours` per call (`?defaultEstimateHours=` over HTTP, client and MCP options) or `criticalPathDefaultEstimateHours` on the engine. Default 1, as before.
+
+### Patch Changes
+
+- Updated dependencies [5dbf25b]
+  - @critical-path/core@0.55.0
+  - @critical-path/client@0.26.0
+
+## 0.21.0
+
+### Minor Changes
+
+- 1021eb5: Status, workflow and effort integrity.
+  
+  - **BREAKING:** a task's `status` must be one of its project's statuses (`statusDefinitions`, else the workflow's), on create and update (`400` otherwise). Unknown keys are no longer guessed from their spelling (`unfinished` was treated as completed); `resolveStatusDefinition` returns `not_started` for them.
+  - **BREAKING:** derived task fields are rejected in request bodies and left out of `CreateTaskInput`: `semanticStatus`, `loggedHours`, `actualHours`, `billableHours`, `actualDurationSeconds`, `actualDurationMinutes`, `billableDurationMinutes`, `inProgressSince`, `blockedSince`, `blockedDurationSeconds`. `semanticStatus` is always derived from the status, so CPM, metrics and lifecycle agree. Hours come from time entries.
+  - `actualHours` is no longer overwritten with wall-clock time when a task leaves in-progress (logged effort was being lost). Elapsed time stays in `actualDurationSeconds` / `actualDurationMinutes`.
+  - **BREAKING:** changing a project's statuses (`workflowId`, `workflow` or `statusDefinitions`) requires `statusMapping` for every status its tasks are in that the project will no longer have (`engine.updateProject(id, updates, { statusMapping })`, or `statusMapping` in the `PATCH /projects/:id` body); tasks are moved in the same operation. Deleting a workflow that a project uses, or removing a status tasks are in, is refused with the new `ConflictError` (`409`).
+  - New projects are pinned to the workflow they start with, so a later default does not move them.
+  - MCP: new `log_time` tool; `update_task` no longer takes `loggedHours`.
+
+### Patch Changes
+
+- Updated dependencies [1021eb5]
+  - @critical-path/core@0.54.0
+  - @critical-path/client@0.25.4
+
+## 0.20.1
+
+### Patch Changes
+
+- 6c3359f: Dependency types now mean the same thing everywhere, and manual blocks are no longer cleared automatically.
+  
+  - **BREAKING:** `TaskDependency.type` is `'blocking' | 'relates_to'`. New `blocked_by` dependencies are rejected (`400` over HTTP, `ValidationError` from the engine). Records already stored as `blocked_by` are still read in the right direction.
+  - New `precedenceOf(dependency)` returns the scheduling edge (`{ before, after }`) or `null` for `relates_to`. The cycle check, the dependency graph, lifecycle state, auto-unblocking, critical path analysis, the ladder and MCP all use it. Before, the cycle check accepted `blocked_by` loops that the critical path then scheduled silently, and rejected harmless `relates_to` back-links as circular.
+  - `relates_to` links are no longer upstream or downstream in `getTaskDependencyGraph`, and no longer make a task blocked.
+  - `calculateCPM` reports tasks on a dependency cycle in `cyclicTaskIds` instead of scheduling them silently.
+  - **BREAKING:** auto-unblocking no longer writes to downstream tasks. `task.unblocked` is published when a task's upstream work is all finished; `isBlocked` / `blockedReason` are a manual block that stays until cleared. Dependency blocking is reported by `getTaskLifecycleState` (`blockingTaskIds`).
+  - Canceled upstream tasks count as satisfied in lifecycle state too, matching auto-unblocking and critical path analysis.
+- Updated dependencies [6c3359f]
+  - @critical-path/core@0.53.0
+  - @critical-path/client@0.25.3
+
 ## 0.20.0
 
 ### Minor Changes
