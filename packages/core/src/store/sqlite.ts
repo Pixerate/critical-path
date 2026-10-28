@@ -1653,7 +1653,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
   private mapDeliverable(row: any): Deliverable {
     const { format, specs, ...rest } = this.expandExtra(row);
     const customFields = row.customFields ? JSON.parse(row.customFields) : {};
-    // Databases from before 0.53 may hold the removed `format` / `specs` columns: surface them as
+    // Databases from before 0.58 may hold the removed `format` / `specs` columns: surface them as
     // custom fields instead of dropping them.
     if (format && customFields.format === undefined) customFields.format = format;
     if (specs && customFields.specs === undefined) customFields.specs = JSON.parse(specs);

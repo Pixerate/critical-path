@@ -433,7 +433,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 
 ### Statuses Must Exist in the Project's Workflow
 - **Area / Package**: `@critical-path/core` (`createTask`, `updateTask`, `resolveStatusDefinition`)
-- **Symptom / Behavior**: After 0.53, creating or moving a task to a status such as `qa` or `blocked` fails with `400 Status "qa" is not in this project's workflow`. Data written straight to a store with an unknown key now counts as `not_started`, where an older release may have called it completed or in progress.
+- **Symptom / Behavior**: After 0.54, creating or moving a task to a status such as `qa` or `blocked` fails with `400 Status "qa" is not in this project's workflow`. Data written straight to a store with an unknown key now counts as `not_started`, where an older release may have called it completed or in progress.
 - **Root Cause**: Statuses were never checked, and unknown keys were classified by substring (`unfinished`, `not_done` and `final_draft` counted as completed). Now the key must be in the project's `statusDefinitions` (else its workflow's statuses), and unknown keys are not guessed.
 - **Solution / Workaround**: Add the status to the workflow (or the project's `statusDefinitions`) with the right `category`, or use an existing key. For data written around the engine, move tasks to real statuses.
 
@@ -441,7 +441,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `@critical-path/core` (`updateProject`, `updateWorkflow`, `deleteWorkflow`)
 - **Symptom / Behavior**: `PATCH /projects/:id` with a new `workflowId` returns `409`. `DELETE /workflows/:id` returns `409`. Removing a status from a workflow returns `409`.
 - **Root Cause**: Tasks left in a status the project no longer has had no allowed transitions and were stuck. Deleting a workflow silently moved its projects to another one.
-- **Solution / Workaround**: Pass `statusMapping` (old key -> new key) with the project update; the engine moves the tasks in the same operation. Move tasks out of a status before removing it, and switch projects to another workflow before deleting one. New projects are pinned to their starting workflow (`workflowId` is filled in), so marking another workflow `isDefault` later does not move them; projects created before 0.53 without a `workflowId`, or created while their tenant had no stored workflows (they use the built-in software workflow), still follow the tenant default and move when one is added. Set `workflowId` on those projects to pin them.
+- **Solution / Workaround**: Pass `statusMapping` (old key -> new key) with the project update; the engine moves the tasks in the same operation. Move tasks out of a status before removing it, and switch projects to another workflow before deleting one. New projects are pinned to their starting workflow (`workflowId` is filled in), so marking another workflow `isDefault` later does not move them; projects created before 0.54 without a `workflowId`, or created while their tenant had no stored workflows (they use the built-in software workflow), still follow the tenant default and move when one is added. Set `workflowId` on those projects to pin them.
 
 ### Hours Are Effort from Time Entries; `actualDuration*` Is Elapsed Time
 - **Area / Package**: `@critical-path/core` (`Task.loggedHours`, `actualHours`, `actualDurationSeconds`)
@@ -451,7 +451,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 
 ### Parent Tasks Are Summaries of Their Subtasks
 - **Area / Package**: `@critical-path/core` (critical path analysis, ladder, workload, deliverable summaries)
-- **Symptom / Behavior**: After 0.53, a parent task's estimate no longer adds to totals, the parent appears in analysis results with `isSummary: true` and is missing from `criticalTaskIds`, and its dates span its subtasks.
+- **Symptom / Behavior**: After 0.55, a parent task's estimate no longer adds to totals, the parent appears in analysis results with `isSummary: true` and is missing from `criticalTaskIds`, and its dates span its subtasks.
 - **Root Cause**: Parents were summed and scheduled like any other task, so an epic of 40h with two 20h subtasks counted 80h and ran alongside its subtasks in CPM.
 - **Solution / Workaround**: Estimate subtasks, not their parents. Put dependencies and deadlines on whichever level reads best: on a parent they apply to every leaf under it. To find what drives a summary, look at its leaves (`isCritical`, `totalSlack`).
 
@@ -469,19 +469,19 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 
 ### Custom Adapters Need `getTimeEntry` and `updateTimeEntry`
 - **Area / Package**: `@critical-path/core` (`StorageAdapter`, `TimeEntryRepository`)
-- **Symptom / Behavior**: After 0.53 a custom adapter fails to compile against `StorageAdapter`, or the conformance suite fails on time entries.
+- **Symptom / Behavior**: After 0.56 a custom adapter fails to compile against `StorageAdapter`, or the conformance suite fails on time entries.
 - **Root Cause**: Time entries can now be corrected and deleted through the engine (`updateTimeEntry`, `deleteTimeEntry`, which move the task's hour totals by the difference), which needs lookups by id.
 - **Solution / Workaround**: Implement `getTimeEntry(id)` (return `null` when missing) and `updateTimeEntry(id, updates)` (merge, remove fields set to `undefined`, keep `id` and `taskId`, return `null` when missing). Implement `incrementTaskHours` atomically so concurrent logs and corrections are never lost.
 
 ### Successors Start the Next Working Morning in Project Mode Too
 - **Area / Package**: `@critical-path/core` (`calculateCPM`, project-calendar mode)
-- **Symptom / Behavior**: After 0.53, a task after one that finishes at 17:00 has `earlyStartDate` 09:00 the next working day instead of 17:00 the same day, and project-mode results include `overallocations` and `scheduleId`.
+- **Symptom / Behavior**: After 0.57, a task after one that finishes at 17:00 has `earlyStartDate` 09:00 the next working day instead of 17:00 the same day, and project-mode results include `overallocations` and `scheduleId`.
 - **Root Cause**: Project mode used to be a separate offset-based implementation. Both modes now run the same date-based passes, so they cannot drift; working-hour offsets (`earlyStart`, `totalDurationHours`) are unchanged.
 - **Solution / Workaround**: Read dates as "when work can begin". Compare offsets if you need to match older results.
 
 ### Deliverable Statuses Are a Configurable Set; `format` and `specs` Are Custom Fields
 - **Area / Package**: `@critical-path/core` (`Deliverable`, `Project.deliverableStatusDefinitions`)
-- **Symptom / Behavior**: After 0.53, `createDeliverable` / `updateDeliverable` with `client_review`, `approved` or `in_production` fails with `400 Deliverable status ... is not one of this project's`. `format` and `specs` are rejected in request bodies.
+- **Symptom / Behavior**: After 0.58, `createDeliverable` / `updateDeliverable` with `client_review`, `approved` or `in_production` fails with `400 Deliverable status ... is not one of this project's`. `format` and `specs` are rejected in request bodies.
 - **Root Cause**: Deliverables used to have a fixed creative-production status list with no categories, so other domains inherited film statuses and roll-ups could not tell when a deliverable was done. They now follow the task status model: a configurable set with semantic categories, defaulting to `planned`, `in_progress`, `in_review`, `delivered`, `canceled`.
 - **Solution / Workaround**: For creative projects, set `deliverableStatusDefinitions: CREATIVE_DELIVERABLE_STATUSES` on the project (or your own set). Put formats and specs in `customFields`; `SQLiteStore` surfaces values from the old `format` / `specs` columns there automatically. `deliveredAt` is now set on the first completed status, so `approved` sets it in the creative preset.
 
