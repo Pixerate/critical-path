@@ -39,7 +39,8 @@ import type {
   TaskProgressHistory,
   WorkloadDistribution,
   WorkloadDistributionOptions,
-  StatusDefinition
+  StatusDefinition,
+  SemanticStatus
 } from '../types/index.js';
 import { StorageAdapter, InMemoryStore, type ActivityQuery, type Page, type TaskQuery, type TaskHourDeltas } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
@@ -50,7 +51,8 @@ import {
   getAllowedPreviousStatuses,
   getAllowedTransitions,
   WorkflowValidationError,
-  DEFAULT_SOFTWARE_WORKFLOW
+  DEFAULT_SOFTWARE_WORKFLOW,
+  DEFAULT_DELIVERABLE_STATUSES
 } from '../utils/workflow.js';
 import { extractMentions } from '../utils/mentions.js';
 import {
@@ -97,7 +99,7 @@ import {
   AttachmentCreatedEvent,
   AttachmentDeletedEvent
 } from '../domain/events.js';
-import { validateAttachmentUrl, AttachmentValidationError } from '../domain/entities.js';
+import { validateAttachmentUrl, AttachmentValidationError } from '../domain/attachments.js';
 import { validateCustomFieldValues, validateCustomFieldDefinitions } from '../domain/custom-fields.js';
 import { detectDependencyCycle, CircularDependencyError, precedenceOf } from '../domain/graph.js';
 import { ValidationError, NotFoundError, ForbiddenError, ConflictError } from '../domain/errors.js';
@@ -130,6 +132,10 @@ import {
 import { calculateWorkloadDistribution } from '../domain/workload.js';
 import { getTaskEstimateHours, getSummaryTaskIds } from '../domain/effort.js';
 import { inferTaskProgress } from '../domain/metrics.js';
+
+/** The statuses a project's deliverables may have. */
+const deliverableStatusesOf = (project: Pick<Project, 'deliverableStatusDefinitions'> | null) =>
+  project?.deliverableStatusDefinitions?.length ? project.deliverableStatusDefinitions : DEFAULT_DELIVERABLE_STATUSES;
 
 /** What a time entry adds to its task's hour totals (`sign` -1 to take it off). */
 function hourDeltas(entry: Pick<TimeEntry, 'hours' | 'isBillable'>, sign = 1): TaskHourDeltas {
@@ -635,6 +641,25 @@ export class CriticalPathEngine {
     return using;
   }
 
+  /**
+   * `assigneeId` is the task's primary assignee: critical path analysis, levelling and workload use
+   * it. `assignees` is the full list (people, agents, teams); when it is set, the primary must be on it.
+   */
+  private assertPrimaryAssignee(task: Pick<Task, 'assigneeId' | 'assignees'>): void {
+    if (task.assigneeId && task.assignees?.length && !task.assignees.some((a) => a.id === task.assigneeId)) {
+      throw new ValidationError(`assigneeId "${task.assigneeId}" must be one of the task's assignees.`);
+    }
+  }
+
+  /** The category of a deliverable status, or a `ValidationError` when the project has no such status. */
+  private deliverableCategory(status: string, statuses: StatusDefinition[]): SemanticStatus {
+    const definition = statuses.find((s) => s.key === status);
+    if (!definition) {
+      throw new ValidationError(`Deliverable status "${status}" is not one of this project's (${statuses.map((s) => s.key).join(', ')}).`);
+    }
+    return definition.category;
+  }
+
   /** Throws unless `status` is one of the project's statuses. */
   private assertKnownStatus(status: string, definitions: StatusDefinition[]): void {
     if (definitions.length && !definitions.some((d) => d.key === status)) {
@@ -906,6 +931,7 @@ export class CriticalPathEngine {
     // Validate custom fields on the final (post-plugin) input, including required fields when none are given
     validateCustomFieldValues(project?.customFieldDefinitions, input.customFields, this.plugins.getCustomFieldTypes());
     await this.assertValidParent(input.parentId, projectId);
+    this.assertPrimaryAssignee(input);
 
     const defaultStatus = workflow?.defaultStatusKey || 'todo';
     const initialStatus = processedInput.status || taskInput.status || defaultStatus;
@@ -1023,6 +1049,9 @@ export class CriticalPathEngine {
         { ...existing.customFields, ...processedUpdates.customFields },
         this.plugins.getCustomFieldTypes()
       );
+    }
+    if ('assigneeId' in processedUpdates || 'assignees' in processedUpdates) {
+      this.assertPrimaryAssignee({ ...existing, ...processedUpdates });
     }
     if (processedUpdates.parentId && processedUpdates.parentId !== existing.parentId) {
       await this.assertValidParent(processedUpdates.parentId, existing.projectId, id);
@@ -2319,9 +2348,14 @@ export class CriticalPathEngine {
       validateCustomFieldValues(project.customFieldDefinitions, input.customFields, this.plugins.getCustomFieldTypes());
     }
 
+    const statuses = deliverableStatusesOf(project);
+    const status = input.status || statuses.find((s) => s.category === 'not_started')?.key || statuses[0].key;
+    const category = this.deliverableCategory(status, statuses);
     const created = await this.store.createDeliverable({
       ...input,
-      status: input.status || 'planned',
+      status,
+      semanticStatus: category,
+      ...(category === 'completed' && !input.deliveredAt ? { deliveredAt: new Date().toISOString() } : {}),
       outputUrls: input.outputUrls ?? [],
       customFields: input.customFields ?? {}
     });
@@ -2341,7 +2375,7 @@ export class CriticalPathEngine {
       projectId: created.projectId,
       actorId: this.actorIdOr('system'),
       action: 'deliverable.created',
-      details: { title: created.title, format: created.format }
+      details: { title: created.title }
     });
     return created;
   }
@@ -2351,8 +2385,15 @@ export class CriticalPathEngine {
     if (!existing) return null;
     await this.requireProjectAccess('plan.manage', existing.projectId);
 
-    if (updates.status && updates.status === 'delivered' && !existing.deliveredAt && !updates.deliveredAt) {
-      updates.deliveredAt = new Date().toISOString();
+    // semanticStatus follows the status; deliveredAt records when it first reached a completed status
+    const { semanticStatus: _ignored, ...rest } = updates;
+    updates = rest;
+    if (updates.status && updates.status !== existing.status) {
+      const project = await this.store.getProject(existing.projectId);
+      updates.semanticStatus = this.deliverableCategory(updates.status, deliverableStatusesOf(project));
+      if (updates.semanticStatus === 'completed' && !existing.deliveredAt && !updates.deliveredAt) {
+        updates.deliveredAt = new Date().toISOString();
+      }
     }
 
     const updated = await this.store.updateDeliverable(id, this.withoutOwnership(updates, ['projectId']));

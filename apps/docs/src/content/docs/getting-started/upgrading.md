@@ -144,6 +144,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
 - **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
 
+### core 0.53: deliverables, entities and helpers
+
+- **Check:** deliverable statuses other than `planned`, `in_progress`, `in_review`, `delivered`, `canceled`; `format` or `specs` on deliverables; imports of `TaskEntity`, `ProjectEntity`, `DeliverableEntity`, `BaseEntity`, `isDraftTask`, `isArchivedTask`, `isTrashedTask`, `isTrashedOrArchivedTask`, `isWorkflowTask` (or `isTaskDraft`, `isTaskArchived`, `isTaskTrashed`, `isTaskTrashedOrArchived`, `isTaskWorkflow`); tasks whose `assigneeId` is not in `assignees`; the `'blocked'` tag; `sprintId`.
+- **Fix:** set `deliverableStatusDefinitions` on projects that use other statuses (`CREATIVE_DELIVERABLE_STATUSES` for the old list). Move `format` / `specs` into `customFields`. Use the engine instead of entity classes (`createTask`, `updateTask`, `logTime`). Model drafts, archiving or trash as statuses or `customFields` your app filters on. Make `assigneeId` one of `assignees`. Set `isBlocked` instead of tagging `'blocked'`. Use `iterationId`.
+
 ### core 0.53: one scheduling engine, start constraints and lag
 
 - **Check:** assertions on project-mode `earlyStartDate` / `lateStartDate` of tasks that follow another task, or on the exact shape of project-mode results.

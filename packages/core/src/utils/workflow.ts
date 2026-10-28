@@ -134,6 +134,28 @@ export const DEFAULT_VFX_WORKFLOW: Workflow = {
   updatedAt: '2026-01-01T00:00:00.000Z'
 };
 
+/** Deliverable statuses for projects that do not define their own (`Project.deliverableStatusDefinitions`). */
+export const DEFAULT_DELIVERABLE_STATUSES: StatusDefinition[] = [
+  { key: 'planned', label: 'Planned', category: 'not_started' },
+  { key: 'in_progress', label: 'In Progress', category: 'in_progress' },
+  { key: 'in_review', label: 'In Review', category: 'in_progress' },
+  { key: 'delivered', label: 'Delivered', category: 'completed' },
+  { key: 'canceled', label: 'Canceled', category: 'canceled' }
+];
+
+/** Deliverable statuses for creative production, to use as `deliverableStatusDefinitions`. */
+export const CREATIVE_DELIVERABLE_STATUSES: StatusDefinition[] = [
+  { key: 'draft', label: 'Draft', category: 'not_started' },
+  { key: 'planned', label: 'Planned', category: 'not_started' },
+  { key: 'in_production', label: 'In Production', category: 'in_progress' },
+  { key: 'internal_review', label: 'Internal Review', category: 'in_progress' },
+  { key: 'client_review', label: 'Client Review', category: 'in_progress' },
+  { key: 'revision_requested', label: 'Revision Requested', category: 'in_progress' },
+  { key: 'approved', label: 'Approved', category: 'completed' },
+  { key: 'delivered', label: 'Delivered', category: 'completed' },
+  { key: 'canceled', label: 'Canceled', category: 'canceled' }
+];
+
 export const DEFAULT_CREATIVE_WORKFLOW: Workflow = {
   id: 'wf_creative_default',
   name: 'Creative Production Workflow',

@@ -98,11 +98,11 @@ graph TD
 ## ✨ Key Features
 
 - 🎯 **Headless & Frontend-Agnostic**: Pure API-first architecture with adapters for Next.js (App Router) and SvelteKit, plus `createUniversalHandler` for any Fetch-based runtime (Cloudflare Workers, Deno, Bun, Hono). Node frameworks such as Express or Fastify need a Request/Response bridge.
-- 🏛️ **Domain-Driven Design (DDD)**: Rich Domain Aggregates (`TaskEntity`, `ProjectEntity`), DAG dependency cycle prevention (`detectDependencyCycle`), custom field Value Object validation, and interface-segregated repositories.
+- 🏛️ **One Engine, One Set of Rules**: `CriticalPathEngine` enforces every invariant (workflow statuses, derived fields, references, permissions) for direct callers, the HTTP API, the client and MCP; DAG dependency cycle prevention (`detectDependencyCycle`), custom field validation, and interface-segregated repositories.
 - 📡 **Typed Domain Event Bus**: In-memory pub/sub broker (`DomainEventBus`) emitting typed domain events (`task.created`, `task.status_changed`, `time.logged`, `dependency.added`, ...) for every create, update and delete across projects, tasks, workflows, teams, containers, iterations, deliverables, comments, attachments, dependencies and time tracking (`DOMAIN_EVENT_NAMES`).
 - ⚡ **Built-in & Custom Industry Workflows**: Pre-configured workflow templates for Creative Agencies & Content Teams (`DEFAULT_CREATIVE_WORKFLOW`), Software Development (`DEFAULT_SOFTWARE_WORKFLOW`), VFX Production (`DEFAULT_VFX_WORKFLOW`), and Simple Tasks (`DEFAULT_SIMPLE_WORKFLOW`), or build fully custom status transition pipelines.
 - 🚦 **Universal Semantic & Implied Status Framework**: Clean 3-tier architecture separating universal semantic meaning (`not_started`, `in_progress`, `completed`, `canceled`), arbitrary workflow statuses, and automatic system-derived implied statuses (`isReady`, `isBlocked`, `blockingTaskIds`, `isOverdue`, `isUpcoming`, `isUnplanned`, `isUnassigned`, `isStalled`, `isOverEstimate`, `isPaceWarning`).
-- 🎨 **Creative Workflows & First-Class Deliverables**: Dedicated `Deliverable` entity (`draft`, `planned`, `in_production`, `internal_review`, `client_review`, `revision_requested`, `approved`, `delivered`, `canceled`, or custom statuses) with format specs, output URLs, multi-task assignment (`deliverableId`), and engine rollup summaries (`getDeliverableSummary` computing task counts, completion states, percentage progress, and hours).
+- 📦 **First-Class Deliverables**: outputs a project produces, with a configurable status set mapped to semantic categories (default `planned`, `in_progress`, `in_review`, `delivered`, `canceled`; `CREATIVE_DELIVERABLE_STATUSES` for production pipelines), output URLs, multi-task assignment (`deliverableId`), and roll-up summaries (`getDeliverableSummary`).
 - 📋 **Comprehensive PM Work Items**: Full CRUD for Projects, Workflows, Deliverables, Tasks, Sprints/Cycles, Deliverable Containers (`sequence`, `shot`, `epic`), Task Dependencies, Subtasks, Priorities, and Estimates.
 - 🔌 **Extensible Plugin Engine**: Lifecycle hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`) whose output is validated like caller input, `init` at startup, custom field types (`customFieldTypes`), plus HTTP `routes` and `middleware` served by `@critical-path/server`.
 - ⚙️ **Dynamic Custom Fields**: Attach structured custom fields (`text`, `number`, `date`, `boolean`, `single_select`, `multi_select`, `user`, or plugin-registered types) to projects and tasks, with required-field and type validation on every write.
@@ -140,7 +140,7 @@ Below is the status of table-stakes features from [`docs/mvp.md`](./docs/mvp.md)
 - [x] **Work Item Tracking**: Task CRUD with priorities, due dates, estimates, and tags
 - [x] **Multiple Views**: Interactive Kanban board (`useKanban`) and structured task list views
 - [x] **Sprint & Cycle Management**: Sprint creation, task assignment, and cycle tracking
-- [x] **Deliverables & Creative Assets**: First-class `Deliverable` entity with specs, output URLs, rollup progress, and creative presets
+- [x] **Deliverables**: First-class `Deliverable` entity with configurable statuses, output URLs, rollup progress, and creative presets
 - [x] **Dependencies & Relationships**: Parent-child task hierarchies (`parentId`) and task linking
 
 ### Collaboration Features

@@ -5,70 +5,11 @@ import {
   SQLiteStore,
   FirebaseStore,
   InMemoryFirestoreMock,
-  DeliverableEntity,
   DEFAULT_CREATIVE_WORKFLOW,
   validateTransition
 } from './index.js';
 
-describe('Deliverable Entity & Creative Workflows', () => {
-  it('creates a DeliverableEntity with defaults and emits domain event', () => {
-    const entity = DeliverableEntity.create({
-      projectId: 'proj_1',
-      title: 'Hero 30s Spot - Cutdown 16:9',
-      format: 'ProRes 422HQ',
-      specs: { resolution: '3840x2160', fps: 24 }
-    });
-
-    expect(entity.id).toMatch(/^deliv_/);
-    expect(entity.status).toBe('planned');
-    expect(entity.format).toBe('ProRes 422HQ');
-    expect(entity.specs).toEqual({ resolution: '3840x2160', fps: 24 });
-    expect(entity.outputUrls).toEqual([]);
-
-    const events = entity.getUncommittedEvents();
-    expect(events).toHaveLength(1);
-    expect(events[0].name).toBe('deliverable.created');
-  });
-
-  it('transitions deliverable status and auto-records deliveredAt timestamp', () => {
-    const entity = DeliverableEntity.create({
-      projectId: 'proj_1',
-      title: 'Packaging Key Visual'
-    });
-    entity.clearEvents();
-
-    entity.transitionTo('in_progress');
-    expect(entity.status).toBe('in_progress');
-    expect(entity.deliveredAt).toBeUndefined();
-
-    entity.transitionTo('delivered');
-    expect(entity.status).toBe('delivered');
-    expect(entity.deliveredAt).toBeDefined();
-
-    const events = entity.getUncommittedEvents();
-    expect(events.map((e) => e.name)).toContain('deliverable.status_changed');
-  });
-
-  it('adds output URLs without duplicates and emits deliverable.updated', () => {
-    const entity = DeliverableEntity.create({
-      projectId: 'proj_1',
-      title: 'Brand Mascot 3D Render'
-    });
-    entity.clearEvents();
-
-    entity.addOutputUrl('https://cdn.example.com/renders/v1.mov');
-    expect(entity.outputUrls).toContain('https://cdn.example.com/renders/v1.mov');
-
-    entity.addOutputUrl('https://cdn.example.com/renders/v1.mov');
-    expect(entity.outputUrls).toHaveLength(1);
-
-    entity.addOutputUrl('https://cdn.example.com/renders/v2.mov');
-    expect(entity.outputUrls).toHaveLength(2);
-
-    const events = entity.getUncommittedEvents();
-    expect(events.filter((e) => e.name === 'deliverable.updated')).toHaveLength(2);
-  });
-
+describe('Creative workflow preset', () => {
   it('validates DEFAULT_CREATIVE_WORKFLOW stages and transitions', () => {
     expect(DEFAULT_CREATIVE_WORKFLOW.id).toBe('wf_creative_default');
     const statusKeys = DEFAULT_CREATIVE_WORKFLOW.statuses.map((s) => s.key);
@@ -95,7 +36,7 @@ describe('Store Adapters Deliverable CRUD', () => {
     const created = await store.createDeliverable({
       projectId: 'proj_1',
       title: 'Billboard Print 600dpi',
-      format: 'TIFF'
+      customFields: { format: 'TIFF' }
     });
 
     expect(created.id).toBeDefined();
@@ -120,19 +61,18 @@ describe('Store Adapters Deliverable CRUD', () => {
     const created = await store.createDeliverable({
       projectId: 'proj_sql',
       title: 'Social Video 9:16',
-      format: 'MP4',
-      specs: { codec: 'h264', bitrate: '12mbps' },
+      customFields: { format: 'MP4', specs: { codec: 'h264', bitrate: '12mbps' } },
       outputUrls: ['https://storage.google.com/bucket/output.mp4']
     });
 
     expect(created.id).toBeDefined();
     expect(created.status).toBe('planned');
-    expect(created.specs).toEqual({ codec: 'h264', bitrate: '12mbps' });
+    expect(created.customFields?.specs).toEqual({ codec: 'h264', bitrate: '12mbps' });
     expect(created.outputUrls).toEqual(['https://storage.google.com/bucket/output.mp4']);
 
     const fetched = await store.getDeliverable(created.id);
     expect(fetched?.title).toBe('Social Video 9:16');
-    expect(fetched?.specs).toEqual({ codec: 'h264', bitrate: '12mbps' });
+    expect(fetched?.customFields?.specs).toEqual({ codec: 'h264', bitrate: '12mbps' });
 
     const list = await store.getDeliverables('proj_sql');
     expect(list).toHaveLength(1);
@@ -156,7 +96,7 @@ describe('Store Adapters Deliverable CRUD', () => {
     const created = await store.createDeliverable({
       projectId: 'proj_fb',
       title: 'Animated Web Banner 300x250',
-      format: 'HTML5/Zip'
+      customFields: { format: 'HTML5/Zip' }
     });
 
     expect(created.id).toBeDefined();
@@ -197,7 +137,7 @@ describe('CriticalPathEngine Deliverables & Rollup Metrics', () => {
     const deliverable = await engine.createDeliverable({
       projectId: project.id,
       title: 'Hero Commercial Cutdown (15s)',
-      format: 'ProRes QuickTime',
+      customFields: { format: 'ProRes QuickTime' },
       dueDate: '2026-10-01'
     });
     expect(deliverable.id).toBeDefined();

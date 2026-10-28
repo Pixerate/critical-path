@@ -127,7 +127,7 @@ export function aggregateConcreteEvidenceForTask(
 
   const hasVisualAsset = taskAttachments.some(
     (a) => a.mimeType?.startsWith('image/') || a.mimeType?.startsWith('video/')
-  ) || taskDeliverables.some((d) => (d.outputUrls && d.outputUrls.length > 0) || Boolean(d.format));
+  ) || taskDeliverables.some((d) => Boolean(d.outputUrls && d.outputUrls.length > 0));
 
   const timestamps = [
     ...taskActivities.map((a) => a.createdAt),
@@ -233,7 +233,7 @@ export function computeMacroPhases(
     const completedTasks = bucketTasks.filter((t) => t.semanticStatus === 'completed' || t.status === 'done').length;
     const canceledTasks = bucketTasks.filter((t) => isCanceled(t)).length;
     const inProgressTasks = bucketTasks.filter((t) => t.semanticStatus === 'in_progress' || t.status === 'in_progress').length;
-    const blockedTasks = bucketTasks.filter((t) => t.tags?.includes('blocked') || (t as any).isBlocked).length;
+    const blockedTasks = bucketTasks.filter((t) => t.isBlocked).length;
 
     let totalEstimatedHours = 0;
     let totalLoggedHours = 0;
@@ -406,7 +406,7 @@ export function buildTimelineLadder(
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter((t) => t.semanticStatus === 'completed' || t.status === 'done').length;
   const inProgressTasks = tasks.filter((t) => t.semanticStatus === 'in_progress' || t.status === 'in_progress').length;
-  const blockedTasks = tasks.filter((t) => t.tags?.includes('blocked') || (t as any).isBlocked).length;
+  const blockedTasks = tasks.filter((t) => t.isBlocked).length;
   // Effort and progress from leaf tasks; canceled ones keep their logged hours but leave the estimate and progress
   const leaves = getLeafTasks(tasks);
   const live = leaves.filter((t) => !isCanceled(t));

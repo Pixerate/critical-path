@@ -190,7 +190,7 @@ describe('engine updates ignore ownership fields', () => {
     const other = await engine.createProject({ name: 'Other' });
     const container = await engine.createContainer({ projectId: project.id, name: 'C' });
     const iteration = await engine.createIteration({ projectId: project.id, name: 'I', status: 'planning' });
-    const deliverable = await engine.createDeliverable({ projectId: project.id, title: 'D', status: 'draft' } as never);
+    const deliverable = await engine.createDeliverable({ projectId: project.id, title: 'D', status: 'planned' } as never);
     const task = await engine.createTask({ projectId: project.id, title: 'T' });
     const comment = await engine.withActor({ userId: 'u1' }).addComment({ taskId: task.id, content: 'Hi' });
 

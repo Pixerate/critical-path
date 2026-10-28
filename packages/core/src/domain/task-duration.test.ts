@@ -1,116 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { TaskEntity } from './entities.js';
 import { CriticalPathEngine } from '../engine/index.js';
 import { InMemoryStore } from '../store/index.js';
 import { SQLiteStore } from '../store/sqlite.js';
 import { DEFAULT_SOFTWARE_WORKFLOW } from '../utils/workflow.js';
 
 describe('Task Execution Timestamps & Cumulative In-Progress Duration', () => {
-  it('stamps actualStartDate and inProgressSince when moving to in_progress', () => {
-    const task = TaskEntity.create({
-      projectId: 'proj_1',
-      title: 'Implement Task Timestamps',
-      status: 'todo'
-    });
-
-    expect(task.actualStartDate).toBeUndefined();
-    expect(task.actualEndDate).toBeUndefined();
-    expect(task.inProgressSince).toBeUndefined();
-    expect(task.actualDurationSeconds).toBeUndefined();
-
-    task.transitionTo('in_progress', DEFAULT_SOFTWARE_WORKFLOW);
-
-    expect(task.actualStartDate).toBeDefined();
-    expect(task.inProgressSince).toBeDefined();
-    expect(task.actualEndDate).toBeUndefined();
-  });
-
-  it('accumulates in-progress duration across pause/resume cycles and retains earliest actualStartDate', async () => {
-    vi.useFakeTimers();
-    try {
-      const now = new Date('2026-09-23T10:00:00Z');
-      vi.setSystemTime(now);
-
-      const task = TaskEntity.create({
-        projectId: 'proj_1',
-        title: 'Work Tracking',
-        status: 'todo'
-      });
-
-      // 1. Start working at 10:00
-      task.transitionTo('in_progress', DEFAULT_SOFTWARE_WORKFLOW);
-      const initialStartDate = task.actualStartDate;
-      expect(initialStartDate).toBe(now.toISOString());
-      expect(task.inProgressSince).toBe(now.toISOString());
-
-      // Fast-forward 30 minutes (1800s)
-      vi.setSystemTime(new Date('2026-09-23T10:30:00Z'));
-
-      // 2. Pause: move to todo
-      task.transitionTo('todo', DEFAULT_SOFTWARE_WORKFLOW);
-      expect(task.inProgressSince).toBeNull();
-      expect(task.actualDurationSeconds).toBe(1800);
-      expect(task.actualHours).toBe(0.5);
-      expect(task.actualDurationMinutes).toBe(30);
-      expect(task.actualStartDate).toBe(initialStartDate); // Retains earliest
-
-      // Paused for 1 hour
-      vi.setSystemTime(new Date('2026-09-23T11:30:00Z'));
-
-      // 3. Resume: move back to in_progress
-      task.transitionTo('in_progress', DEFAULT_SOFTWARE_WORKFLOW);
-      expect(task.actualStartDate).toBe(initialStartDate); // Still retains earliest
-      expect(task.inProgressSince).toBe(new Date('2026-09-23T11:30:00Z').toISOString());
-      expect(task.actualDurationSeconds).toBe(1800); // Unchanged until leaving
-
-      // Fast-forward another 45 minutes (2700s)
-      vi.setSystemTime(new Date('2026-09-23T12:15:00Z'));
-
-      // 4. Complete: move to done
-      task.transitionTo('done', DEFAULT_SOFTWARE_WORKFLOW);
-      expect(task.inProgressSince).toBeNull();
-      // Total duration = 1800s + 2700s = 4500s = 1.25h
-      expect(task.actualDurationSeconds).toBe(4500);
-      expect(task.actualHours).toBe(1.25);
-      expect(task.actualDurationMinutes).toBe(75);
-      expect(task.actualStartDate).toBe(initialStartDate);
-      expect(task.actualEndDate).toBe(new Date('2026-09-23T12:15:00Z').toISOString());
-      expect(task.progress).toBe(100);
-
-      // 5. Reopen: move from done to todo, then to in_progress
-      vi.setSystemTime(new Date('2026-09-23T14:00:00Z'));
-      task.transitionTo('todo', DEFAULT_SOFTWARE_WORKFLOW);
-      expect(task.actualEndDate).toBeUndefined(); // Reset upon reopen
-      expect(task.actualStartDate).toBe(initialStartDate); // Retains earliest
-
-      vi.setSystemTime(new Date('2026-09-23T14:15:00Z'));
-      task.transitionTo('in_progress', DEFAULT_SOFTWARE_WORKFLOW);
-      expect(task.actualEndDate).toBeUndefined();
-      expect(task.actualStartDate).toBe(initialStartDate); // Retains earliest
-      expect(task.inProgressSince).toBe(new Date('2026-09-23T14:15:00Z').toISOString());
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('keeps actualDurationSeconds and actualHours synchronized on manual updates', () => {
-    const task = TaskEntity.create({
-      projectId: 'proj_1',
-      title: 'Manual Adjustments',
-      status: 'todo'
-    });
-
-    // Update actualDurationSeconds directly
-    task.update({ actualDurationSeconds: 7200 });
-    expect(task.actualHours).toBe(2);
-    expect(task.actualDurationMinutes).toBe(120);
-
-    // Update actualHours directly
-    task.update({ actualHours: 1.5 });
-    expect(task.actualDurationSeconds).toBe(5400);
-    expect(task.actualDurationMinutes).toBe(90);
-  });
-
   it('integrates with CriticalPathEngine updateTask and metrics calculation', async () => {
     vi.useFakeTimers();
     try {
@@ -275,46 +169,6 @@ describe('Task Execution Timestamps & Cumulative In-Progress Duration', () => {
     expect(reloaded?.blockedReason).toBeUndefined();
     expect(reloaded?.blockedSince).toBeUndefined();
     expect(reloaded?.blockedDurationSeconds).toBe(180);
-  });
-
-  it('manages blocked state directly on TaskEntity transitions and updates', () => {
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(new Date('2026-09-24T12:00:00Z'));
-      const task = TaskEntity.create({
-        projectId: 'proj_blk',
-        title: 'Entity Blocked Test',
-        status: 'in_progress'
-      });
-
-      // Block while in progress
-      vi.setSystemTime(new Date('2026-09-24T12:00:30Z'));
-      task.update({ isBlocked: true, blockedReason: 'Database migration' });
-      expect(task.isBlocked).toBe(true);
-      expect(task.blockedSince).toBe('2026-09-24T12:00:30.000Z');
-
-      // Unblock while in progress
-      vi.setSystemTime(new Date('2026-09-24T12:01:00Z'));
-      task.update({ isBlocked: false, blockedReason: null });
-      expect(task.isBlocked).toBe(false);
-      expect(task.blockedSince).toBeNull();
-      expect(task.blockedDurationSeconds).toBe(30);
-
-      // Block again
-      vi.setSystemTime(new Date('2026-09-24T12:01:10Z'));
-      task.update({ isBlocked: true, blockedReason: 'Code review' });
-      expect(task.blockedSince).toBe('2026-09-24T12:01:10.000Z');
-
-      // Transition to completed (done) while blocked
-      vi.setSystemTime(new Date('2026-09-24T12:01:30Z'));
-      task.transitionTo('done', DEFAULT_SOFTWARE_WORKFLOW);
-      expect(task.status).toBe('done');
-      expect(task.actualDurationSeconds).toBe(90);
-      expect(task.blockedDurationSeconds).toBe(50); // 30s + 20s
-      expect(task.blockedSince).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it('sets completedAt and actualEndDate on completion and resets progress when reopening', async () => {

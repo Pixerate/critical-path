@@ -478,3 +478,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: After 0.53, a task after one that finishes at 17:00 has `earlyStartDate` 09:00 the next working day instead of 17:00 the same day, and project-mode results include `overallocations` and `scheduleId`.
 - **Root Cause**: Project mode used to be a separate offset-based implementation. Both modes now run the same date-based passes, so they cannot drift; working-hour offsets (`earlyStart`, `totalDurationHours`) are unchanged.
 - **Solution / Workaround**: Read dates as "when work can begin". Compare offsets if you need to match older results.
+
+### Deliverable Statuses Are a Configurable Set; `format` and `specs` Are Custom Fields
+- **Area / Package**: `@critical-path/core` (`Deliverable`, `Project.deliverableStatusDefinitions`)
+- **Symptom / Behavior**: After 0.53, `createDeliverable` / `updateDeliverable` with `client_review`, `approved` or `in_production` fails with `400 Deliverable status ... is not one of this project's`. `format` and `specs` are rejected in request bodies.
+- **Root Cause**: Deliverables used to have a fixed creative-production status list with no categories, so other domains inherited film statuses and roll-ups could not tell when a deliverable was done. They now follow the task status model: a configurable set with semantic categories, defaulting to `planned`, `in_progress`, `in_review`, `delivered`, `canceled`.
+- **Solution / Workaround**: For creative projects, set `deliverableStatusDefinitions: CREATIVE_DELIVERABLE_STATUSES` on the project (or your own set). Put formats and specs in `customFields`; `SQLiteStore` surfaces values from the old `format` / `specs` columns there automatically. `deliveredAt` is now set on the first completed status, so `approved` sets it in the creative preset.
+
+### `assigneeId` Is the Primary Assignee
+- **Area / Package**: `@critical-path/core` (`Task.assigneeId`, `Task.assignees`)
+- **Symptom / Behavior**: A task with several `assignees` only books one person when levelling; setting `assigneeId` to someone not in `assignees` fails with `400`.
+- **Root Cause**: Scheduling, levelling and workload use one person's calendar and capacity per task: `assigneeId`. `assignees` lists everyone involved (people, agents, teams) for display and filtering.
+- **Solution / Workaround**: Set `assigneeId` to the person whose time the task takes, and include them in `assignees` when you use it. Split work that needs several people's time into a task per person.

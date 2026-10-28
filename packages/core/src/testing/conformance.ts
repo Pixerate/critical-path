@@ -243,14 +243,13 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
         title: 'Cut',
         description: 'Deliverable',
         status: 'planned',
-        format: '4K',
-        specs: { fps: 24 },
+        semanticStatus: 'not_started',
         leadId: 'u1',
         reviewerId: 'u2',
         dueDate: '2026-11-01',
         deliveredAt: '2026-11-02T00:00:00.000Z',
         outputUrls: ['https://example.com/cut.mov'],
-        customFields: { client: 'Acme' }
+        customFields: { client: 'Acme', format: '4K', specs: { fps: 24 } }
       };
       expect(await store.getDeliverable((await store.createDeliverable(deliverable)).id)).toMatchObject(deliverable);
     });

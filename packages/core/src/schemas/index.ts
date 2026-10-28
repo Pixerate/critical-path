@@ -149,6 +149,7 @@ export const CreateProjectSchema = strictObject({
   workflowId: z.string().optional(),
   taskTypes: z.array(TaskTypeDefinitionSchema).optional(),
   statusDefinitions: z.array(StatusDefinitionSchema).optional(),
+  deliverableStatusDefinitions: z.array(StatusDefinitionSchema).min(1).optional(),
   priorityDefinitions: z
     .array(strictObject({ key: z.string(), label: z.string(), level: z.number().optional() }))
     .optional(),
@@ -261,8 +262,6 @@ const deliverableFields = {
   title: nonEmpty,
   description: z.string().optional(),
   status: z.string().optional(),
-  format: z.string().optional(),
-  specs: z.record(z.unknown()).optional(),
   leadId: z.string().optional(),
   reviewerId: z.string().optional(),
   dueDate: isoDateOrDateTime.optional(),

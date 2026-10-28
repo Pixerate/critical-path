@@ -65,8 +65,9 @@ const keyChecks: true[] = [
   // statusMapping is an instruction for the update, not a stored field.
   true as SameKeys<Omit<Infer<typeof UpdateProjectSchema>, 'statusMapping'>, Omit<Project, ServerAssigned | 'workflow'>>,
   true as SameKeys<Infer<typeof CreateWorkflowSchema>, Omit<Workflow, ServerAssigned>>,
-  true as SameKeys<Infer<typeof CreateDeliverableSchema>, CreateDeliverableInput>,
-  true as SameKeys<Infer<typeof UpdateDeliverableSchema>, Omit<Deliverable, ServerAssigned | 'projectId'>>,
+  // A deliverable's semanticStatus is derived from its status.
+  true as SameKeys<Infer<typeof CreateDeliverableSchema>, Omit<CreateDeliverableInput, 'semanticStatus'>>,
+  true as SameKeys<Infer<typeof UpdateDeliverableSchema>, Omit<Deliverable, ServerAssigned | 'projectId' | 'semanticStatus'>>,
   true as SameKeys<Infer<typeof CreateTeamSchema>, Omit<Team, ServerAssigned>>,
   true as SameKeys<Infer<typeof CreateContainerSchema>, Omit<TaskContainer, ServerAssigned>>,
   true as SameKeys<Infer<typeof UpdateContainerSchema>, Omit<TaskContainer, ServerAssigned | 'projectId'>>,
