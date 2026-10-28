@@ -17,6 +17,7 @@ import {
   getWorkingHoursInDay
 } from './calendar.js';
 import { getTaskDurationHours } from './cpm.js';
+import { getLeafTasks } from './effort.js';
 
 export interface WorkloadContext {
   tasks: Task[];
@@ -213,7 +214,8 @@ export function calculateWorkloadDistribution(
 
   // 3. Process Scheduled / Remaining / Blended Hours from Tasks
   if (metric === 'scheduled' || metric === 'remaining' || metric === 'blended') {
-    for (const task of tasks) {
+    // Summary tasks are spanned by their subtasks, which carry the effort
+    for (const task of getLeafTasks(tasks)) {
       const estimated = getTaskDurationHours(task);
       const logged = task.loggedHours || 0;
       let hoursToDistribute = 0;

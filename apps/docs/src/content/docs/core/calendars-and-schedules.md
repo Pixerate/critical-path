@@ -286,6 +286,19 @@ cpm.tasks.find((t) => t.taskId === launch.id);
 - **`dueDate` is different:** it is informational and only used by `levelingPriority: 'dueDate'`. Use `deadline` when the schedule should hold you to the date.
 - On assignee calendars, a milestone sits at the moment its predecessors finish (for example 17:00), not the next morning.
 
+### Summary tasks (subtasks)
+
+A task with subtasks is a **summary task**. It is not scheduled itself: its subtasks carry the work.
+
+- A dependency on a summary task applies to every leaf task under it (`Y -> Epic` makes each of the epic's subtasks wait for `Y`; `Epic -> X` makes `X` wait for all of them).
+- A summary's own estimate is ignored, and so is its `isMilestone`. A summary's `deadline` caps every leaf under it.
+- The summary appears in `tasks` with `isSummary: true`, as a roll-up: earliest start, latest finish, least slack, critical when any leaf is. It is not listed in `criticalTaskIds`, and it is listed in `missedDeadlineTaskIds` when its latest leaf finishes after its deadline.
+- Workload, the ladder and deliverable summaries also count effort from leaf tasks only, so subtasks are never counted twice.
+
+### Unestimated tasks
+
+An unfinished task with no estimate and no logged effort is scheduled for `defaultEstimateHours` (default 1) and listed in `unestimatedTaskIds`, so a half-estimated plan does not look more certain than it is. Set the assumption per call (`defaultEstimateHours`, `?defaultEstimateHours=` over HTTP) or on the engine (`criticalPathDefaultEstimateHours`). An explicit estimate of 0 counts as an estimate.
+
 ### Finished tasks
 
 Completed and canceled tasks (by `semanticStatus`, or the default `done` / `canceled` statuses) take **no time** in critical path analysis and occupy nobody when levelling. Their successors can start at the project start, and dates reflect only the remaining work.

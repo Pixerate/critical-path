@@ -16,6 +16,7 @@ description: Find what drives a project's end date, how much each task can slip 
 
 - `projectEndDate` is the forecast finish. With levelling, compare it with `unleveledProjectEndDate`: the gap is time lost waiting for busy people.
 - `criticalTaskIds` are the tasks with zero or negative slack. Any delay to one of them moves the end date or misses a deadline.
+- `unestimatedTaskIds` lists unfinished tasks with no estimate; each was assumed to take `defaultEstimateHours` (1 by default), so say the forecast is uncertain and suggest estimating them. Entries with `isSummary: true` are parent tasks shown as the span of their subtasks.
 - `missedDeadlineTaskIds` lists tasks forecast to finish after their `deadline`. Their `deadlineVarianceHours` says by how much (negative working hours), and the negative `totalSlack` on the tasks before them shows which work drives the miss. Entries with `isMilestone: true` are checkpoints such as releases or sign-offs.
 - Each entry in `tasks` has `slackWorkingHours`: how many working hours the task can slip without moving the end. Under about 8 hours is near-critical.
 - `levelingDelayHours` and `waitingOn` show a task that waited for its assignee to finish another task.

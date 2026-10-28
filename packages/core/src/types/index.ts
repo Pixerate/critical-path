@@ -635,6 +635,8 @@ export interface CriticalPathConfig {
    * (in-progress tasks schedule only `estimate - loggedHours`).
    */
   criticalPathEffort?: 'estimate' | 'remaining';
+  /** Default `defaultEstimateHours` for critical path analysis: hours assumed for unestimated tasks (default 1). */
+  criticalPathDefaultEstimateHours?: number;
   /** Most tasks `calculatePortfolioCriticalPath` analyses in one call. Default 5000. */
   portfolioTaskLimit?: number;
   initialData?: {
@@ -722,6 +724,11 @@ export interface TaskCriticalPathSchedule {
   allocation?: number;
   /** Set when the task is a milestone. */
   isMilestone?: true;
+  /**
+   * Set for a summary task (one with subtasks). It is not scheduled itself: its dates, slack and
+   * criticality are roll-ups of the leaf tasks under it, and it is not listed in `criticalTaskIds`.
+   */
+  isSummary?: true;
   /** The task's `deadline` as an instant: the last working moment on or before it. */
   deadlineDate?: string;
   /** Working hours from the forecast finish to the deadline: negative means the deadline is missed. */
@@ -766,6 +773,11 @@ export interface CriticalPathAnalysis {
    * cycles, so this only happens with data written around it or passed straight to `calculateCPM`.
    */
   cyclicTaskIds?: string[];
+  /**
+   * Present when unfinished tasks have no estimate and no logged effort: each was scheduled for
+   * `defaultEstimateHours` (default 1), so the dates are less certain than they look.
+   */
+  unestimatedTaskIds?: string[];
 }
 
 /** Critical path analysis across several projects (`calculatePortfolioCriticalPath`). */

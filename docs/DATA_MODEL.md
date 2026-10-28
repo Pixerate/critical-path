@@ -210,7 +210,7 @@ The central unit of work. Tasks support:
 - **Progress Tracking**: `progress` (percentage from `0` to `100`).
 - **People & Roles**: `assigneeId`, `reporterId`, `reviewerId`.
 - **Associations**: `projectId`, `teamId`, `containerId`, `iterationId`.
-- **Subtasks**: `parentId` pointing to parent task.
+- **Subtasks**: `parentId` pointing to parent task. A task with subtasks is a summary task: its subtasks carry the effort and the schedule, and it is reported as their roll-up.
 - **Custom Config & Metadata**: `status` (string key), `priority` (string key), `tags`, `customFields`.
 
 ### 6. Universal Semantic Status & Implied Status Framework
