@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-28T13:37:11.501Z
+> Documentation generated on: 2026-10-28T13:44:29.921Z
 
 ================================================================================
 
@@ -401,6 +401,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
 - **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
 
+### core 0.53: summary tasks and roll-ups
+
+- **Check:** projects with subtasks (`parentId`); code that sums `totalEstimatedHours`, `durationHours` or `progressPercentage` from the ladder or deliverable summaries, or reads EVM for canceled tasks; code that expects a parent task in `criticalTaskIds`.
+- **Fix:** expect parents to be roll-ups of their subtasks (`isSummary: true` in analysis results, not scheduled or counted on their own); estimate subtasks rather than parents. Expect lower totals where parents were double-counted and canceled work was included, and 100% progress when the remaining work is canceled. Read `unestimatedTaskIds`, and set `defaultEstimateHours` if 1 hour is the wrong assumption for unestimated tasks.
+
 ### core 0.53: statuses, workflows and derived fields
 
 - **Check:** task statuses that are not in the project's workflow (including custom keys you relied on being classified by name); request bodies or `createTask` calls that include `semanticStatus`, `loggedHours`, `actualHours`, `billableHours`, `actualDuration*`, `billableDurationMinutes`, `inProgressSince`, `blockedSince` or `blockedDurationSeconds`; code that reads `actualHours` as elapsed time; project updates that change `workflowId`, `workflow` or `statusDefinitions`; workflow deletes; MCP `update_task` calls with `loggedHours`.
@@ -696,7 +701,7 @@ interface Task {
   loggedHours?: number;
   tags?: string[];
   customFields?: Record<string, unknown>;
-  parentId?: string;           // Parent task: must exist in the same project and cannot create a cycle
+  parentId?: string;           // Parent task: must exist in the same project and cannot create a cycle. A parent is a summary of its subtasks
   createdAt: string;           // ISO-8601
   updatedAt: string;           // ISO-8601
 }
@@ -997,6 +1002,8 @@ Answers executive questions: *Are we on track? What is the projected completion?
 - Automatic phase synthesis grouped by parent tasks, deliverable containers, or sprints.
 - Health states: `on_track`, `at_risk`, `delayed`, `completed`.
 - Total estimated hours vs. logged hours, overall percentage progress, and bottleneck critical path duration.
+- Effort and progress come from leaf tasks: a task with subtasks is spanned by them, so its own estimate is not added again. Progress per task is the inferred progress (explicit, todos, effort or schedule; see [task metrics](/core/task-metrics/)), weighted by estimate.
+- Canceled tasks leave the estimate and the progress denominator (their logged hours still count), so a project whose remaining work was canceled reaches 100% and `completed`.
 
 ### 2. Standard Rung: Topological CPM Gantt
 Answers tactical questions: *How do parts connect, and where are the real bottlenecks?*
@@ -1491,6 +1498,19 @@ cpm.tasks.find((t) => t.taskId === launch.id);
 - **`dueDate` is different:** it is informational and only used by `levelingPriority: 'dueDate'`. Use `deadline` when the schedule should hold you to the date.
 - On assignee calendars, a milestone sits at the moment its predecessors finish (for example 17:00), not the next morning.
 
+### Summary tasks (subtasks)
+
+A task with subtasks is a **summary task**. It is not scheduled itself: its subtasks carry the work.
+
+- A dependency on a summary task applies to every leaf task under it (`Y -> Epic` makes each of the epic's subtasks wait for `Y`; `Epic -> X` makes `X` wait for all of them).
+- A summary's own estimate is ignored, and so is its `isMilestone`. A summary's `deadline` caps every leaf under it.
+- The summary appears in `tasks` with `isSummary: true`, as a roll-up: earliest start, latest finish, least slack, critical when any leaf is. It is not listed in `criticalTaskIds`, and it is listed in `missedDeadlineTaskIds` when its latest leaf finishes after its deadline.
+- Workload, the ladder and deliverable summaries also count effort from leaf tasks only, so subtasks are never counted twice.
+
+### Unestimated tasks
+
+An unfinished task with no estimate and no logged effort is scheduled for `defaultEstimateHours` (default 1) and listed in `unestimatedTaskIds`, so a half-estimated plan does not look more certain than it is. Set the assumption per call (`defaultEstimateHours`, `?defaultEstimateHours=` over HTTP) or on the engine (`criticalPathDefaultEstimateHours`). An explicit estimate of 0 counts as an estimate.
+
 ### Finished tasks
 
 Completed and canceled tasks (by `semanticStatus`, or the default `done` / `canceled` statuses) take **no time** in critical path analysis and occupy nobody when levelling. Their successors can start at the project start, and dates reflect only the remaining work.
@@ -1675,6 +1695,8 @@ $$\text{Cost Variance } (CV) = EV - AC$$
 $$\text{Schedule Variance } (SV) = EV - PV$$
 $$\text{Cost Performance Index } (CPI) = \frac{EV}{AC}$$
 $$\text{Schedule Performance Index } (SPI) = \frac{EV}{PV}$$
+
+A canceled task was never going to be earned: its PV and EV are 0, so it is never behind schedule, and any hours logged on it are cost with no value (CV = -AC). Estimates are read with `getTaskEstimateHours` (milestones are 0).
 
 ---
 

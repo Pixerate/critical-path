@@ -20,7 +20,12 @@ import type {
   TaskLadderView,
   WorkSchedule
 } from '../types/index.js';
-import { calculateCPM, getTaskDurationHours } from './cpm.js';
+import { calculateCPM } from './cpm.js';
+import { getTaskEstimateHours, getSummaryTaskIds, getLeafTasks } from './effort.js';
+import { inferTaskProgress } from './metrics.js';
+
+/** Canceled tasks count toward neither progress nor its denominator. */
+const isCanceled = (t: Task) => (t.semanticStatus ?? t.status) === 'canceled';
 import { precedenceOf } from './graph.js';
 import { DEFAULT_WORK_SCHEDULE, getWorkingDaysBetween } from './calendar.js';
 
@@ -67,7 +72,7 @@ export function aggregateConcreteEvidenceForTask(
 
   const loggedHoursFromEntries = taskTimeEntries.reduce((sum, e) => sum + e.hours, 0);
   const effectiveLoggedHours = Math.max(loggedHoursFromEntries, task.loggedHours || 0, task.actualHours || 0);
-  const estimatedHours = task.estimatedHours || (task.estimatedDurationMinutes ? task.estimatedDurationMinutes / 60 : 0);
+  const estimatedHours = getTaskEstimateHours(task) ?? 0;
   const varianceHours = Math.round((effectiveLoggedHours - estimatedHours) * 100) / 100;
 
   const nowIso = new Date().toISOString();
@@ -165,6 +170,8 @@ export function computeMacroPhases(
   criticalTaskIds: Set<string>
 ): MacroPhaseRollup[] {
   const containerMap = new Map<string, TaskContainer>(containers.map((c) => [c.id, c]));
+  // Effort and progress come from leaf tasks; summary tasks would count their subtasks twice
+  const summaries = getSummaryTaskIds(tasks);
   const iterationMap = new Map<string, Iteration>(iterations.map((it) => [it.id, it]));
 
   // Group tasks by container if any exist; fallback to iteration or unassigned
@@ -224,6 +231,7 @@ export function computeMacroPhases(
     const taskIds = bucketTasks.map((t) => t.id);
     const totalTasks = bucketTasks.length;
     const completedTasks = bucketTasks.filter((t) => t.semanticStatus === 'completed' || t.status === 'done').length;
+    const canceledTasks = bucketTasks.filter((t) => isCanceled(t)).length;
     const inProgressTasks = bucketTasks.filter((t) => t.semanticStatus === 'in_progress' || t.status === 'in_progress').length;
     const blockedTasks = bucketTasks.filter((t) => t.tags?.includes('blocked') || (t as any).isBlocked).length;
 
@@ -245,18 +253,16 @@ export function computeMacroPhases(
     let criticalCount = 0;
 
     for (const t of bucketTasks) {
-      const duration = getTaskDurationHours(t);
-      const est = t.estimatedHours || duration;
-      const logged = t.loggedHours || 0;
-      totalEstimatedHours += est;
-      totalLoggedHours += logged;
-
-      const progress = typeof t.progress === 'number'
-        ? t.progress
-        : (t.semanticStatus === 'completed' || t.status === 'done' ? 100 : 0);
-
-      weightedProgressSum += progress * Math.max(est, 1);
-      totalProgressWeight += Math.max(est, 1);
+      if (!summaries.has(t.id)) {
+        // Hours spent on canceled work still count; its estimate and progress do not
+        totalLoggedHours += t.loggedHours ?? 0;
+        if (!isCanceled(t)) {
+          const est = getTaskEstimateHours(t) ?? 0;
+          totalEstimatedHours += est;
+          weightedProgressSum += inferTaskProgress(t).progressPercentage * Math.max(est, 1);
+          totalProgressWeight += Math.max(est, 1);
+        }
+      }
 
       if (t.plannedStartDate) startDates.push(t.plannedStartDate);
       if (t.actualStartDate) startDates.push(t.actualStartDate);
@@ -276,11 +282,11 @@ export function computeMacroPhases(
 
     const progressPercentage = totalProgressWeight > 0
       ? Math.round(weightedProgressSum / totalProgressWeight)
-      : (totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0);
+      : (totalTasks > canceledTasks ? Math.round((completedTasks / (totalTasks - canceledTasks)) * 100) : 0);
 
-    // Derive health
+    // Derive health. A phase whose remaining work was all canceled is complete.
     let health: MacroPhaseHealth = 'on_track';
-    if (totalTasks > 0 && completedTasks === totalTasks) {
+    if (totalTasks > 0 && completedTasks + canceledTasks === totalTasks) {
       health = 'completed';
     } else if (blockedTasks > 0) {
       health = 'blocked';
@@ -401,20 +407,22 @@ export function buildTimelineLadder(
   const completedTasks = tasks.filter((t) => t.semanticStatus === 'completed' || t.status === 'done').length;
   const inProgressTasks = tasks.filter((t) => t.semanticStatus === 'in_progress' || t.status === 'in_progress').length;
   const blockedTasks = tasks.filter((t) => t.tags?.includes('blocked') || (t as any).isBlocked).length;
-  const totalEstimatedHours = standardTasks.reduce((sum, t) => sum + (t.estimatedHours || 0), 0);
-  const totalLoggedHours = standardTasks.reduce((sum, t) => sum + (t.loggedHours || 0), 0);
+  // Effort and progress from leaf tasks; canceled ones keep their logged hours but leave the estimate and progress
+  const leaves = getLeafTasks(tasks);
+  const live = leaves.filter((t) => !isCanceled(t));
+  const canceledTasks = tasks.filter((t) => isCanceled(t)).length;
+  const totalEstimatedHours = live.reduce((sum, t) => sum + (getTaskEstimateHours(t) ?? 0), 0);
+  const totalLoggedHours = leaves.reduce((sum, t) => sum + (t.loggedHours ?? 0), 0);
 
-  const weightedProgress = standardTasks.reduce(
-    (sum, t) => sum + ((t.progress || 0) * Math.max(t.estimatedHours || 1, 1)),
-    0
-  );
-  const totalWeight = standardTasks.reduce((sum, t) => sum + Math.max(t.estimatedHours || 1, 1), 0);
+  const weightOf = (t: Task) => Math.max(getTaskEstimateHours(t) ?? 1, 1);
+  const weightedProgress = live.reduce((sum, t) => sum + inferTaskProgress(t).progressPercentage * weightOf(t), 0);
+  const totalWeight = live.reduce((sum, t) => sum + weightOf(t), 0);
   const overallProgressPercentage = totalWeight > 0
     ? Math.round(weightedProgress / totalWeight)
-    : (totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0);
+    : (totalTasks > canceledTasks ? Math.round((completedTasks / (totalTasks - canceledTasks)) * 100) : 0);
 
   let overallHealth: MacroPhaseHealth = 'on_track';
-  if (totalTasks > 0 && completedTasks === totalTasks) {
+  if (totalTasks > 0 && completedTasks + canceledTasks === totalTasks) {
     overallHealth = 'completed';
   } else if (phases.some((p) => p.health === 'blocked')) {
     overallHealth = 'blocked';

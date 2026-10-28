@@ -101,6 +101,7 @@ const TaskScheduleOutput = obj({
   levelingDelayHours: opt(z.number()).describe('With levelling: hours spent waiting for the assignee'),
   waitingOn: opt(z.string()).describe('With levelling: the task this one waited for'),
   isMilestone: opt(z.boolean()).describe('True for a milestone'),
+  isSummary: opt(z.boolean()).describe('True for a task with subtasks: its dates and slack are roll-ups of them'),
   deadlineDate: opt(z.string()).describe("The task's deadline as an instant"),
   deadlineVarianceHours: opt(z.number()).describe('Working hours from forecast finish to deadline; negative means it will be missed')
 });
@@ -112,6 +113,8 @@ export const CriticalPathOutput = obj({
   totalDurationHours: z.number(),
   criticalTaskIds: z.array(z.string()).describe('Tasks with zero or negative slack, in schedule order'),
   missedDeadlineTaskIds: opt(z.array(z.string())).describe('Tasks forecast to finish after their deadline'),
+  unestimatedTaskIds: opt(z.array(z.string())).describe('Unfinished tasks with no estimate, scheduled for defaultEstimateHours'),
+  cyclicTaskIds: opt(z.array(z.string())).describe('Tasks on a dependency cycle; their dates are not reliable'),
   tasks: z.array(TaskScheduleOutput),
   leveled: opt(z.boolean()),
   unleveledProjectEndDate: opt(z.string()).describe('With levelling: the end date before levelling'),
