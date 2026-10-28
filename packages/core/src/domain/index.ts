@@ -4,6 +4,7 @@ export * from './graph.js';
 export * from './errors.js';
 export * from './authorization.js';
 export * from './entities.js';
+export * from './effort.js';
 export * from './cpm.js';
 export * from './ladder.js';
 export * from './metrics.js';

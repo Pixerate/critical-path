@@ -126,6 +126,8 @@ import {
   type MetricOptions
 } from '../domain/metrics.js';
 import { calculateWorkloadDistribution } from '../domain/workload.js';
+import { getTaskEstimateHours, getSummaryTaskIds } from '../domain/effort.js';
+import { inferTaskProgress } from '../domain/metrics.js';
 
 /** Every caller-settable task field, derived from the create schema so new fields are never dropped. */
 const CREATE_TASK_FIELDS = Object.keys(CreateTaskSchema.shape) as (keyof CreateTaskInput & keyof Task)[];
@@ -2356,7 +2358,11 @@ export class CriticalPathEngine {
     let estimatedHours = 0;
     let loggedHours = 0;
     let totalProgress = 0;
+    let progressCount = 0;
 
+    // Summary tasks are spanned by their subtasks (counted once, through the leaves); canceled
+    // tasks keep their logged hours but leave the estimate and progress.
+    const summaries = getSummaryTaskIds(allTasks);
     for (const task of tasks) {
       const statusDef = resolveStatusDefinition(task.status, project?.statusDefinitions || workflow?.statuses);
       if (statusDef.category === 'completed') {
@@ -2364,18 +2370,16 @@ export class CriticalPathEngine {
       } else if (statusDef.category === 'in_progress') {
         activeTasks++;
       }
+      if (summaries.has(task.id)) continue;
 
-      if (task.estimatedHours) estimatedHours += task.estimatedHours;
-      if (task.loggedHours) loggedHours += task.loggedHours;
-
-      if (typeof task.progress === 'number') {
-        totalProgress += task.progress;
-      } else {
-        totalProgress += statusDef.category === 'completed' ? 100 : 0;
-      }
+      loggedHours += task.loggedHours ?? 0;
+      if (statusDef.category === 'canceled') continue;
+      estimatedHours += getTaskEstimateHours(task) ?? 0;
+      totalProgress += inferTaskProgress(task, { customStatusDefinitions: project?.statusDefinitions || workflow?.statuses }).progressPercentage;
+      progressCount++;
     }
 
-    const progressPercentage = totalTasks > 0 ? Math.round(totalProgress / totalTasks) : 0;
+    const progressPercentage = progressCount > 0 ? Math.round(totalProgress / progressCount) : 0;
 
     return {
       deliverable,
@@ -2541,8 +2545,8 @@ export class CriticalPathEngine {
     const dependencies = await this.loadDependencies(tasks);
     const schedule = options.schedule || project?.schedule || this.config.defaultSchedule;
     const projectStartDate = options.projectStartDate || project?.startDate;
-    const { calendars, levelResources, levelingPriority, effort } = this.resolveCpmModes(options);
-    if (calendars === 'project') return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate, effort });
+    const { calendars, levelResources, levelingPriority, effort, defaultEstimateHours } = this.resolveCpmModes(options);
+    if (calendars === 'project') return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate, effort, defaultEstimateHours });
     const { users, teams } = await this.loadPeople(options, [project?.tenantId]);
     return calculateCPM(projectId, tasks, dependencies, {
       schedule,
@@ -2552,7 +2556,8 @@ export class CriticalPathEngine {
       teams,
       levelResources,
       levelingPriority,
-      effort
+      effort,
+      defaultEstimateHours
     });
   }
 
@@ -2565,7 +2570,7 @@ export class CriticalPathEngine {
    * Rejects runs above `portfolioTaskLimit` tasks (default 5000).
    */
   async calculatePortfolioCriticalPath(options: PortfolioCriticalPathOptions = {}): Promise<PortfolioCriticalPathAnalysis> {
-    const { calendars, levelResources, levelingPriority, effort } = this.resolveCpmModes(options);
+    const { calendars, levelResources, levelingPriority, effort, defaultEstimateHours } = this.resolveCpmModes(options);
     let projects: Project[];
     if (options.projectIds) {
       const ids = [...new Set(options.projectIds)];
@@ -2614,7 +2619,7 @@ export class CriticalPathEngine {
         ...(mode ? { background: mode } : {})
       })),
       dependencies,
-      { calendars, users, teams, levelResources, levelingPriority, effort, projectOrder: options.projectOrder }
+      { calendars, users, teams, levelResources, levelingPriority, effort, defaultEstimateHours, projectOrder: options.projectOrder }
     );
   }
 
@@ -2636,7 +2641,11 @@ export class CriticalPathEngine {
     if (effort !== 'estimate' && effort !== 'remaining') {
       throw new ValidationError(`Unknown effort "${effort}"; use "estimate" or "remaining".`);
     }
-    return { calendars, levelResources, levelingPriority, effort };
+    const defaultEstimateHours = options.defaultEstimateHours ?? this.config.criticalPathDefaultEstimateHours;
+    if (defaultEstimateHours !== undefined && !(Number.isFinite(defaultEstimateHours) && defaultEstimateHours >= 0)) {
+      throw new ValidationError('defaultEstimateHours must be a number of hours, 0 or more.');
+    }
+    return { calendars, levelResources, levelingPriority, effort, defaultEstimateHours };
   }
 
   /** Every dependency touching `tasks`, once each. */

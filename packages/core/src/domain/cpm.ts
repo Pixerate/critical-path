@@ -21,21 +21,25 @@ import {
 } from './calendar.js';
 import { isTaskInProgress } from '../utils/status.js';
 import { precedenceOf } from './graph.js';
+import { getTaskEstimateHours, getSummaryTaskIds } from './effort.js';
 
-export function getTaskDurationHours(task: Task): number {
-  // A milestone is a point in time: it never takes effort, whatever its estimates say
-  if (task.isMilestone) return 0;
-  if (typeof task.estimatedHours === 'number' && task.estimatedHours >= 0) {
-    return task.estimatedHours;
-  }
-  if (typeof task.estimatedDurationMinutes === 'number' && task.estimatedDurationMinutes >= 0) {
-    return task.estimatedDurationMinutes / 60;
-  }
-  if (typeof task.actualHours === 'number' && task.actualHours > 0) {
-    return task.actualHours;
-  }
-  // Default to 1 hour for non-empty tasks without explicit estimate
-  return 1;
+/** Hours assumed for a task with no estimate and no logged effort (see `CPMOptions.defaultEstimateHours`). */
+export const DEFAULT_ESTIMATE_HOURS = 1;
+
+/**
+ * Effort critical path analysis and workload plan for a task: its estimate (`getTaskEstimateHours`;
+ * 0 for milestones), else the effort logged on it, else `defaultEstimateHours`.
+ */
+export function getTaskDurationHours(task: Task, defaultEstimateHours: number = DEFAULT_ESTIMATE_HOURS): number {
+  const estimate = getTaskEstimateHours(task);
+  if (estimate !== undefined) return estimate;
+  if (typeof task.actualHours === 'number' && task.actualHours > 0) return task.actualHours;
+  return defaultEstimateHours;
+}
+
+/** True when `getTaskDurationHours` falls back to the default: no estimate and no logged effort. */
+function isUnestimated(task: Task): boolean {
+  return getTaskEstimateHours(task) === undefined && !(typeof task.actualHours === 'number' && task.actualHours > 0);
 }
 
 /** The task's `allocation`, clamped to (0, 1]; 1 when unset or invalid. */
@@ -45,8 +49,8 @@ export function getTaskAllocation(task: Task): number {
 }
 
 /** Working hours a task spans: its effort divided by its allocation. */
-export function getTaskElapsedHours(task: Task): number {
-  return getTaskDurationHours(task) / getTaskAllocation(task);
+export function getTaskElapsedHours(task: Task, defaultEstimateHours?: number): number {
+  return getTaskDurationHours(task, defaultEstimateHours) / getTaskAllocation(task);
 }
 
 /** True for completed or canceled tasks (by `semanticStatus`, else the default `done`/`canceled` statuses). */
@@ -63,12 +67,12 @@ export type EffortBasis = 'estimate' | 'remaining';
  * more time and occupies nobody), otherwise its effort divided by its allocation. With
  * `effort: 'remaining'`, an in-progress task's effort is `max(0, estimate - loggedHours)`.
  */
-export function getTaskScheduledHours(task: Task, effort: EffortBasis = 'estimate'): number {
+export function getTaskScheduledHours(task: Task, effort: EffortBasis = 'estimate', defaultEstimateHours?: number): number {
   if (isTaskFinished(task)) return 0;
   if (effort === 'remaining' && isTaskInProgress({ status: task.status, semanticStatus: task.semanticStatus })) {
-    return Math.max(0, getTaskDurationHours(task) - (task.loggedHours ?? 0)) / getTaskAllocation(task);
+    return Math.max(0, getTaskDurationHours(task, defaultEstimateHours) - (task.loggedHours ?? 0)) / getTaskAllocation(task);
   }
-  return getTaskElapsedHours(task);
+  return getTaskElapsedHours(task, defaultEstimateHours);
 }
 
 export interface CPMOptions {
@@ -104,6 +108,11 @@ export interface CPMOptions {
    * no time either way.
    */
   effort?: EffortBasis;
+  /**
+   * Hours assumed for an unfinished task with no estimate and no logged effort. Default 1. Such
+   * tasks are listed in `unestimatedTaskIds`, so a half-estimated plan does not look certain.
+   */
+  defaultEstimateHours?: number;
 }
 
 export type LevelingPriority = 'slack' | 'priority' | 'dueDate' | 'order';
@@ -156,10 +165,39 @@ interface TaskGraph {
   topoOrder: string[];
   /** Tasks that are on, or wait on, a dependency cycle. */
   cyclicTaskIds: string[];
+  /** Summary tasks (tasks with subtasks), which are not scheduled, and the leaf tasks under each. */
+  summaries: Map<string, { task: Task; leafIds: string[] }>;
+  /** Deadlines that cap a leaf task: its own and its summary tasks'. */
+  deadlines: Map<string, string[]>;
 }
 
+const deadlinesOf = (graph: TaskGraph, id: string) => graph.deadlines.get(id) ?? [];
+
+/**
+ * The scheduling graph. Only leaf tasks are scheduled: a summary task (one with subtasks among
+ * `tasks`) spans its subtasks, so a dependency on it applies to every leaf under it, and its
+ * deadline caps those leaves. Summaries are reported afterwards as roll-ups (`addSummaries`).
+ */
 function buildGraph(tasks: Task[], dependencies: TaskDependency[]): TaskGraph {
-  const taskMap = new Map<string, Task>(tasks.map((t) => [t.id, t]));
+  const summaryIds = getSummaryTaskIds(tasks);
+  const all = new Map<string, Task>(tasks.map((t) => [t.id, t]));
+  const childrenOf = new Map<string, string[]>();
+  for (const t of tasks) {
+    if (t.parentId && summaryIds.has(t.parentId)) childrenOf.set(t.parentId, [...(childrenOf.get(t.parentId) ?? []), t.id]);
+  }
+  const leavesOf = (id: string, seen = new Set<string>()): string[] => {
+    if (!summaryIds.has(id) || seen.has(id)) return [id];
+    seen.add(id);
+    return childrenOf.get(id)!.flatMap((child) => leavesOf(child, seen));
+  };
+  const summaries = new Map([...summaryIds].map((id) => [id, { task: all.get(id)!, leafIds: leavesOf(id) }]));
+  const deadlines = new Map<string, string[]>();
+  for (const t of tasks) {
+    if (!t.deadline) continue;
+    for (const leaf of leavesOf(t.id)) deadlines.set(leaf, [...(deadlines.get(leaf) ?? []), t.deadline]);
+  }
+
+  const taskMap = new Map<string, Task>(tasks.filter((t) => !summaryIds.has(t.id)).map((t) => [t.id, t]));
   const taskIds = Array.from(taskMap.keys());
 
   // Build adjacency graph:
@@ -175,9 +213,13 @@ function buildGraph(tasks: Task[], dependencies: TaskDependency[]): TaskGraph {
 
   for (const dep of dependencies) {
     const edge = precedenceOf(dep);
-    if (edge && taskMap.has(edge.before) && taskMap.has(edge.after) && edge.before !== edge.after) {
-      prerequisites.get(edge.after)!.add(edge.before);
-      successors.get(edge.before)!.add(edge.after);
+    if (!edge || !all.has(edge.before) || !all.has(edge.after)) continue;
+    for (const before of leavesOf(edge.before)) {
+      for (const after of leavesOf(edge.after)) {
+        if (before === after) continue;
+        prerequisites.get(after)!.add(before);
+        successors.get(before)!.add(after);
+      }
     }
   }
 
@@ -214,7 +256,57 @@ function buildGraph(tasks: Task[], dependencies: TaskDependency[]): TaskGraph {
   const cyclicTaskIds = taskIds.filter((id) => !sorted.has(id));
   topoOrder.push(...cyclicTaskIds);
 
-  return { taskMap, taskIds, prerequisites, successors, topoOrder, cyclicTaskIds };
+  return { taskMap, taskIds, prerequisites, successors, topoOrder, cyclicTaskIds, summaries, deadlines };
+}
+
+/**
+ * Adds each summary task to `analysis` as a roll-up of the leaf tasks under it: earliest start,
+ * latest finish, least slack, critical when any leaf is. Summaries are not added to
+ * `criticalTaskIds`, whose tasks are the scheduled (leaf) ones. A summary's own deadline is
+ * reported against its latest finish.
+ */
+function addSummaries(analysis: CriticalPathAnalysis, graph: TaskGraph, schedule: WorkSchedule): CriticalPathAnalysis {
+  const byId = new Map(analysis.tasks.map((t) => [t.taskId, t]));
+  const rollups: TaskCriticalPathSchedule[] = [];
+  const missed: string[] = [];
+  for (const [id, { task, leafIds }] of graph.summaries) {
+    const leaves = leafIds.map((leaf) => byId.get(leaf)).filter((t): t is TaskCriticalPathSchedule => Boolean(t));
+    if (!leaves.length) continue;
+    const min = (pick: (t: TaskCriticalPathSchedule) => number) => Math.min(...leaves.map(pick));
+    const max = (pick: (t: TaskCriticalPathSchedule) => number) => Math.max(...leaves.map(pick));
+    const dates = (pick: (t: TaskCriticalPathSchedule) => string | undefined) => leaves.map(pick).filter((d): d is string => Boolean(d)).sort();
+    const [starts, finishes, lateStarts, lateFinishes] = [dates((t) => t.earlyStartDate), dates((t) => t.earlyFinishDate), dates((t) => t.lateStartDate), dates((t) => t.lateFinishDate)];
+    const slack = min((t) => t.totalSlack);
+    const earlyFinishDate = finishes[finishes.length - 1];
+    const deadline = task.deadline && earlyFinishDate ? getDeadlineInstant(task.deadline, schedule) : undefined;
+    const variance = deadline ? slackHours(new Date(earlyFinishDate!), deadline, schedule) : undefined;
+    if (variance !== undefined && variance < -0.001) missed.push(id);
+    rollups.push({
+      taskId: id,
+      isSummary: true,
+      earlyStart: min((t) => t.earlyStart),
+      earlyFinish: max((t) => t.earlyFinish),
+      lateStart: min((t) => t.lateStart),
+      lateFinish: max((t) => t.lateFinish),
+      totalSlack: slack,
+      slackWorkingHours: slack,
+      isCritical: leaves.some((t) => t.isCritical),
+      durationHours: round2(max((t) => t.earlyFinish) - min((t) => t.earlyStart)),
+      ...(starts.length ? { earlyStartDate: starts[0], earlyFinishDate, lateStartDate: lateStarts[0], lateFinishDate: lateFinishes[lateFinishes.length - 1] } : {}),
+      ...milestoneFields({ ...task, isMilestone: false }, deadline, variance)
+    });
+  }
+  if (!rollups.length) return analysis;
+  return { ...analysis, tasks: [...analysis.tasks, ...rollups], missedDeadlineTaskIds: [...analysis.missedDeadlineTaskIds, ...missed] };
+}
+
+/** Completes a project's analysis: unestimated tasks and summary roll-ups. */
+function finishAnalysis(analysis: CriticalPathAnalysis, graph: TaskGraph, schedule: WorkSchedule, taskIds: string[]): CriticalPathAnalysis {
+  const unestimatedTaskIds = taskIds.filter((id) => {
+    const task = graph.taskMap.get(id)!;
+    return !isTaskFinished(task) && isUnestimated(task);
+  });
+  return addSummaries({ ...analysis, ...(unestimatedTaskIds.length ? { unestimatedTaskIds } : {}) }, graph, schedule);
 }
 
 /**
@@ -278,14 +370,19 @@ function scheduleOnDates(
       return [id, options.calendars === 'assignee' ? resolveTaskSchedule(task, { ...options, schedule: seg.schedule }) : seg.schedule];
     })
   );
-  const durationOf = new Map(taskIds.map((id) => [id, getTaskScheduledHours(taskMap.get(id)!, options.effort)]));
+  const durationOf = new Map(taskIds.map((id) => [id, getTaskScheduledHours(taskMap.get(id)!, options.effort, options.defaultEstimateHours)]));
+  // A task's late finish is capped by its own deadline and by those of the summary tasks above it
   const deadlineOf = new Map(
     taskIds.flatMap((id) => {
-      const deadline = taskMap.get(id)!.deadline;
-      return deadline ? [[id, getDeadlineInstant(deadline, calendarOf.get(id)!)] as const] : [];
+      const instants = deadlinesOf(graph, id).map((d) => getDeadlineInstant(d, calendarOf.get(id)!));
+      return instants.length ? [[id, new Date(Math.min(...instants.map((d) => d.getTime())))] as const] : [];
     })
   );
-  const ctx: PassContext = { taskMap, calendarOf, durationOf, deadlineOf, startOf: (id) => segmentOf.get(id)!.start };
+  const ownDeadlineOf = (id: string) => {
+    const deadline = taskMap.get(id)!.deadline;
+    return deadline ? getDeadlineInstant(deadline, calendarOf.get(id)!) : undefined;
+  };
+  const ctx: PassContext = { taskMap, calendarOf, durationOf, deadlineOf, ownDeadlineOf, startOf: (id) => segmentOf.get(id)!.start };
   const endOfProjects = (dates: Dates) => {
     const ends = new Map(segments.map((seg) => [seg.projectId, latest(seg.taskIds.map((id) => dates.finish.get(id)!), seg.start)]));
     return (id: string) => ends.get(segmentOf.get(id)!.projectId)!;
@@ -297,7 +394,12 @@ function scheduleOnDates(
   const cyclic = new Set(graph.cyclicTaskIds);
   const analyse = (seg: ProjectSegment, e: Dates, l: Dates, extra?: (id: string) => Partial<TaskCriticalPathSchedule>) => {
     const cyclicTaskIds = seg.taskIds.filter((id) => cyclic.has(id));
-    return { ...buildAnalysis(seg, calculatedAt, e, l, ctx, extra), ...(cyclicTaskIds.length ? { cyclicTaskIds } : {}) };
+    return finishAnalysis(
+      { ...buildAnalysis(seg, calculatedAt, e, l, ctx, extra), ...(cyclicTaskIds.length ? { cyclicTaskIds } : {}) },
+      graph,
+      seg.schedule,
+      seg.taskIds
+    );
   };
 
   if (!options.levelResources) {
@@ -345,8 +447,10 @@ interface PassContext {
   taskMap: Map<string, Task>;
   calendarOf: Map<string, WorkSchedule>;
   durationOf: Map<string, number>;
-  /** Tasks' deadlines on their own calendars; they cap late finishes. */
+  /** Tasks' deadlines on their own calendars, including inherited ones; they cap late finishes. */
   deadlineOf: Map<string, Date>;
+  /** A task's own deadline, which its schedule reports. */
+  ownDeadlineOf: (id: string) => Date | undefined;
   /** Earliest start for a task: its project's start. */
   startOf: (id: string) => Date;
 }
@@ -668,7 +772,7 @@ function buildAnalysis(
   ctx: PassContext,
   extra: (id: string) => Partial<TaskCriticalPathSchedule> = () => ({})
 ): CriticalPathAnalysis {
-  const { calendarOf, durationOf, deadlineOf, taskMap } = ctx;
+  const { calendarOf, durationOf, ownDeadlineOf, taskMap } = ctx;
   const offset = (date: Date) =>
     date >= projectStart
       ? getWorkingHoursBetween(projectStart, date, projectSchedule)
@@ -699,7 +803,7 @@ function buildAnalysis(
       lateFinishDate: lf.toISOString(),
       ...(calendar.id ? { scheduleId: calendar.id } : {}),
       ...allocationField(taskMap.get(id)!),
-      ...milestoneFields(taskMap.get(id)!, deadlineOf.get(id), deadlineOf.has(id) ? slackHours(ef, deadlineOf.get(id)!, calendar) : undefined),
+      ...milestoneFields(taskMap.get(id)!, ownDeadlineOf(id), ownDeadlineOf(id) ? slackHours(ef, ownDeadlineOf(id)!, calendar) : undefined),
       ...extra(id)
     });
   }
@@ -760,7 +864,8 @@ export function calculatePortfolioCPM(
     projectId: p.projectId,
     start: startOrToday(p.projectStartDate),
     schedule: p.schedule || DEFAULT_WORK_SCHEDULE,
-    taskIds: p.tasks.map((t) => t.id)
+    // Summary tasks are not scheduled; they are added back as roll-ups
+    taskIds: p.tasks.map((t) => t.id).filter((id) => graph.taskMap.has(id))
   }));
   const result = scheduleOnDates(graph, segments, options, calculatedAt);
 
@@ -831,18 +936,20 @@ export function calculateCPM(
   }
 
   // Deadlines as project-calendar hours from the start. Without a start date there is nothing to
-  // place them against, so they are ignored.
-  const deadlineHours = new Map<string, number>();
+  // place them against, so they are ignored. A task's late finish is capped by its own deadline and
+  // by those of the summary tasks above it; its schedule reports its own.
+  const capHours = new Map<string, number>();
+  const ownDeadline = new Map<string, Date>();
+  const toHours = (deadline: Date) =>
+    deadline >= projectStartDate!
+      ? getWorkingHoursBetween(projectStartDate!, deadline, schedule)
+      : -getWorkingHoursBetween(deadline, projectStartDate!, schedule);
   if (projectStartDate) {
-    for (const task of tasks) {
-      if (!task.deadline) continue;
-      const deadline = getDeadlineInstant(task.deadline, schedule);
-      deadlineHours.set(
-        task.id,
-        deadline >= projectStartDate
-          ? getWorkingHoursBetween(projectStartDate, deadline, schedule)
-          : -getWorkingHoursBetween(deadline, projectStartDate, schedule)
-      );
+    for (const id of taskIds) {
+      const caps = deadlinesOf(graph, id).map((d) => toHours(getDeadlineInstant(d, schedule)));
+      if (caps.length) capHours.set(id, Math.min(...caps));
+      const own = taskMap.get(id)!.deadline;
+      if (own) ownDeadline.set(id, getDeadlineInstant(own, schedule));
     }
   }
 
@@ -852,7 +959,7 @@ export function calculateCPM(
 
   for (const id of topoOrder) {
     const task = taskMap.get(id)!;
-    const duration = getTaskScheduledHours(task, options.effort);
+    const duration = getTaskScheduledHours(task, options.effort, options.defaultEstimateHours);
     const prereqs = prerequisites.get(id) || new Set();
 
     let maxPrereqFinish = 0;
@@ -886,7 +993,7 @@ export function calculateCPM(
   for (let i = topoOrder.length - 1; i >= 0; i--) {
     const id = topoOrder[i];
     const task = taskMap.get(id)!;
-    const duration = getTaskScheduledHours(task, options.effort);
+    const duration = getTaskScheduledHours(task, options.effort, options.defaultEstimateHours);
     const succs = successors.get(id) || new Set();
 
     let minSuccLateStart = totalDurationHours;
@@ -903,7 +1010,7 @@ export function calculateCPM(
       }
     }
 
-    const lf = Math.min(minSuccLateStart, deadlineHours.get(id) ?? Infinity);
+    const lf = Math.min(minSuccLateStart, capHours.get(id) ?? Infinity);
     const ls = lf - duration;
 
     lateFinish.set(id, lf);
@@ -929,7 +1036,7 @@ export function calculateCPM(
     }
 
     const task = taskMap.get(id)!;
-    const duration = getTaskScheduledHours(task, options.effort);
+    const duration = getTaskScheduledHours(task, options.effort, options.defaultEstimateHours);
 
     const earlyStartDate = projectStartDate
       ? addWorkingHours(projectStartDate, es, schedule).toISOString()
@@ -954,11 +1061,7 @@ export function calculateCPM(
       isCritical,
       durationHours: duration,
       ...allocationField(task),
-      ...milestoneFields(
-        task,
-        deadlineHours.has(id) ? getDeadlineInstant(task.deadline!, schedule) : undefined,
-        deadlineHours.has(id) ? deadlineHours.get(id)! - ef : undefined
-      ),
+      ...milestoneFields(task, ownDeadline.get(id), ownDeadline.has(id) ? toHours(ownDeadline.get(id)!) - ef : undefined),
       slackWorkingHours: totalSlack,
       earlyStartDate,
       earlyFinishDate,
@@ -971,7 +1074,7 @@ export function calculateCPM(
     ? addWorkingHours(projectStartDate, totalDurationHours, schedule).toISOString()
     : undefined;
 
-  return {
+  return finishAnalysis({
     projectId,
     calculatedAt,
     totalDurationHours: Math.round(totalDurationHours * 100) / 100,
@@ -982,5 +1085,5 @@ export function calculateCPM(
     missedDeadlineTaskIds: missedDeadlines(schedules),
     ...(graph.cyclicTaskIds.length ? { cyclicTaskIds: graph.cyclicTaskIds } : {}),
     tasks: schedules
-  };
+  }, graph, schedule, taskIds);
 }

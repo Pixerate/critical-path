@@ -913,6 +913,8 @@ export interface CriticalPathQueryOptions {
   levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
   /** `'remaining'`: in-progress tasks schedule only `estimate - loggedHours`. */
   effort?: 'estimate' | 'remaining';
+  /** Hours assumed for tasks with no estimate (default 1); they are listed in `unestimatedTaskIds`. */
+  defaultEstimateHours?: number;
 }
 
 function criticalPathQuery(
@@ -926,5 +928,6 @@ function criticalPathQuery(
   if (options.levelResources !== undefined) params.set('levelResources', String(options.levelResources));
   if (options.levelingPriority) params.set('levelingPriority', options.levelingPriority);
   if (options.effort) params.set('effort', options.effort);
+  if (options.defaultEstimateHours !== undefined) params.set('defaultEstimateHours', String(options.defaultEstimateHours));
   return params.size ? `?${params}` : '';
 }

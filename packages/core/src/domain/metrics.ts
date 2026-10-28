@@ -1,3 +1,4 @@
+import { getTaskEstimateHours } from './effort.js';
 import type {
   Task,
   Activity,
@@ -61,7 +62,7 @@ export function inferTaskProgress(
 
   // 3. Effort / Hours Progress (Logged vs Estimated)
   let effortProgress: number | undefined;
-  const estimatedH = task.estimatedHours || (task.estimatedDurationMinutes ? task.estimatedDurationMinutes / 60 : 0);
+  const estimatedH = getTaskEstimateHours(task) ?? 0;
   const loggedH = task.loggedHours ?? task.actualHours ?? 0;
   if (estimatedH > 0) {
     effortProgress = Math.min(100, Math.round((loggedH / estimatedH) * 1000) / 10);
@@ -131,8 +132,22 @@ export function calculateTaskEVM(
   const statusDef = resolveStatusDefinition(task.status, options?.customStatusDefinitions);
   const semanticStatus = task.semanticStatus || statusDef.category;
 
-  const estimatedHours = task.estimatedHours || (task.estimatedDurationMinutes ? task.estimatedDurationMinutes / 60 : 0);
+  const estimatedHours = getTaskEstimateHours(task) ?? 0;
   const actualCost = Math.round(((task.loggedHours ?? task.actualHours) || 0) * 100) / 100;
+
+  // Canceled work was never going to be earned, so it is neither planned nor behind schedule.
+  // Any hours spent on it are a cost with no value.
+  if (semanticStatus === 'canceled') {
+    return {
+      plannedValue: 0,
+      earnedValue: 0,
+      actualCost,
+      costVariance: -actualCost,
+      scheduleVariance: 0,
+      costPerformanceIndex: actualCost > 0 ? 0 : 1.0,
+      schedulePerformanceIndex: 1.0
+    };
+  }
 
   if (estimatedHours <= 0) {
     return {
@@ -400,7 +415,7 @@ export function calculateTaskMetrics(
 
   const loggedHoursFromEntries = taskTimeEntries.reduce((sum, e) => sum + e.hours, 0);
   const effectiveLoggedHours = Math.max(loggedHoursFromEntries, task.loggedHours || 0, task.actualHours || 0);
-  const estimatedHours = task.estimatedHours || (task.estimatedDurationMinutes ? task.estimatedDurationMinutes / 60 : 0);
+  const estimatedHours = getTaskEstimateHours(task) ?? 0;
   const varianceHours = Math.round((effectiveLoggedHours - estimatedHours) * 100) / 100;
 
   // Multi-dimensional variance

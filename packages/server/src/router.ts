@@ -965,5 +965,10 @@ function criticalPathQuery(url: URL) {
   }
   const levelingPriority = (url.searchParams.get('levelingPriority') || undefined) as LevelingPriority | undefined;
   const effort = (url.searchParams.get('effort') || undefined) as 'estimate' | 'remaining' | undefined;
-  return { calendars, ...(level !== null ? { levelResources: level === 'true' } : {}), levelingPriority, effort };
+  const defaultEstimate = url.searchParams.get('defaultEstimateHours');
+  const defaultEstimateHours = defaultEstimate !== null ? Number(defaultEstimate) : undefined;
+  if (defaultEstimate !== null && (defaultEstimate.trim() === '' || !(Number.isFinite(defaultEstimateHours) && defaultEstimateHours! >= 0))) {
+    throw new ValidationError('defaultEstimateHours must be a number of hours, 0 or more.');
+  }
+  return { calendars, ...(level !== null ? { levelResources: level === 'true' } : {}), levelingPriority, effort, defaultEstimateHours };
 }

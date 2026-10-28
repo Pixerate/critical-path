@@ -417,7 +417,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `@critical-path/core` (`Task`, critical path analysis)
 - **Symptom / Behavior**: A task past its `dueDate` still shows positive slack.
 - **Root Cause**: `dueDate` is informational (it only orders levelling under `levelingPriority: 'dueDate'`). Only `deadline` constrains the backward pass. A date-only `deadline` means the end of that working day on the task's calendar, so `2026-10-05` is 17:00 on the default schedule, not midnight.
-- **Solution / Workaround**: Set `deadline` for dates the schedule must hold. Milestones (`isMilestone: true`) are zero-duration, so their estimates are ignored everywhere `getTaskDurationHours` is used; ladder and metrics roll-ups that read `estimatedHours` directly do not know about milestones, so leave estimates off milestone tasks.
+- **Solution / Workaround**: Set `deadline` for dates the schedule must hold. Milestones (`isMilestone: true`) are zero-duration, so their estimates are ignored everywhere (all roll-ups read estimates through `getTaskEstimateHours`).
 
 ### `task.unblocked` Does Not Change the Task, and Manual Blocks Stay
 - **Area / Package**: `@critical-path/core` (auto-unblocking, `isBlocked`, `getTaskLifecycleState`)
@@ -448,3 +448,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: `400 Unrecognized key "loggedHours"` when sending hours in a task body. `actualHours` no longer changes when a task leaves in-progress.
 - **Root Cause**: `actualHours` had two writers: time entries (effort) and the in-progress timer (wall-clock), so marking a task done replaced logged effort with elapsed time. Derived fields were also writable over the API, so totals could disagree with time entries.
 - **Solution / Workaround**: Log time with `engine.logTime`, `POST /time-entries` or MCP `log_time`. Read elapsed time from `actualDurationSeconds`. Server code that must correct a derived field can still call `engine.updateTask` directly.
+
+### Parent Tasks Are Summaries of Their Subtasks
+- **Area / Package**: `@critical-path/core` (critical path analysis, ladder, workload, deliverable summaries)
+- **Symptom / Behavior**: After 0.55, a parent task's estimate no longer adds to totals, the parent appears in analysis results with `isSummary: true` and is missing from `criticalTaskIds`, and its dates span its subtasks.
+- **Root Cause**: Parents were summed and scheduled like any other task, so an epic of 40h with two 20h subtasks counted 80h and ran alongside its subtasks in CPM.
+- **Solution / Workaround**: Estimate subtasks, not their parents. Put dependencies and deadlines on whichever level reads best: on a parent they apply to every leaf under it. To find what drives a summary, look at its leaves (`isCritical`, `totalSlack`).
+
+### Unestimated Tasks Take 1 Hour (and Are Listed)
+- **Area / Package**: `@critical-path/core` (`getTaskDurationHours`, `CPMOptions.defaultEstimateHours`)
+- **Symptom / Behavior**: A plan with many unestimated tasks finishes suspiciously soon; the ladder's estimated hours are lower than the CPM duration.
+- **Root Cause**: CPM must give every task a duration, so an unfinished task with no estimate and no logged effort takes `defaultEstimateHours` (default 1). Roll-ups of estimated effort (ladder, deliverable summaries, EVM) count such tasks as 0, because nobody estimated them.
+- **Solution / Workaround**: Read `unestimatedTaskIds` and estimate those tasks, or set `defaultEstimateHours` (`criticalPathDefaultEstimateHours` on the engine) to a realistic size for unestimated work.

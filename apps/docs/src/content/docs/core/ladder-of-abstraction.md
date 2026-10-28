@@ -43,6 +43,8 @@ Answers executive questions: *Are we on track? What is the projected completion?
 - Automatic phase synthesis grouped by parent tasks, deliverable containers, or sprints.
 - Health states: `on_track`, `at_risk`, `delayed`, `completed`.
 - Total estimated hours vs. logged hours, overall percentage progress, and bottleneck critical path duration.
+- Effort and progress come from leaf tasks: a task with subtasks is spanned by them, so its own estimate is not added again. Progress per task is the inferred progress (explicit, todos, effort or schedule; see [task metrics](/core/task-metrics/)), weighted by estimate.
+- Canceled tasks leave the estimate and the progress denominator (their logged hours still count), so a project whose remaining work was canceled reaches 100% and `completed`.
 
 ### 2. Standard Rung: Topological CPM Gantt
 Answers tactical questions: *How do parts connect, and where are the real bottlenecks?*

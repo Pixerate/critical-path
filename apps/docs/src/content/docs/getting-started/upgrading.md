@@ -154,6 +154,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** task statuses that are not in the project's workflow (including custom keys you relied on being classified by name); request bodies or `createTask` calls that include `semanticStatus`, `loggedHours`, `actualHours`, `billableHours`, `actualDuration*`, `billableDurationMinutes`, `inProgressSince`, `blockedSince` or `blockedDurationSeconds`; code that reads `actualHours` as elapsed time; project updates that change `workflowId`, `workflow` or `statusDefinitions`; workflow deletes; MCP `update_task` calls with `loggedHours`.
 - **Fix:** add missing statuses to the workflow with the right `category`. Log hours with `logTime` / `POST /time-entries` / MCP `log_time` instead of writing them. Read elapsed time from `actualDurationSeconds`. Pass `statusMapping` when changing a project's statuses (a `409` lists the statuses that need one). Switch projects off a workflow before deleting it. Handle `409` (`ConflictError`) where you call these.
 
+### core 0.55: summary tasks and roll-ups
+
+- **Check:** projects with subtasks (`parentId`); code that sums `totalEstimatedHours`, `durationHours` or `progressPercentage` from the ladder or deliverable summaries, or reads EVM for canceled tasks; code that expects a parent task in `criticalTaskIds`.
+- **Fix:** expect parents to be roll-ups of their subtasks (`isSummary: true` in analysis results, not scheduled or counted on their own); estimate subtasks rather than parents. Expect lower totals where parents were double-counted and canceled work was included, and 100% progress when the remaining work is canceled. Read `unestimatedTaskIds`, and set `defaultEstimateHours` if 1 hour is the wrong assumption for unestimated tasks.
+
 ### mcp 0.19: tool results, selection and annotations
 
 - **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.

@@ -607,6 +607,7 @@ export const calculatePortfolioCriticalPathTool = defineTool<{
   levelResources?: boolean;
   levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
   effort?: 'estimate' | 'remaining';
+  defaultEstimateHours?: number;
 }>({
   name: 'calculate_portfolio_critical_path',
   title: 'Calculate Portfolio Critical Path',
@@ -630,7 +631,12 @@ export const calculatePortfolioCriticalPathTool = defineTool<{
     effort: z
       .enum(['estimate', 'remaining'])
       .optional()
-      .describe("'remaining' schedules only estimate minus logged hours for in-progress tasks (default: full estimates)")
+      .describe("'remaining' schedules only estimate minus logged hours for in-progress tasks (default: full estimates)"),
+    defaultEstimateHours: z
+      .number()
+      .nonnegative()
+      .optional()
+      .describe('Hours to assume for tasks with no estimate (default 1). They are listed in unestimatedTaskIds')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target) => (target as any).calculatePortfolioCriticalPath(args)
@@ -642,6 +648,7 @@ export const calculateCriticalPathTool = defineTool<{
   levelResources?: boolean;
   levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
   effort?: 'estimate' | 'remaining';
+  defaultEstimateHours?: number;
 }>({
   name: 'calculate_critical_path',
   title: 'Calculate Critical Path',
@@ -666,7 +673,12 @@ export const calculateCriticalPathTool = defineTool<{
     effort: z
       .enum(['estimate', 'remaining'])
       .optional()
-      .describe("'remaining' schedules only estimate minus logged hours for in-progress tasks (default: full estimates)")
+      .describe("'remaining' schedules only estimate minus logged hours for in-progress tasks (default: full estimates)"),
+    defaultEstimateHours: z
+      .number()
+      .nonnegative()
+      .optional()
+      .describe('Hours to assume for tasks with no estimate (default 1). They are listed in unestimatedTaskIds')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
@@ -674,8 +686,8 @@ export const calculateCriticalPathTool = defineTool<{
     if (!projectId) {
       throw new Error('projectId is required to calculate the critical path. Find one with `list_projects`.');
     }
-    const { calendars, levelResources, levelingPriority, effort } = args;
-    return (target as any).calculateCriticalPath(projectId, { calendars, levelResources, levelingPriority, effort });
+    const { calendars, levelResources, levelingPriority, effort, defaultEstimateHours } = args;
+    return (target as any).calculateCriticalPath(projectId, { calendars, levelResources, levelingPriority, effort, defaultEstimateHours });
   }
 });
 
