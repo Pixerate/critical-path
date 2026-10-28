@@ -26,6 +26,8 @@ export const TaskOutput = obj({
   priority: z.string().describe('urgent, high, medium, low or none'),
   assigneeId: opt(z.string()),
   dueDate: opt(z.string()),
+  deadline: opt(z.string()).describe('Latest acceptable finish, enforced by critical path analysis'),
+  isMilestone: opt(z.boolean()).describe('A zero-duration checkpoint'),
   estimatedHours: opt(z.number()),
   loggedHours: opt(z.number()),
   isBlocked: opt(z.boolean())
@@ -60,7 +62,7 @@ export const DeliverableOutput = obj({
   projectId: z.string(),
   title: z.string(),
   dueDate: opt(z.string())
-}).describe('A deliverable (milestone)');
+}).describe('A deliverable');
 
 export const CommentOutput = obj({
   id: z.string(),
@@ -82,14 +84,17 @@ const OverallocationOutput = obj({
 const TaskScheduleOutput = obj({
   taskId: z.string(),
   isCritical: z.boolean().describe('True when any delay to this task delays the project end'),
-  totalSlack: z.number().describe('Slack in hours; 0 means critical'),
+  totalSlack: z.number().describe('Slack in hours; 0 means critical, negative means a deadline is missed by that much'),
   slackWorkingHours: opt(z.number()).describe('Slack in working hours on the task calendar'),
   earlyStartDate: opt(z.string()),
   earlyFinishDate: opt(z.string()),
   lateStartDate: opt(z.string()),
   lateFinishDate: opt(z.string()),
   levelingDelayHours: opt(z.number()).describe('With levelling: hours spent waiting for the assignee'),
-  waitingOn: opt(z.string()).describe('With levelling: the task this one waited for')
+  waitingOn: opt(z.string()).describe('With levelling: the task this one waited for'),
+  isMilestone: opt(z.boolean()).describe('True for a milestone'),
+  deadlineDate: opt(z.string()).describe("The task's deadline as an instant"),
+  deadlineVarianceHours: opt(z.number()).describe('Working hours from forecast finish to deadline; negative means it will be missed')
 });
 
 export const CriticalPathOutput = obj({
@@ -97,7 +102,8 @@ export const CriticalPathOutput = obj({
   projectStartDate: opt(z.string()),
   projectEndDate: opt(z.string()).describe('Forecast finish date'),
   totalDurationHours: z.number(),
-  criticalTaskIds: z.array(z.string()).describe('Tasks with zero slack, in schedule order'),
+  criticalTaskIds: z.array(z.string()).describe('Tasks with zero or negative slack, in schedule order'),
+  missedDeadlineTaskIds: opt(z.array(z.string())).describe('Tasks forecast to finish after their deadline'),
   tasks: z.array(TaskScheduleOutput),
   leveled: opt(z.boolean()),
   unleveledProjectEndDate: opt(z.string()).describe('With levelling: the end date before levelling'),

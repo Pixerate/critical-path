@@ -28,7 +28,7 @@ export type BackendContext = CriticalPathEngine | CriticalPathClient;
  */
 export const TOOLSETS = {
   core: 'Projects, tasks and task dependencies: find, read, create, update and delete',
-  collaboration: 'Deliverables (milestones) and task comments',
+  collaboration: 'Deliverables and task comments',
   scheduling: 'Critical path, portfolio scheduling and workload/capacity',
   analytics: 'Project status ladder, task metrics, earned value and progress history',
   guidance: 'Skills: step-by-step playbooks for multi-step jobs'
@@ -291,6 +291,8 @@ export const createTaskTool = defineTool<{
   priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
   assigneeId?: string;
   dueDate?: string;
+  deadline?: string;
+  isMilestone?: boolean;
   tags?: string[];
   estimatedHours?: number;
   allocation?: number;
@@ -312,6 +314,8 @@ export const createTaskTool = defineTool<{
     priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().default('none').describe('Task priority'),
     assigneeId: z.string().optional().describe('User ID to assign task to'),
     dueDate: z.string().optional().describe('Due date (ISO string)'),
+    deadline: z.string().optional().describe('Latest acceptable finish (YYYY-MM-DD for the end of that working day, or an ISO date-time). Critical path analysis reports a miss as negative slack'),
+    isMilestone: z.boolean().optional().describe('Mark the task as a milestone: a zero-duration checkpoint (release, sign-off) fed by dependencies; its estimate is ignored'),
     tags: z.array(z.string()).optional().describe('Tags for categorization'),
     estimatedHours: z.number().optional().describe('Estimated hours to complete'),
     allocation: z
@@ -338,6 +342,8 @@ export const createTaskTool = defineTool<{
       priority: args.priority || 'none',
       assigneeId: args.assigneeId,
       dueDate: args.dueDate,
+      deadline: args.deadline,
+      isMilestone: args.isMilestone,
       tags: args.tags || [],
       estimatedHours: args.estimatedHours,
       customFields: args.customFields,
@@ -357,6 +363,8 @@ export const updateTaskTool = defineTool<{
   priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
   assigneeId?: string;
   dueDate?: string;
+  deadline?: string;
+  isMilestone?: boolean;
   tags?: string[];
   estimatedHours?: number;
   allocation?: number;
@@ -368,7 +376,7 @@ export const updateTaskTool = defineTool<{
   name: 'update_task',
   title: 'Update Task',
   description:
-    'Change an existing task: title, description, status, priority, assignee, due date, estimate, logged hours, allocation, blocked state, tags or custom fields. Only the fields you pass change. Use it to move a task through its workflow or re-plan it. Returns the updated task.',
+    'Change an existing task: title, description, status, priority, assignee, due date, deadline, milestone flag, estimate, logged hours, allocation, blocked state, tags or custom fields. Only the fields you pass change. Use it to move a task through its workflow or re-plan it. Returns the updated task.',
   toolset: 'core',
   outputZodSchema: TaskOutput,
   zodSchema: z.object({
@@ -379,6 +387,8 @@ export const updateTaskTool = defineTool<{
     priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().describe('New priority'),
     assigneeId: z.string().optional().describe('User ID to assign the task to'),
     dueDate: z.string().optional().describe('Due date (ISO string)'),
+    deadline: z.string().optional().describe('Latest acceptable finish (YYYY-MM-DD for the end of that working day, or an ISO date-time). Critical path analysis reports a miss as negative slack'),
+    isMilestone: z.boolean().optional().describe('Mark the task as a milestone: a zero-duration checkpoint (release, sign-off) fed by dependencies; its estimate is ignored'),
     tags: z.array(z.string()).optional().describe('Replaces all tags'),
     estimatedHours: z.number().optional().describe('Estimated effort in hours'),
     allocation: z
@@ -480,7 +490,7 @@ export const listDeliverablesTool = defineTool<{ projectId?: string }>({
   name: 'list_deliverables',
   title: 'List Deliverables',
   description:
-    'List a project\'s deliverables: milestones that group tasks toward a dated outcome. Use it to see what is due and which tasks feed each milestone. Returns { deliverables }.',
+    'List a project\'s deliverables: outputs that group the tasks producing them. Use it to see what is due and which tasks feed each deliverable. For dated checkpoints, look for milestone tasks (`isMilestone`). Returns { deliverables }.',
   toolset: 'collaboration',
   outputZodSchema: z.object({ deliverables: z.array(DeliverableOutput) }),
   zodSchema: z.object({
@@ -508,7 +518,7 @@ export const createDeliverableTool = defineTool<{
   name: 'create_deliverable',
   title: 'Create Deliverable',
   description:
-    'Create a deliverable (milestone) in a project, optionally linking existing tasks by id. Use it when planning a dated outcome that several tasks build toward. Returns the created deliverable.',
+    'Create a deliverable in a project, optionally linking existing tasks by id. Use it for an output (a document, a build, an asset) that several tasks produce. For a dated checkpoint the schedule should enforce, create a task with `isMilestone: true` and a `deadline` instead. Returns the created deliverable.',
   toolset: 'collaboration',
   outputZodSchema: DeliverableOutput,
   zodSchema: z.object({

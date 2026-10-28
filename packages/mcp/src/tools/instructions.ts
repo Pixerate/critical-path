@@ -24,7 +24,7 @@ const ROUTING: Array<{ when: string; tools: string[] }> = [
 export function buildAgentInstructions(tools: ToolDefinition[], context: { projectId?: string } = {}): string {
   const names = new Set(tools.map((t) => t.name));
   const lines: string[] = [
-    'Critical Path is a project management backend. A project holds tasks and deliverables (milestones that group tasks). Tasks have a workflow status, priority, assignee, effort estimate, logged hours, optional subtasks (parentId) and dependencies, and comments.',
+    'Critical Path is a project management backend. A project holds tasks and deliverables (outputs that group the tasks producing them). Tasks have a workflow status, priority, assignee, effort estimate, logged hours, optional subtasks (parentId) and dependencies, and comments. A task with `isMilestone: true` is a zero-duration checkpoint, and a `deadline` on any task is enforced by critical path analysis.',
     '',
     'Working rules:',
     '- Never guess ids. Get them from list or create results.',

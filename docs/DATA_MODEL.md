@@ -94,7 +94,7 @@ erDiagram
         string projectId FK
         string name
         string goal
-        string type "sprint | cycle | milestone"
+        string type "sprint | cycle"
         datetime startDate
         datetime endDate
         string status "planning | active | completed"
@@ -119,6 +119,8 @@ erDiagram
         datetime actualStartDate
         datetime actualEndDate
         datetime dueDate
+        datetime deadline
+        boolean isMilestone
         number estimatedHours
         number loggedHours
         number actualHours
@@ -195,11 +197,12 @@ Teams group users together (`memberIds`). A project can be associated with multi
 Containers provide structural hierarchy within a project (e.g., Epics, Groups, Sections, Folders). Containers can nest inside other containers via `parentId`.
 
 ### 4. Iteration
-Generalizes time-boxed or milestone-based planning units (e.g., Sprints, Cycles, Release Milestones). Configured with `type`, `startDate`, `endDate`, and `status`.
+Generalizes time-boxed planning units (e.g., Sprints, Cycles). Configured with `type`, `startDate`, `endDate`, and `status`. An iteration is a span of time; for a dated checkpoint use a milestone task (below).
 
 ### 5. Task
 The central unit of work. Tasks support:
-- **Date Tracking**: `plannedStartDate`, `actualStartDate`, `actualEndDate`, `dueDate`.
+- **Date Tracking**: `plannedStartDate`, `actualStartDate`, `actualEndDate`, `dueDate` (informational), `deadline` (enforced by critical path analysis).
+- **Milestones**: `isMilestone: true` makes a task a zero-duration checkpoint (a release, a sign-off, a gate). It takes part in dependencies like any task, takes no effort whatever its estimate, and usually has a `deadline`.
 - **Duration & Effort Tracking**:
   - `estimatedHours` / `estimatedDurationMinutes`
   - `actualHours` / `actualDurationMinutes`

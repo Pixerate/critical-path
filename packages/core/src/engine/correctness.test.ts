@@ -3,6 +3,7 @@ import {
   CriticalPathEngine,
   InMemoryStore,
   NotFoundError,
+  SQLiteStore,
   ValidationError,
   createRolePolicy,
   type DomainEvent
@@ -170,5 +171,27 @@ describe('references are checked even without a policy', () => {
     // A cross-tenant id written directly to the store is ignored when resolving
     await engine.store.updateProject(project.id, { workflowId: theirs.id });
     expect((await engine.resolveProjectWorkflow(project.id))?.id).toBe(ours.id);
+  });
+});
+
+describe('milestones and deadlines', () => {
+  it.each([
+    ['InMemoryStore', () => new InMemoryStore()],
+    ['SQLiteStore', () => new SQLiteStore({ filename: ':memory:' })]
+  ])('round-trip, drive the schedule and can be cleared (%s)', async (_name, makeStore) => {
+    const engine = new CriticalPathEngine({ store: makeStore() });
+    const project = await engine.createProject({ name: 'Launch', startDate: '2026-10-05T09:00:00.000Z' });
+    const build = await engine.createTask({ projectId: project.id, title: 'Build', estimatedHours: 16 });
+    const launch = await engine.createTask({ projectId: project.id, title: 'Launch', isMilestone: true, deadline: '2026-10-05' });
+    await engine.addDependency({ taskId: launch.id, dependsOnTaskId: build.id, type: 'blocking' });
+    expect(await engine.getTask(launch.id)).toMatchObject({ isMilestone: true, deadline: '2026-10-05' });
+
+    const analysis = await engine.calculateCriticalPath(project.id);
+    expect(analysis.missedDeadlineTaskIds).toEqual([launch.id]);
+    expect(analysis.tasks.find((t) => t.taskId === launch.id)).toMatchObject({ isMilestone: true, deadlineVarianceHours: -8 });
+
+    await engine.updateTask(launch.id, { deadline: undefined });
+    expect((await engine.getTask(launch.id))?.deadline).toBeUndefined();
+    expect((await engine.calculateCriticalPath(project.id)).missedDeadlineTaskIds).toEqual([]);
   });
 });

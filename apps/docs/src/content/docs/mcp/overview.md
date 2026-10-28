@@ -67,8 +67,8 @@ graph TD
 | `delete_task` | core | Permanent deletion (destructive) | `id` |
 | `add_dependency` | core | Making a task wait for another so the critical path orders them; adding an existing link returns it, a loop is refused | `taskId`, `dependsOnTaskId`, `type` |
 | `remove_dependency` | core | Removing that link by the same two task ids; returns `{ removed, dependencyIds }` | `taskId`, `dependsOnTaskId`, `type` |
-| `list_deliverables` | collaboration | A project's milestones; returns `{ deliverables }` | `projectId` |
-| `create_deliverable` | collaboration | A dated milestone grouping tasks | `projectId`, `title`, `dueDate`, `taskIds` |
+| `list_deliverables` | collaboration | A project's deliverables (outputs that group tasks); returns `{ deliverables }` | `projectId` |
+| `create_deliverable` | collaboration | An output that several tasks produce | `projectId`, `title`, `dueDate`, `taskIds` |
 | `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `taskId` |
 | `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `taskId`, `content` |
 | `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort` |

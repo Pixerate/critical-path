@@ -406,3 +406,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: `pnpm run build` fails in `apps/docs` with `The requested module 'astro/zod' does not provide an export named 'locales'`.
 - **Root Cause**: Dependabot groups "minor" updates, but for 0.x packages a minor bump is breaking. `@astrojs/starlight` 0.42 requires Astro ^7, while the docs site is on Astro 5.
 - **Solution / Workaround**: Starlight is pinned to `^0.32.0`, and `.github/dependabot.yml` ignores Starlight `>=0.33.0`. Upgrade Astro and Starlight together by hand, then update both `pnpm-lock.yaml` and `apps/docs/package-lock.json` (`cd apps/docs && npm install --package-lock-only`).
+
+### Deadlines Are Ignored in Project-Calendar Mode Without a Start Date
+- **Area / Package**: `@critical-path/core` (`calculateCPM`, `Task.deadline`)
+- **Symptom / Behavior**: A task with a `deadline` that is clearly missed shows positive slack, no `deadlineDate`, and is absent from `missedDeadlineTaskIds`.
+- **Root Cause**: Project-calendar mode works in working-hour offsets from the start. Without `project.startDate` (or `projectStartDate`) there is no date to place a deadline against, so it is skipped. Assignee mode always works in dates (today when no start is set).
+- **Solution / Workaround**: Set the project's `startDate`, pass `projectStartDate`, or use `calendars: 'assignee'`.
+
+### `dueDate` and `deadline` Are Different
+- **Area / Package**: `@critical-path/core` (`Task`, critical path analysis)
+- **Symptom / Behavior**: A task past its `dueDate` still shows positive slack.
+- **Root Cause**: `dueDate` is informational (it only orders levelling under `levelingPriority: 'dueDate'`). Only `deadline` constrains the backward pass. A date-only `deadline` means the end of that working day on the task's calendar, so `2026-10-05` is 17:00 on the default schedule, not midnight.
+- **Solution / Workaround**: Set `deadline` for dates the schedule must hold. Milestones (`isMilestone: true`) are zero-duration, so their estimates are ignored everywhere `getTaskDurationHours` is used; ladder and metrics roll-ups that read `estimatedHours` directly do not know about milestones, so leave estimates off milestone tasks.

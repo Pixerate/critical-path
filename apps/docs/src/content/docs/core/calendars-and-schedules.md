@@ -263,6 +263,29 @@ await engine.createTeam({ name: 'Agency', memberIds: [], headcount: 2 });       
 - **Over-allocation report:** entries have `teamId` (instead of `assigneeId`) and `capacity` when a pool is booked above its headcount, counting team tasks and members' own tasks.
 
 
+### Milestones and deadlines
+
+A **milestone** is a task with `isMilestone: true`: a zero-duration checkpoint such as a release, a client sign-off or a permit. It takes no time and no effort whatever its estimate says, and it joins the schedule through dependencies like any other task. A **deadline** is the latest acceptable finish for any task, milestone or not:
+
+```ts
+const build = await engine.createTask({ projectId, title: 'Build', estimatedHours: 16 });
+const launch = await engine.createTask({ projectId, title: 'Launch', isMilestone: true, deadline: '2026-10-05' });
+await engine.addDependency({ taskId: launch.id, dependsOnTaskId: build.id, type: 'blocking' });
+
+const cpm = await engine.calculateCriticalPath(projectId);
+cpm.missedDeadlineTaskIds; // [launch.id]
+cpm.tasks.find((t) => t.taskId === launch.id);
+// { isMilestone: true, deadlineDate: '2026-10-05T17:00:00.000Z', deadlineVarianceHours: -8, totalSlack: -8, ... }
+```
+
+- **Deadlines cap late dates.** A task's late finish is the earlier of what its successors allow and its deadline. When the forecast misses, slack goes negative on the task and on every task driving it, so the critical path shows what to fix. Forecast (early) dates and `projectEndDate` do not move.
+- **A date-only deadline is the end of that working day** on the task's calendar and time zone; a date-time is the last working moment at or before it. A deadline on a weekend or holiday falls back to the previous working day's close.
+- **`deadlineVarianceHours`** is the working time from the forecast finish to the deadline: positive is ahead, negative is late. `missedDeadlineTaskIds` lists every task with a negative variance.
+- **Project-calendar mode needs a start date** (`project.startDate` or `projectStartDate`) to place deadlines; without one they are ignored. Assignee mode always works in dates.
+- **Levelling** sees deadlines through slack, so with the default `levelingPriority: 'slack'` the work behind a tight deadline gets people first.
+- **`dueDate` is different:** it is informational and only used by `levelingPriority: 'dueDate'`. Use `deadline` when the schedule should hold you to the date.
+- On assignee calendars, a milestone sits at the moment its predecessors finish (for example 17:00), not the next morning.
+
 ### Finished tasks
 
 Completed and canceled tasks (by `semanticStatus`, or the default `done` / `canceled` statuses) take **no time** in critical path analysis and occupy nobody when levelling. Their successors can start at the project start, and dates reflect only the remaining work.

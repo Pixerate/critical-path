@@ -177,13 +177,13 @@ handle.unregister();
 | `create_project` | core | A new, empty project | `{ name, description?, key? }` |
 | `list_tasks` | core | Finding tasks; returns `{ tasks, nextCursor }` | `{ projectId?, status?, priority?, assigneeId?, iterationId?, deliverableId?, containerId?, parentId? ('none' = top-level), limit?, cursor? }` |
 | `get_task` | core | One task's full record; with `includeDependencies`, what it waits for (`dependsOn`) and what waits for it (`dependents`) | `{ id, includeDependencies? }` |
-| `create_task` | core | Adding work (auto-scoped in WebMCP) | `{ projectId?, title, description?, priority?, status?, estimatedHours?, allocation? }` |
-| `update_task` | core | Changing status, priority, assignee, estimates, logged hours | `{ id, title?, status?, priority?, assigneeId?, allocation?, loggedHours? }` |
+| `create_task` | core | Adding work (auto-scoped in WebMCP) | `{ projectId?, title, description?, priority?, status?, estimatedHours?, allocation?, deadline?, isMilestone? }` |
+| `update_task` | core | Changing status, priority, assignee, estimates, logged hours, deadline | `{ id, title?, status?, priority?, assigneeId?, allocation?, loggedHours?, deadline?, isMilestone? }` |
 | `delete_task` | core | Permanent deletion (`destructiveHint`) | `{ id }` |
 | `add_dependency` | core | Making a task wait for another, so the critical path orders them; idempotent, refuses loops | `{ taskId, dependsOnTaskId, type? ('blocking' \| 'relates_to') }` |
 | `remove_dependency` | core | Removing that link, by the same two task ids; returns `{ removed, dependencyIds }` | `{ taskId, dependsOnTaskId, type? }` |
-| `list_deliverables` | collaboration | A project's milestones; returns `{ deliverables }` | `{ projectId? }` |
-| `create_deliverable` | collaboration | A dated milestone grouping tasks | `{ projectId?, title, dueDate?, taskIds? }` |
+| `list_deliverables` | collaboration | A project's deliverables (outputs that group tasks); returns `{ deliverables }` | `{ projectId? }` |
+| `create_deliverable` | collaboration | An output that several tasks produce | `{ projectId?, title, dueDate?, taskIds? }` |
 | `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `{ taskId }` |
 | `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `{ taskId, content }` |
 | `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack (`calendars: 'assignee'` uses each assignee's or team's calendar; `levelResources` limits each assignee to one task at a time) | `{ projectId?, calendars?, levelResources?, levelingPriority?, effort? }` |

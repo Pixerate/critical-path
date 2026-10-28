@@ -86,7 +86,9 @@ export interface Task {
   assignees?: TaskAssignee[];
   reporterId?: string;
   sprintId?: string;
-  dueDate?: string;
+  dueDate?: string;       // informational
+  deadline?: string;      // latest acceptable finish, enforced by critical path analysis
+  isMilestone?: boolean;  // zero-duration checkpoint
   estimatedHours?: number;
   allocation?: number; // share of the assignee's time, (0, 1]; default 1
   loggedHours?: number;
@@ -1044,6 +1046,8 @@ With `levelResources: true`, tasks are placed in priority order (`levelingPriori
 `effort: 'remaining'` (or `criticalPathEffort` on the engine) schedules in-progress tasks for `max(0, estimate - loggedHours)` instead of their full estimate.
 
 Tasks can take part of their assignee's time with `allocation` (0–1, default 1). Estimates are effort, so a 16h task at 0.5 spans 32 working hours in every critical path calculation. Levelling then lets an assignee run tasks side by side while the total stays at 100%, and assignee-mode results list `overallocations` (who is above 100%, when, and through which tasks).
+
+Milestones are tasks with `isMilestone: true`: zero-duration checkpoints that take no effort whatever their estimate and join the schedule through dependencies. Any task can have a `deadline` (a date means the end of that working day). The backward pass caps each late finish at the deadline, so a forecast that misses it gives negative slack to the task and everything driving it. Each schedule entry reports `isMilestone`, `deadlineDate` and `deadlineVarianceHours` (negative when late), and the analysis lists `missedDeadlineTaskIds`. Early dates are not changed. In project-calendar mode deadlines need a start date and are ignored without one. `dueDate` stays informational.
 
 ---
 

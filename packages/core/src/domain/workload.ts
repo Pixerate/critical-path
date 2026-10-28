@@ -16,6 +16,7 @@ import {
   getNetAvailableCapacity,
   getWorkingHoursInDay
 } from './calendar.js';
+import { getTaskDurationHours } from './cpm.js';
 
 export interface WorkloadContext {
   tasks: Task[];
@@ -73,18 +74,6 @@ function getBucketKey(d: Date, interval: WorkloadInterval): string {
   return toDateString(startOfMonth(d));
 }
 
-function getTaskDurationHours(task: Task): number {
-  if (typeof task.estimatedHours === 'number' && task.estimatedHours >= 0) {
-    return task.estimatedHours;
-  }
-  if (typeof task.estimatedDurationMinutes === 'number' && task.estimatedDurationMinutes >= 0) {
-    return task.estimatedDurationMinutes / 60;
-  }
-  if (typeof task.actualHours === 'number' && task.actualHours > 0) {
-    return task.actualHours;
-  }
-  return 1;
-}
 
 export function calculateWorkloadDistribution(
   context: WorkloadContext,

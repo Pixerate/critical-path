@@ -233,7 +233,19 @@ export interface Task {
   actualStartDate?: string;
   actualEndDate?: string;
   completedAt?: string;
+  /** When the task is wanted by. Informational: critical path analysis only uses it to order levelling (see `deadline`). */
   dueDate?: string;
+  /**
+   * Latest acceptable finish, enforced by critical path analysis: the task's late finish is capped
+   * here, so slack goes negative (and flows to predecessors) when the forecast misses it. A
+   * date-only value means the end of that working day.
+   */
+  deadline?: string;
+  /**
+   * A zero-duration checkpoint (release, sign-off, gate). Scheduled with no duration and no
+   * effort whatever its estimates say; usually given a `deadline` and fed by dependencies.
+   */
+  isMilestone?: boolean;
   // Duration & Effort (in hours and/or minutes)
   estimatedHours?: number;
   /**
@@ -324,7 +336,8 @@ export interface Iteration {
   projectId: string;
   name: string;
   goal?: string;
-  type?: 'sprint' | 'cycle' | 'milestone' | string;
+  /** What kind of time box this is, e.g. 'sprint' or 'cycle'. For a dated checkpoint, use a milestone task. */
+  type?: 'sprint' | 'cycle' | (string & {});
   startDate?: string;
   endDate?: string;
   status: 'planning' | 'active' | 'completed';
@@ -693,6 +706,12 @@ export interface TaskCriticalPathSchedule {
   waitingOn?: string;
   /** The task's `allocation` when below 1 (`durationHours` is then effort / allocation). */
   allocation?: number;
+  /** Set when the task is a milestone. */
+  isMilestone?: true;
+  /** The task's `deadline` as an instant: the last working moment on or before it. */
+  deadlineDate?: string;
+  /** Working hours from the forecast finish to the deadline: negative means the deadline is missed. */
+  deadlineVarianceHours?: number;
 }
 
 /** A period in which a person or team pool is booked above its capacity. */
@@ -725,6 +744,8 @@ export interface CriticalPathAnalysis {
   unleveledProjectEndDate?: string;
   /** Assignee mode: periods where an assignee is booked above 100% (empty after levelling). */
   overallocations?: Overallocation[];
+  /** Tasks forecast to finish after their `deadline`. */
+  missedDeadlineTaskIds: string[];
 }
 
 /** Critical path analysis across several projects (`calculatePortfolioCriticalPath`). */

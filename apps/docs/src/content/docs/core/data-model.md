@@ -29,7 +29,9 @@ interface Task {
   assigneeId?: string;
   reporterId?: string;
   sprintId?: string;
-  dueDate?: string;            // ISO-8601 string (e.g. 2026-09-15T00:00:00Z)
+  dueDate?: string;            // ISO-8601 string (e.g. 2026-09-15T00:00:00Z); informational
+  deadline?: string;           // Latest acceptable finish, enforced by critical path analysis
+  isMilestone?: boolean;       // Zero-duration checkpoint (release, sign-off); estimates are ignored
   estimatedHours?: number;     // Effort, used for Critical Path calculations
   allocation?: number;         // Share of the assignee's time, (0, 1], default 1
   loggedHours?: number;

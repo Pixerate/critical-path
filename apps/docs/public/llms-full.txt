@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-21T07:50:34.201Z
+> Documentation generated on: 2026-10-27T22:38:41.785Z
 
 ================================================================================
 
@@ -396,6 +396,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** `GET /workload`, `GET /projects/:id/workload` or `GET /projects/:id/ladder` query strings; CLI `propose`/`subtask`, `client.createSubtask` or MCP `create_task` relying on `draft`/`todo`.
 - **Fix:** use the documented values (`interval`: `day|week|month`; `groupBy`: `assignee|team|taskType|priority|status`; `metric`: `scheduled|logged|remaining|blended`; dates as `YYYY-MM-DD`; `level`: `macro|standard|concrete|all`). New tasks start in the workflow's default status unless you pass `status`.
 
+### core 0.52: milestones and deadlines
+
+- **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
+- **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
+
 ### mcp 0.19: tool results, selection and annotations
 
 - **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.
@@ -673,7 +678,9 @@ interface Task {
   assigneeId?: string;
   reporterId?: string;
   sprintId?: string;
-  dueDate?: string;            // ISO-8601 string (e.g. 2026-09-15T00:00:00Z)
+  dueDate?: string;            // ISO-8601 string (e.g. 2026-09-15T00:00:00Z); informational
+  deadline?: string;           // Latest acceptable finish, enforced by critical path analysis
+  isMilestone?: boolean;       // Zero-duration checkpoint (release, sign-off); estimates are ignored
   estimatedHours?: number;     // Effort, used for Critical Path calculations
   allocation?: number;         // Share of the assignee's time, (0, 1], default 1
   loggedHours?: number;
@@ -1419,6 +1426,29 @@ await engine.createTeam({ name: 'Agency', memberIds: [], headcount: 2 });       
 - **Slack:** a delayed task is linked to the task whose finish freed its slot, as are tasks whose combined allocation exceeds the pool. Slack is exact along those chains but can be generous elsewhere in a busy pool.
 - **Over-allocation report:** entries have `teamId` (instead of `assigneeId`) and `capacity` when a pool is booked above its headcount, counting team tasks and members' own tasks.
 
+
+### Milestones and deadlines
+
+A **milestone** is a task with `isMilestone: true`: a zero-duration checkpoint such as a release, a client sign-off or a permit. It takes no time and no effort whatever its estimate says, and it joins the schedule through dependencies like any other task. A **deadline** is the latest acceptable finish for any task, milestone or not:
+
+```ts
+const build = await engine.createTask({ projectId, title: 'Build', estimatedHours: 16 });
+const launch = await engine.createTask({ projectId, title: 'Launch', isMilestone: true, deadline: '2026-10-05' });
+await engine.addDependency({ taskId: launch.id, dependsOnTaskId: build.id, type: 'blocking' });
+
+const cpm = await engine.calculateCriticalPath(projectId);
+cpm.missedDeadlineTaskIds; // [launch.id]
+cpm.tasks.find((t) => t.taskId === launch.id);
+// { isMilestone: true, deadlineDate: '2026-10-05T17:00:00.000Z', deadlineVarianceHours: -8, totalSlack: -8, ... }
+```
+
+- **Deadlines cap late dates.** A task's late finish is the earlier of what its successors allow and its deadline. When the forecast misses, slack goes negative on the task and on every task driving it, so the critical path shows what to fix. Forecast (early) dates and `projectEndDate` do not move.
+- **A date-only deadline is the end of that working day** on the task's calendar and time zone; a date-time is the last working moment at or before it. A deadline on a weekend or holiday falls back to the previous working day's close.
+- **`deadlineVarianceHours`** is the working time from the forecast finish to the deadline: positive is ahead, negative is late. `missedDeadlineTaskIds` lists every task with a negative variance.
+- **Project-calendar mode needs a start date** (`project.startDate` or `projectStartDate`) to place deadlines; without one they are ignored. Assignee mode always works in dates.
+- **Levelling** sees deadlines through slack, so with the default `levelingPriority: 'slack'` the work behind a tight deadline gets people first.
+- **`dueDate` is different:** it is informational and only used by `levelingPriority: 'dueDate'`. Use `deadline` when the schedule should hold you to the date.
+- On assignee calendars, a milestone sits at the moment its predecessors finish (for example 17:00), not the next morning.
 
 ### Finished tasks
 
@@ -3038,8 +3068,8 @@ graph TD
 | `delete_task` | core | Permanent deletion (destructive) | `id` |
 | `add_dependency` | core | Making a task wait for another so the critical path orders them; adding an existing link returns it, a loop is refused | `taskId`, `dependsOnTaskId`, `type` |
 | `remove_dependency` | core | Removing that link by the same two task ids; returns `{ removed, dependencyIds }` | `taskId`, `dependsOnTaskId`, `type` |
-| `list_deliverables` | collaboration | A project's milestones; returns `{ deliverables }` | `projectId` |
-| `create_deliverable` | collaboration | A dated milestone grouping tasks | `projectId`, `title`, `dueDate`, `taskIds` |
+| `list_deliverables` | collaboration | A project's deliverables (outputs that group tasks); returns `{ deliverables }` | `projectId` |
+| `create_deliverable` | collaboration | An output that several tasks produce | `projectId`, `title`, `dueDate`, `taskIds` |
 | `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `taskId` |
 | `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `taskId`, `content` |
 | `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort` |

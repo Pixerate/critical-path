@@ -15,7 +15,8 @@ description: Find what drives a project's end date, how much each task can slip 
 ## 2. Read the result
 
 - `projectEndDate` is the forecast finish. With levelling, compare it with `unleveledProjectEndDate`: the gap is time lost waiting for busy people.
-- `criticalTaskIds` are the tasks with zero slack. Any delay to one of them moves the end date.
+- `criticalTaskIds` are the tasks with zero or negative slack. Any delay to one of them moves the end date or misses a deadline.
+- `missedDeadlineTaskIds` lists tasks forecast to finish after their `deadline`. Their `deadlineVarianceHours` says by how much (negative working hours), and the negative `totalSlack` on the tasks before them shows which work drives the miss. Entries with `isMilestone: true` are checkpoints such as releases or sign-offs.
 - Each entry in `tasks` has `slackWorkingHours`: how many working hours the task can slip without moving the end. Under about 8 hours is near-critical.
 - `levelingDelayHours` and `waitingOn` show a task that waited for its assignee to finish another task.
 - `overallocations` lists periods where a person (`assigneeId`) or team (`teamId`) is booked above `capacity`; `allocation` 1.5 means 150%.
@@ -36,7 +37,8 @@ Show the recommendation to the user. Change tasks (`update_task`) or dependencie
 
 ## Report format
 
-- Forecast finish date, and against any deadline the user gave.
+- Forecast finish date, and against any deadline the user gave. If the user gives a date that is not yet on a task, offer to record it as a `deadline` (on a milestone task with `isMilestone: true` if it is a checkpoint) so later runs track it.
+- Each milestone: forecast date against its deadline.
 - Critical path: task titles in order, with assignee.
 - Top risks: near-critical tasks, blocked critical tasks, over-allocations.
 - Recommended actions, each with its expected effect.

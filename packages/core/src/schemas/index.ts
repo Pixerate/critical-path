@@ -36,6 +36,11 @@ function strictObject<T extends z.ZodRawShape>(shape: T) {
 
 const isoString = z.string();
 const nonEmpty = z.string().min(1);
+/** A date (`2026-10-05`) or date-time (`2026-10-05T17:00`, optionally with `Z` or an offset). */
+const isoDateOrDateTime = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/, 'must be an ISO date or date-time')
+  .refine((value) => !Number.isNaN(new Date(value).getTime()), 'must be a valid date');
 
 export const SemanticStatusSchema = z.enum(['not_started', 'in_progress', 'completed', 'canceled']);
 export const AuthorTypeSchema = z.enum(['user', 'agent', 'system']);
@@ -171,6 +176,8 @@ const taskFields = {
   actualEndDate: isoString.optional(),
   completedAt: isoString.optional(),
   dueDate: isoString.optional(),
+  deadline: isoDateOrDateTime.optional(),
+  isMilestone: z.boolean().optional(),
   estimatedHours: z.number().nonnegative().optional(),
   allocation: z.number().gt(0).max(1).optional(),
   loggedHours: z.number().nonnegative().optional(),
