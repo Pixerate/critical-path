@@ -433,7 +433,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 
 ### Statuses Must Exist in the Project's Workflow
 - **Area / Package**: `@critical-path/core` (`createTask`, `updateTask`, `resolveStatusDefinition`)
-- **Symptom / Behavior**: After 0.53, creating or moving a task to a status such as `qa` or `blocked` fails with `400 Status "qa" is not in this project's workflow`. Data written straight to a store with an unknown key now counts as `not_started`, where an older release may have called it completed or in progress.
+- **Symptom / Behavior**: After 0.54, creating or moving a task to a status such as `qa` or `blocked` fails with `400 Status "qa" is not in this project's workflow`. Data written straight to a store with an unknown key now counts as `not_started`, where an older release may have called it completed or in progress.
 - **Root Cause**: Statuses were never checked, and unknown keys were classified by substring (`unfinished`, `not_done` and `final_draft` counted as completed). Now the key must be in the project's `statusDefinitions` (else its workflow's statuses), and unknown keys are not guessed.
 - **Solution / Workaround**: Add the status to the workflow (or the project's `statusDefinitions`) with the right `category`, or use an existing key. For data written around the engine, move tasks to real statuses.
 
@@ -441,7 +441,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `@critical-path/core` (`updateProject`, `updateWorkflow`, `deleteWorkflow`)
 - **Symptom / Behavior**: `PATCH /projects/:id` with a new `workflowId` returns `409`. `DELETE /workflows/:id` returns `409`. Removing a status from a workflow returns `409`.
 - **Root Cause**: Tasks left in a status the project no longer has had no allowed transitions and were stuck. Deleting a workflow silently moved its projects to another one.
-- **Solution / Workaround**: Pass `statusMapping` (old key -> new key) with the project update; the engine moves the tasks in the same operation. Move tasks out of a status before removing it, and switch projects to another workflow before deleting one. New projects are pinned to their starting workflow (`workflowId` is filled in), so marking another workflow `isDefault` later does not move them; projects created before 0.53 without a `workflowId` still follow the tenant default.
+- **Solution / Workaround**: Pass `statusMapping` (old key -> new key) with the project update; the engine moves the tasks in the same operation. Move tasks out of a status before removing it, and switch projects to another workflow before deleting one. New projects are pinned to their starting workflow (`workflowId` is filled in), so marking another workflow `isDefault` later does not move them; projects created before 0.54 without a `workflowId` still follow the tenant default.
 
 ### Hours Are Effort from Time Entries; `actualDuration*` Is Elapsed Time
 - **Area / Package**: `@critical-path/core` (`Task.loggedHours`, `actualHours`, `actualDurationSeconds`)
