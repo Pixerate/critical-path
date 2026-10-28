@@ -1,5 +1,65 @@
 # @critical-path/server
 
+## 0.33.0
+
+### Minor Changes
+
+- 42ecdb9: Clearing fields over HTTP, validated dates, and correctable time entries.
+  
+  - Update bodies accept `null` to remove an optional field (tasks, projects, deliverables, containers, iterations and time entries); parsing turns it into `undefined`, which every store treats as removal. Required fields (titles, names, task `status` and `priority`) still reject it. New `applyUpdate(record, updates)` applies payloads the same way for optimistic UI state; the React and Svelte task and deliverable state use it.
+  - **BREAKING:** every date field in request bodies must be an ISO date or date-time (`400` otherwise). Free-text dates used to be stored and then broke levelling, metrics and the ladder.
+  - Time entries can be corrected and deleted: `engine.getTimeEntry` / `updateTimeEntry` / `deleteTimeEntry`, `GET | PATCH | DELETE /time-entries/:id`, and the matching client methods. The task's hour totals move by the difference, and `time.updated` / `time.deleted` events are published. A new `time.manage` permission (project managers and admins) covers other people's entries; anyone with `time.log` can manage their own.
+  - `logTime` always requires the task to exist (it used to store orphan entries when no policy was enforced), and logs inside a transaction where the store supports one.
+  - **BREAKING (custom adapters):** `TimeEntryRepository` gains `getTimeEntry(id)` and `updateTimeEntry(id, updates)`.
+  - `FirebaseStore` updates every document inside `runTransaction` when the db supports it and implements `incrementTaskHours`, so concurrent updates and time logs are no longer lost. Pass Firestore's `FieldValue` as the new `fieldValue` option to add hour totals with `FieldValue.increment` (atomic, no contention) instead of transactions.
+  - MCP: new `update_time_entry` and `delete_time_entry` tools.
+
+### Patch Changes
+
+- Updated dependencies [42ecdb9]
+  - @critical-path/core@0.56.0
+
+## 0.32.0
+
+### Minor Changes
+
+- 5dbf25b: Effort and progress roll-ups agree, count subtasks once and leave canceled work out.
+  
+  - New `getTaskEstimateHours(task)` is the one place that reads an estimate (0 for milestones; an explicit 0 counts). Critical path analysis, workload, the ladder, metrics/EVM and deliverable summaries all use it, along with `getSummaryTaskIds` / `getLeafTasks`.
+  - **BREAKING:** a task with subtasks is a summary task. Critical path analysis schedules only leaf tasks: dependencies and deadlines on a summary apply to every leaf under it, and the summary is reported as a roll-up (`isSummary: true`; not in `criticalTaskIds`). Workload, the ladder and deliverable summaries count effort from leaves only, so an epic's estimate no longer doubles its subtasks'.
+  - **BREAKING:** canceled tasks leave estimate totals and progress denominators in the ladder and deliverable summaries (their logged hours still count), so a project can reach 100% and `completed`. Canceled tasks have zero planned and earned value in EVM. The ladder and deliverable summaries use inferred progress (`inferTaskProgress`) like task metrics.
+  - Unestimated tasks are listed in `unestimatedTaskIds`, and the hours assumed for them are configurable: `defaultEstimateHours` per call (`?defaultEstimateHours=` over HTTP, client and MCP options) or `criticalPathDefaultEstimateHours` on the engine. Default 1, as before.
+
+### Patch Changes
+
+- Updated dependencies [5dbf25b]
+  - @critical-path/core@0.55.0
+
+## 0.31.0
+
+### Minor Changes
+
+- 1021eb5: Status, workflow and effort integrity.
+  
+  - **BREAKING:** a task's `status` must be one of its project's statuses (`statusDefinitions`, else the workflow's), on create and update (`400` otherwise). Unknown keys are no longer guessed from their spelling (`unfinished` was treated as completed); `resolveStatusDefinition` returns `not_started` for them.
+  - **BREAKING:** derived task fields are rejected in request bodies and left out of `CreateTaskInput`: `semanticStatus`, `loggedHours`, `actualHours`, `billableHours`, `actualDurationSeconds`, `actualDurationMinutes`, `billableDurationMinutes`, `inProgressSince`, `blockedSince`, `blockedDurationSeconds`. `semanticStatus` is always derived from the status, so CPM, metrics and lifecycle agree. Hours come from time entries.
+  - `actualHours` is no longer overwritten with wall-clock time when a task leaves in-progress (logged effort was being lost). Elapsed time stays in `actualDurationSeconds` / `actualDurationMinutes`.
+  - **BREAKING:** changing a project's statuses (`workflowId`, `workflow` or `statusDefinitions`) requires `statusMapping` for every status its tasks are in that the project will no longer have (`engine.updateProject(id, updates, { statusMapping })`, or `statusMapping` in the `PATCH /projects/:id` body); tasks are moved in the same operation. Deleting a workflow that a project uses, or removing a status tasks are in, is refused with the new `ConflictError` (`409`).
+  - New projects are pinned to the workflow they start with, so a later default does not move them.
+  - MCP: new `log_time` tool; `update_task` no longer takes `loggedHours`.
+
+### Patch Changes
+
+- Updated dependencies [1021eb5]
+  - @critical-path/core@0.54.0
+
+## 0.30.3
+
+### Patch Changes
+
+- Updated dependencies [6c3359f]
+  - @critical-path/core@0.53.0
+
 ## 0.30.2
 
 ### Patch Changes
