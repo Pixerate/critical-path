@@ -36,3 +36,14 @@ export class ForbiddenError extends Error {
     this.name = 'ForbiddenError';
   }
 }
+
+/**
+ * Thrown when a change conflicts with existing data (for example deleting a workflow that projects
+ * use). Route handlers map it to HTTP 409.
+ */
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConflictError';
+  }
+}

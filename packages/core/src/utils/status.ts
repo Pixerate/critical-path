@@ -34,21 +34,12 @@ export function resolveStatusDefinition(
     return DEFAULT_STATUS_DEFINITIONS[statusKey];
   }
 
-  // Fallback heuristic for unknown custom statuses:
-  const lower = statusKey.toLowerCase();
-  let category: SemanticStatus = 'not_started';
-  if (['canceled', 'cancelled', 'rejected', 'abandoned', 'void', 'dropped'].some((k) => lower.includes(k))) {
-    category = 'canceled';
-  } else if (['done', 'completed', 'finished', 'closed', 'approved', 'final', 'delivered', 'shipped'].some((k) => lower.includes(k))) {
-    category = 'completed';
-  } else if (['in_progress', 'active', 'working', 'in_review', 'review', 'testing', 'qa', 'building', 'editing'].some((k) => lower.includes(k))) {
-    category = 'in_progress';
-  }
-
+  // Unknown keys are not guessed from their spelling ("unfinished" is not done). The engine only
+  // accepts statuses from the project's definitions, so this only applies to data written around it.
   return {
     key: statusKey,
     label: statusKey,
-    category
+    category: 'not_started'
   };
 }
 

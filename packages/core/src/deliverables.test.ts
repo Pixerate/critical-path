@@ -209,7 +209,6 @@ describe('CriticalPathEngine Deliverables & Rollup Metrics', () => {
       title: 'Storyboard 15s Cut',
       status: 'approved',
       estimatedHours: 8,
-      loggedHours: 8,
       progress: 100,
       deliverableId: deliverable.id
     });
@@ -220,7 +219,6 @@ describe('CriticalPathEngine Deliverables & Rollup Metrics', () => {
       title: 'Color Grading 15s Cut',
       status: 'in_production',
       estimatedHours: 12,
-      loggedHours: 6,
       progress: 50,
       deliverableId: deliverable.id
     });
@@ -230,10 +228,12 @@ describe('CriticalPathEngine Deliverables & Rollup Metrics', () => {
       title: 'Sound Design & Final Mix',
       status: 'briefing',
       estimatedHours: 6,
-      loggedHours: 0,
       progress: 0,
       deliverableId: deliverable.id
     });
+    // Logged hours come from time entries
+    await engine.logTime({ taskId: task1.id, hours: 8 });
+    await engine.logTime({ taskId: task2.id, hours: 6 });
 
     // 3. Compute Deliverable Summary / Rollup
     const summary = await engine.getDeliverableSummary(deliverable.id);

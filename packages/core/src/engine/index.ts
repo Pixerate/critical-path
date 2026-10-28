@@ -98,7 +98,7 @@ import {
 import { validateAttachmentUrl, AttachmentValidationError } from '../domain/entities.js';
 import { validateCustomFieldValues, validateCustomFieldDefinitions } from '../domain/custom-fields.js';
 import { detectDependencyCycle, CircularDependencyError, precedenceOf } from '../domain/graph.js';
-import { ValidationError, NotFoundError, ForbiddenError } from '../domain/errors.js';
+import { ValidationError, NotFoundError, ForbiddenError, ConflictError } from '../domain/errors.js';
 import { WebhookDispatcher, assertWebhookUrl } from '../webhooks/dispatcher.js';
 import { buildStorageKey, normalizeUploadData } from '../storage/file-storage.js';
 import { generateWebhookSecret } from '../webhooks/signature.js';
@@ -507,11 +507,27 @@ export class CriticalPathEngine {
     return created;
   }
 
+  /**
+   * Updates a workflow. Removing a status that tasks in a project using this workflow are still in
+   * is refused (`ConflictError`): move those tasks first, or switch the project with `statusMapping`.
+   */
   async updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow | null> {
     const existing = await this.getWorkflow(id);
     if (!existing) return null;
     await this.requireWorkspaceAccess('workspace.manage');
     updates = this.withoutTenant(updates);
+    if (updates.statuses) {
+      const kept = new Set(updates.statuses.map((status) => status.key));
+      const removed = existing.statuses.map((status) => status.key).filter((key) => !kept.has(key));
+      if (removed.length) {
+        for (const project of await this.projectsUsingWorkflow(existing)) {
+          const stranded = [...new Set((await this.store.getTasks(project.id)).map((t) => t.status))].filter((key) => removed.includes(key));
+          if (stranded.length) {
+            throw new ConflictError(`Tasks in project "${project.id}" are still in ${stranded.map((k) => `"${k}"`).join(', ')}, which this update removes. Move them to another status first.`);
+          }
+        }
+      }
+    }
 
     const updated = await this.store.updateWorkflow(id, updates);
     if (updated) {
@@ -535,10 +551,15 @@ export class CriticalPathEngine {
     return updated;
   }
 
+  /** Deletes a workflow. Refused (`ConflictError`) while any project uses it, even as its default. */
   async deleteWorkflow(id: string): Promise<boolean> {
     const existing = await this.getWorkflow(id);
     if (!existing) return false;
     await this.requireWorkspaceAccess('workspace.manage');
+    const users = await this.projectsUsingWorkflow(existing);
+    if (users.length) {
+      throw new ConflictError(`Workflow "${id}" is used by ${users.length} project(s) (${users.map((p) => p.id).join(', ')}). Switch them to another workflow first.`);
+    }
 
     const deleted = await this.store.deleteWorkflow(id);
     if (deleted) {
@@ -563,20 +584,46 @@ export class CriticalPathEngine {
   }
 
   async resolveProjectWorkflow(projectId: string): Promise<Workflow | null> {
-    const project = await this.store.getProject(projectId);
+    return this.workflowFor(await this.store.getProject(projectId));
+  }
+
+  /** The workflow a project (or a project as it would be after an update) uses. */
+  private async workflowFor(project: Pick<Project, 'workflow' | 'workflowId' | 'tenantId'> | null): Promise<Workflow> {
     if (project?.workflow) return project.workflow;
     if (project?.workflowId) {
       const wf = await this.store.getWorkflow(project.workflowId);
       if (wf && (wf.tenantId ?? undefined) === (project.tenantId ?? undefined)) return wf;
     }
+    return (await this.defaultWorkflowFor(project?.tenantId)) ?? DEFAULT_SOFTWARE_WORKFLOW;
+  }
 
+  /** The tenant's stored default workflow: the one marked `isDefault`, else the first. */
+  private async defaultWorkflowFor(tenantId: string | undefined): Promise<Workflow | undefined> {
     // Only fall back to workflows from the project's own tenant.
-    const workflows = (await this.store.getWorkflows()).filter((w) => w.tenantId === project?.tenantId);
-    const defaultWf = workflows.find((w) => w.isDefault);
-    if (defaultWf) return defaultWf;
-    if (workflows.length > 0) return workflows[0];
+    const workflows = (await this.store.getWorkflows()).filter((w) => w.tenantId === tenantId);
+    return workflows.find((w) => w.isDefault) ?? workflows[0];
+  }
 
-    return DEFAULT_SOFTWARE_WORKFLOW;
+  /** The statuses tasks in a project may have: its own definitions, else its workflow's. */
+  private async statusDefinitionsFor(project: Pick<Project, 'statusDefinitions' | 'workflow' | 'workflowId' | 'tenantId'> | null): Promise<StatusDefinition[]> {
+    return project?.statusDefinitions?.length ? project.statusDefinitions : (await this.workflowFor(project)).statuses;
+  }
+
+  /** Projects whose tasks follow `workflow`, explicitly or as their tenant's default. */
+  private async projectsUsingWorkflow(workflow: Workflow): Promise<Project[]> {
+    const projects = await this.store.getProjects(workflow.tenantId ? { tenantId: workflow.tenantId } : undefined);
+    const using: Project[] = [];
+    for (const project of projects) {
+      if ((project.tenantId ?? undefined) === (workflow.tenantId ?? undefined) && (await this.workflowFor(project)).id === workflow.id) using.push(project);
+    }
+    return using;
+  }
+
+  /** Throws unless `status` is one of the project's statuses. */
+  private assertKnownStatus(status: string, definitions: StatusDefinition[]): void {
+    if (definitions.length && !definitions.some((d) => d.key === status)) {
+      throw new ValidationError(`Status "${status}" is not in this project's workflow (${definitions.map((d) => d.key).join(', ')}).`);
+    }
   }
 
   async getAllowedTaskTransitions(taskId: string): Promise<string[]> {
@@ -619,6 +666,12 @@ export class CriticalPathEngine {
     // Views always use the actor's tenant (possibly none); only trusted base-engine calls may set it.
     const input = { ...project, tenantId: this.actor ? this.actor.tenantId : project.tenantId };
     await this.assertUsableWorkflow(input.workflowId, input.tenantId);
+    // Pin the workflow the project starts with, so adding a new default workflow later does not
+    // silently change it.
+    if (!input.workflowId && !input.workflow) {
+      const workflow = await this.defaultWorkflowFor(input.tenantId);
+      if (workflow) input.workflowId = workflow.id;
+    }
     // The creator administers the project they create.
     if (this.actor && this.actor.userId !== 'anonymous' && !input.members?.some((m) => m.userId === this.actor!.userId)) {
       input.members = [...(input.members ?? []), { userId: this.actor.userId, role: 'admin' }];
@@ -645,7 +698,17 @@ export class CriticalPathEngine {
     return created;
   }
 
-  async updateProject(id: string, updates: Partial<Project>): Promise<Project | null> {
+  /**
+   * Updates a project. When the update changes which statuses the project has (`workflowId`,
+   * `workflow` or `statusDefinitions`), every task in a status the project no longer has must be
+   * moved: pass `statusMapping` (old status key -> new status key). Without a mapping for each such
+   * status the update is refused with a `ConflictError`, so no task is left in an unreachable status.
+   */
+  async updateProject(id: string, updates: Partial<Project>, options: { statusMapping?: Record<string, string> } = {}): Promise<Project | null> {
+    return this.inTransaction((engine) => engine.updateProjectNow(id, updates, options));
+  }
+
+  private async updateProjectNow(id: string, updates: Partial<Project>, options: { statusMapping?: Record<string, string> }): Promise<Project | null> {
     const existing = await this.getProject(id);
     if (!existing) return null;
     await this.requireProjectAccess('project.update', id);
@@ -666,7 +729,27 @@ export class CriticalPathEngine {
       await this.assertUsableWorkflow(updates.workflowId, existing.tenantId);
     }
 
+    // Tasks whose status the project will no longer have, and where they go
+    const moves: Array<{ taskId: string; status: string }> = [];
+    if ('workflowId' in updates || 'workflow' in updates || 'statusDefinitions' in updates) {
+      const next = new Set((await this.statusDefinitionsFor({ ...existing, ...updates })).map((d) => d.key));
+      const mapping = options.statusMapping ?? {};
+      const stranded = (await this.store.getTasks(id)).filter((task) => !next.has(task.status));
+      const unmapped = [...new Set(stranded.map((task) => task.status))].filter((key) => !next.has(mapping[key]));
+      if (unmapped.length) {
+        throw new ConflictError(
+          `Tasks are in ${unmapped.map((k) => `"${k}"`).join(', ')}, which the project will no longer have. ` +
+            `Pass statusMapping with a new status for each (available: ${[...next].join(', ')}).`
+        );
+      }
+      moves.push(...stranded.map((task) => ({ taskId: task.id, status: mapping[task.status] })));
+    }
+
     const updated = await this.store.updateProject(id, updates);
+    // The old status is not in the new workflow, so there is no transition to check
+    for (const move of moves) {
+      await this.elevated().updateTask(move.taskId, { status: move.status }, { ...(this.actor ? { actor: this.actor } : {}), ignoreTransitions: true });
+    }
     if (updated) {
       const now = new Date().toISOString();
       const event: ProjectUpdatedEvent = {
@@ -810,10 +893,12 @@ export class CriticalPathEngine {
 
     const defaultStatus = workflow?.defaultStatusKey || 'todo';
     const initialStatus = processedInput.status || taskInput.status || defaultStatus;
+    const statusDefinitions = await this.statusDefinitionsFor(project);
+    this.assertKnownStatus(initialStatus, statusDefinitions);
     const now = new Date().toISOString();
 
     // Derive initial lifecycle timestamps and semantic status
-    const statusDef = resolveStatusDefinition(initialStatus, project?.statusDefinitions || workflow?.statuses);
+    const statusDef = resolveStatusDefinition(initialStatus, statusDefinitions);
     const inProgress = statusDef.category === 'in_progress';
     const completed = statusDef.category === 'completed';
     const isBlocked = input.isBlocked ?? false;
@@ -823,15 +908,16 @@ export class CriticalPathEngine {
       projectId,
       title: processedInput.title || taskInput.title,
       status: initialStatus,
-      semanticStatus: input.semanticStatus ?? statusDef.category,
+      // Always derived from the status, so every module agrees on it
+      semanticStatus: statusDef.category,
       priority: processedInput.priority || taskInput.priority || 'medium',
       taskType: processedInput.taskType || taskInput.taskType || 'task',
       actualStartDate: input.actualStartDate ?? (inProgress ? now : undefined),
       actualEndDate: input.actualEndDate ?? (completed || statusDef.category === 'canceled' ? now : undefined),
       completedAt: input.completedAt ?? (completed ? now : undefined),
-      loggedHours: input.loggedHours ?? 0,
-      inProgressSince: input.inProgressSince ?? (inProgress ? now : undefined),
-      blockedSince: input.blockedSince ?? (isBlocked && inProgress ? now : undefined),
+      loggedHours: 0,
+      inProgressSince: inProgress ? now : undefined,
+      blockedSince: isBlocked && inProgress ? now : undefined,
       progress: input.progress ?? (completed ? 100 : 0),
       isBlocked,
       blockedReason: input.blockedReason ?? null,
@@ -871,6 +957,8 @@ export class CriticalPathEngine {
       actorName?: string;
       actorType?: string;
       actor?: { userId: string; username?: string; actorType?: string };
+      /** Skip the workflow transition check (used to remap statuses when a project changes workflow). */
+      ignoreTransitions?: boolean;
     }
   ): Promise<Task | null> {
     const existing = await this.getTask(id);
@@ -898,9 +986,14 @@ export class CriticalPathEngine {
       createdAt: _createdAt,
       ...processedUpdates
     } = await this.plugins.runBeforeTaskUpdate(id, taskUpdates) as Partial<Task>;
+    // Derived from the status below; never taken from callers or hooks
+    delete processedUpdates.semanticStatus;
 
     // Validate workflow transition invariant
     if (processedUpdates.status && processedUpdates.status !== existing.status) {
+      this.assertKnownStatus(processedUpdates.status, await this.statusDefinitionsFor(project));
+    }
+    if (processedUpdates.status && processedUpdates.status !== existing.status && !options?.ignoreTransitions) {
       const isValid = validateTransition(workflow || undefined, existing.status, processedUpdates.status);
       if (!isValid) {
         throw new WorkflowValidationError(existing.status, processedUpdates.status, workflow?.id);
@@ -934,7 +1027,7 @@ export class CriticalPathEngine {
 
     // Auto-update execution/completion timestamps if status changes
     if (processedUpdates.status && processedUpdates.status !== existing.status && newStatusDef) {
-      processedUpdates.semanticStatus = processedUpdates.semanticStatus ?? newStatusDef.category;
+      processedUpdates.semanticStatus = newStatusDef.category;
 
       // 1. Leaving in_progress: finalize active session duration and blocked duration
       if (existingStatusDef.category === 'in_progress' && newStatusDef.category !== 'in_progress') {
@@ -946,9 +1039,6 @@ export class CriticalPathEngine {
             const sessionSeconds = Math.max(0, (endMs - startMs) / 1000);
             processedUpdates.actualDurationSeconds =
               (processedUpdates.actualDurationSeconds ?? existing.actualDurationSeconds ?? 0) + sessionSeconds;
-            if (processedUpdates.actualHours === undefined) {
-              processedUpdates.actualHours = Math.round((processedUpdates.actualDurationSeconds / 3600) * 100) / 100;
-            }
             if (processedUpdates.actualDurationMinutes === undefined) {
               processedUpdates.actualDurationMinutes = Math.round(processedUpdates.actualDurationSeconds / 60);
             }
@@ -1062,17 +1152,10 @@ export class CriticalPathEngine {
       processedUpdates.blockedSince = null;
     }
 
-    // Mutual sync for manual duration/effort edits
-    if (processedUpdates.actualDurationSeconds !== undefined && processedUpdates.actualHours === undefined) {
-      processedUpdates.actualHours = Math.round((processedUpdates.actualDurationSeconds / 3600) * 100) / 100;
-      if (processedUpdates.actualDurationMinutes === undefined) {
-        processedUpdates.actualDurationMinutes = Math.round(processedUpdates.actualDurationSeconds / 60);
-      }
-    } else if (processedUpdates.actualHours !== undefined && processedUpdates.actualDurationSeconds === undefined) {
-      processedUpdates.actualDurationSeconds = Math.round(processedUpdates.actualHours * 3600);
-      if (processedUpdates.actualDurationMinutes === undefined) {
-        processedUpdates.actualDurationMinutes = Math.round(processedUpdates.actualHours * 60);
-      }
+    // Elapsed time (actualDuration*) and effort (actualHours, loggedHours) are separate quantities:
+    // keep the elapsed minutes in step with the seconds, and never derive effort from the clock.
+    if (processedUpdates.actualDurationSeconds !== undefined && processedUpdates.actualDurationMinutes === undefined) {
+      processedUpdates.actualDurationMinutes = Math.round(processedUpdates.actualDurationSeconds / 60);
     }
 
     const updated = await this.store.updateTask(id, processedUpdates);

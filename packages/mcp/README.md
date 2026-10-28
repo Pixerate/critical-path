@@ -178,7 +178,8 @@ handle.unregister();
 | `list_tasks` | core | Finding tasks; returns `{ tasks, nextCursor }` | `{ projectId?, status?, priority?, assigneeId?, iterationId?, deliverableId?, containerId?, parentId? ('none' = top-level), limit?, cursor? }` |
 | `get_task` | core | One task's full record; with `includeDependencies`, what it waits for (`dependsOn`) and what waits for it (`dependents`) | `{ id, includeDependencies? }` |
 | `create_task` | core | Adding work (auto-scoped in WebMCP) | `{ projectId?, title, description?, priority?, status?, estimatedHours?, allocation?, deadline?, isMilestone? }` |
-| `update_task` | core | Changing status, priority, assignee, estimates, logged hours, deadline | `{ id, title?, status?, priority?, assigneeId?, allocation?, loggedHours?, deadline?, isMilestone? }` |
+| `update_task` | core | Changing status, priority, assignee, estimates, deadline | `{ id, title?, status?, priority?, assigneeId?, allocation?, deadline?, isMilestone? }` |
+| `log_time` | core | Recording hours worked (the only way to add logged hours) | `{ taskId, hours, description?, isBillable?, loggedAt? }` |
 | `delete_task` | core | Permanent deletion (`destructiveHint`) | `{ id }` |
 | `add_dependency` | core | Making a task wait for another, so the critical path orders them; idempotent, refuses loops | `{ taskId, dependsOnTaskId, type? ('blocking' \| 'relates_to') }` |
 | `remove_dependency` | core | Removing that link, by the same two task ids; returns `{ removed, dependencyIds }` | `{ taskId, dependsOnTaskId, type? }` |

@@ -43,12 +43,10 @@ describe('Universal Semantic Statuses & Implied Statuses', () => {
       expect(resolveStatusDefinition('abandoned', customDefs).category).toBe('canceled');
     });
 
-    it('infers category heuristically when unknown status key is provided', () => {
-      expect(resolveStatusDefinition('draft_v2').category).toBe('not_started');
-      expect(resolveStatusDefinition('final_approved').category).toBe('completed');
-      expect(resolveStatusDefinition('active_development').category).toBe('in_progress');
-      expect(resolveStatusDefinition('rejected_proposal').category).toBe('canceled');
-      expect(resolveStatusDefinition('custom_arbitrary_key').category).toBe('not_started');
+    it('does not guess a category from the spelling of an unknown key', () => {
+      for (const key of ['draft_v2', 'final_approved', 'unfinished', 'not_done', 'inactive', 'custom_arbitrary_key']) {
+        expect(resolveStatusDefinition(key).category).toBe('not_started');
+      }
     });
   });
 

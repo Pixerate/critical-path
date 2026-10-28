@@ -417,8 +417,8 @@ export class CriticalPathRouter {
           return this.jsonResponse({ project });
         }
         if (method === 'PATCH' || method === 'PUT') {
-          const updates = await this.readBody(request, schemas.UpdateProjectSchema);
-          const project = await engine.updateProject(projectId, updates);
+          const { statusMapping, ...updates } = await this.readBody(request, schemas.UpdateProjectSchema);
+          const project = await engine.updateProject(projectId, updates, { statusMapping });
           if (!project) return this.jsonResponse({ error: 'Project not found' }, 404);
           return this.jsonResponse({ project });
         }
@@ -917,6 +917,8 @@ export class CriticalPathRouter {
         return this.jsonResponse({ error: e.message, fieldKey: e.fieldKey }, 400);
       case 'CircularDependencyError':
         return this.jsonResponse({ error: e.message, cyclePath: e.cyclePath }, 409);
+      case 'ConflictError':
+        return this.jsonResponse({ error: e.message }, 409);
       case 'NotFoundError':
         return this.jsonResponse({ error: e.message }, 404);
       case 'PayloadTooLargeError':
