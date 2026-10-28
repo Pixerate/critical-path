@@ -1,5 +1,31 @@
 # @critical-path/core
 
+## 0.54.0
+
+### Minor Changes
+
+- 1021eb5: Status, workflow and effort integrity.
+  
+  - **BREAKING:** a task's `status` must be one of its project's statuses (`statusDefinitions`, else the workflow's), on create and update (`400` otherwise). Unknown keys are no longer guessed from their spelling (`unfinished` was treated as completed); `resolveStatusDefinition` returns `not_started` for them.
+  - **BREAKING:** derived task fields are rejected in request bodies and left out of `CreateTaskInput`: `semanticStatus`, `loggedHours`, `actualHours`, `billableHours`, `actualDurationSeconds`, `actualDurationMinutes`, `billableDurationMinutes`, `inProgressSince`, `blockedSince`, `blockedDurationSeconds`. `semanticStatus` is always derived from the status, so CPM, metrics and lifecycle agree. Hours come from time entries.
+  - `actualHours` is no longer overwritten with wall-clock time when a task leaves in-progress (logged effort was being lost). Elapsed time stays in `actualDurationSeconds` / `actualDurationMinutes`.
+  - **BREAKING:** changing a project's statuses (`workflowId`, `workflow` or `statusDefinitions`) requires `statusMapping` for every status its tasks are in that the project will no longer have (`engine.updateProject(id, updates, { statusMapping })`, or `statusMapping` in the `PATCH /projects/:id` body); tasks are moved in the same operation. Deleting a workflow that a project uses, or removing a status tasks are in, is refused with the new `ConflictError` (`409`).
+  - New projects are pinned to the workflow they start with, so a later default does not move them.
+  - MCP: new `log_time` tool; `update_task` no longer takes `loggedHours`.
+
+## 0.53.0
+
+### Minor Changes
+
+- 6c3359f: Dependency types now mean the same thing everywhere, and manual blocks are no longer cleared automatically.
+  
+  - **BREAKING:** `TaskDependency.type` is `'blocking' | 'relates_to'`. New `blocked_by` dependencies are rejected (`400` over HTTP, `ValidationError` from the engine). Records already stored as `blocked_by` are still read in the right direction.
+  - New `precedenceOf(dependency)` returns the scheduling edge (`{ before, after }`) or `null` for `relates_to`. The cycle check, the dependency graph, lifecycle state, auto-unblocking, critical path analysis, the ladder and MCP all use it. Before, the cycle check accepted `blocked_by` loops that the critical path then scheduled silently, and rejected harmless `relates_to` back-links as circular.
+  - `relates_to` links are no longer upstream or downstream in `getTaskDependencyGraph`, and no longer make a task blocked.
+  - `calculateCPM` reports tasks on a dependency cycle in `cyclicTaskIds` instead of scheduling them silently.
+  - **BREAKING:** auto-unblocking no longer writes to downstream tasks. `task.unblocked` is published when a task's upstream work is all finished; `isBlocked` / `blockedReason` are a manual block that stays until cleared. Dependency blocking is reported by `getTaskLifecycleState` (`blockingTaskIds`).
+  - Canceled upstream tasks count as satisfied in lifecycle state too, matching auto-unblocking and critical path analysis.
+
 ## 0.52.0
 
 ### Minor Changes
