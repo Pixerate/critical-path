@@ -8,9 +8,12 @@ const ROUTING: Array<{ when: string; tools: string[] }> = [
   { when: 'Add or change work', tools: ['create_task', 'update_task', 'create_deliverable'] },
   { when: 'Order work: task B cannot start until task A finishes', tools: ['add_dependency', 'remove_dependency'] },
   { when: 'What a task waits for and what waits for it', tools: ['get_task'] },
+  { when: 'A dated checkpoint (release, sign-off): a task with isMilestone and a deadline', tools: ['create_task'] },
+  { when: 'Record hours worked, or correct them', tools: ['log_time', 'update_time_entry', 'delete_time_entry'] },
   { when: 'Record a decision or note on a task', tools: ['add_comment'] },
   { when: '"When will it finish?" / "What is critical?"', tools: ['calculate_critical_path'] },
   { when: 'Dates and conflicts across several projects', tools: ['calculate_portfolio_critical_path'] },
+  { when: 'Save the agreed plan, or "what slipped since the plan?"', tools: ['create_baseline', 'list_baselines', 'calculate_critical_path'] },
   { when: 'Project status and phase health', tools: ['get_timeline_ladder'] },
   { when: '"Is this task on track?" / why is it late', tools: ['get_task_metrics', 'get_task_ladder', 'get_task_progress_history'] },
   { when: '"Who is overloaded?" / capacity', tools: ['get_workload_distribution'] }

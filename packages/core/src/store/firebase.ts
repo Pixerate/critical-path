@@ -4,6 +4,7 @@ import type {
   Project,
   Task,
   Iteration,
+  Baseline,
   Team,
   TaskContainer,
   Comment,
@@ -388,6 +389,30 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
     if (!existing) return false;
     await this.db.collection('tasks').doc(id).delete();
     return true;
+  }
+
+  // --- Baselines ---
+  async getBaselines(projectId: string): Promise<Baseline[]> {
+    const snap = await this.db.collection('baselines').where('projectId', '==', projectId).get();
+    return snap.docs
+      .map((doc) => ({ ...doc.data(), id: doc.id }) as Baseline)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  }
+
+  async getBaseline(id: string): Promise<Baseline | null> {
+    const snap = await this.db.collection('baselines').doc(id).get();
+    return snap.exists ? ({ ...snap.data(), id: snap.id } as Baseline) : null;
+  }
+
+  async createBaseline(baseline: Omit<Baseline, 'id' | 'createdAt'>): Promise<Baseline> {
+    const docRef = this.db.collection('baselines').doc();
+    const created: Baseline = { ...baseline, id: docRef.id, createdAt: new Date().toISOString() };
+    await docRef.set(sanitizeFirestoreData(created));
+    return created;
+  }
+
+  async deleteBaseline(id: string): Promise<boolean> {
+    return this.deleteDoc('baselines', id);
   }
 
   // --- Iterations ---

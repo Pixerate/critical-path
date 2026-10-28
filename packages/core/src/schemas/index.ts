@@ -394,6 +394,19 @@ export const UpdateTimeEntrySchema = strictObject({
   ...clearable({ description: z.string(), customFields })
 }).partial();
 
+// --- Baselines ---
+
+/** Saving a baseline: a name, and the same options as critical path analysis. */
+export const CreateBaselineSchema = strictObject({
+  name: nonEmpty,
+  calendars: z.enum(['project', 'assignee']).optional(),
+  levelResources: z.boolean().optional(),
+  levelingPriority: z.enum(['slack', 'priority', 'dueDate', 'order']).optional(),
+  effort: z.enum(['estimate', 'remaining']).optional(),
+  defaultEstimateHours: z.number().nonnegative().optional(),
+  customFields: customFields.optional()
+});
+
 // --- List queries (URL search parameters) ---
 
 const csv = z
@@ -478,6 +491,7 @@ export type UpdateTeamBody = z.input<typeof UpdateTeamSchema>;
 export type CreateContainerBody = z.input<typeof CreateContainerSchema>;
 export type UpdateContainerBody = z.input<typeof UpdateContainerSchema>;
 export type UpdateTimeEntryBody = z.input<typeof UpdateTimeEntrySchema>;
+export type CreateBaselineBody = z.input<typeof CreateBaselineSchema>;
 export type CreateIterationBody = z.input<typeof CreateIterationSchema>;
 export type UpdateIterationBody = z.input<typeof UpdateIterationSchema>;
 export type CreateCommentBody = z.input<typeof CreateCommentSchema>;

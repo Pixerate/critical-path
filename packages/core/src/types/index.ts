@@ -739,6 +739,8 @@ export interface TaskCriticalPathSchedule {
   levelingDelayHours?: number;
   /** With resource levelling: the task this one last waited for, when its assignee was busy. */
   waitingOn?: string;
+  /** With `baselineId`: how far the task moved since the baseline. */
+  baseline?: TaskBaselineVariance;
   /** The task's `allocation` when below 1 (`durationHours` is then effort / allocation). */
   allocation?: number;
   /** Set when the task is a milestone. */
@@ -797,6 +799,60 @@ export interface CriticalPathAnalysis {
    * `defaultEstimateHours` (default 1), so the dates are less certain than they look.
    */
   unestimatedTaskIds?: string[];
+  /** With `baselineId`: the baseline compared against and how the project moved since. */
+  baseline?: BaselineComparison;
+}
+
+/** One task's plan in a baseline. */
+export interface BaselineTask {
+  taskId: string;
+  earlyStart: number;
+  earlyFinish: number;
+  durationHours?: number;
+  earlyStartDate?: string;
+  earlyFinishDate?: string;
+  isMilestone?: true;
+  isSummary?: true;
+}
+
+/**
+ * A frozen copy of a project's critical path analysis (`engine.createBaseline`): the plan to
+ * measure slippage against. Pass its id as `baselineId` to critical path analysis.
+ */
+export interface Baseline {
+  id: string;
+  projectId: string;
+  name: string;
+  /** Who took it. */
+  createdBy?: string;
+  projectStartDate?: string;
+  projectEndDate?: string;
+  totalDurationHours: number;
+  tasks: BaselineTask[];
+  customFields?: Record<string, unknown>;
+  createdAt: string;
+}
+
+/** How a task moved against a baseline, in working hours (positive is later than planned). */
+export interface TaskBaselineVariance {
+  startVarianceHours: number;
+  finishVarianceHours: number;
+}
+
+/** The baseline an analysis was compared with (`baselineId`). */
+export interface BaselineComparison {
+  baselineId: string;
+  name: string;
+  createdAt: string;
+  projectEndDate?: string;
+  /** Working hours the forecast end moved since the baseline; positive is a slip. */
+  endVarianceHours: number;
+  /** Tasks that finish later than planned, worst first (ties by id). */
+  slippedTaskIds: string[];
+  /** Tasks in the analysis that the baseline does not have. */
+  addedTaskIds: string[];
+  /** Baseline tasks that are no longer in the project. */
+  removedTaskIds: string[];
 }
 
 /** Critical path analysis across several projects (`calculatePortfolioCriticalPath`). */

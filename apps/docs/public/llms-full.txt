@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-28T14:05:25.049Z
+> Documentation generated on: 2026-10-28T14:13:57.751Z
 
 ================================================================================
 
@@ -400,6 +400,11 @@ Work through the items whose version is newer than the version you started from 
 
 - **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
 - **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
+
+### core 0.53: baselines
+
+- **Check:** a custom `StorageAdapter`.
+- **Fix:** implement `getBaselines(projectId)` (oldest first), `getBaseline(id)`, `createBaseline(baseline)` (assign `id` and `createdAt`) and `deleteBaseline(id)`, and run the conformance suite.
 
 ### core 0.53: deliverables, entities and helpers
 
@@ -1571,6 +1576,23 @@ A task with subtasks is a **summary task**. It is not scheduled itself: its subt
 
 An unfinished task with no estimate and no logged effort is scheduled for `defaultEstimateHours` (default 1) and listed in `unestimatedTaskIds`, so a half-estimated plan does not look more certain than it is. Set the assumption per call (`defaultEstimateHours`, `?defaultEstimateHours=` over HTTP) or on the engine (`criticalPathDefaultEstimateHours`). An explicit estimate of 0 counts as an estimate.
 
+### Baselines
+
+A baseline is a named, frozen copy of a project's analysis: the plan to measure slippage against. Take one when a plan is agreed, then pass its id to later analyses:
+
+```ts
+const plan = await engine.createBaseline(projectId, { name: 'Agreed plan', calendars: 'assignee' });
+
+const now = await engine.calculateCriticalPath(projectId, { calendars: 'assignee', baselineId: plan.id });
+now.baseline;  // { endVarianceHours: 16, slippedTaskIds: [...], addedTaskIds: [...], removedTaskIds: [...] }
+now.tasks[0].baseline; // { startVarianceHours: 8, finishVarianceHours: 16 }
+```
+
+- Variances are working hours on the project calendar; positive is later than the plan. Dated analyses compare dates, so re-running from a later start shows the delay; undated ones compare offsets.
+- `slippedTaskIds` lists leaf tasks that finish later than planned, worst first. Tasks added since are in `addedTaskIds`, removed ones in `removedTaskIds`.
+- `createBaseline` takes the same options as the analysis (`calendars`, `levelResources`, `effort`, ...); compare like with like. It needs `plan.manage`; reading needs access to the project. Baselines are deleted with their project.
+- Over HTTP: `POST /projects/:projectId/baselines`, `GET /projects/:projectId/baselines`, `GET | DELETE /baselines/:baselineId`, and `?baselineId=` on `GET /projects/:projectId/critical-path`. MCP: `create_baseline`, `list_baselines`, and `baselineId` on `calculate_critical_path`.
+
 ### Finished tasks
 
 Completed and canceled tasks (by `semanticStatus`, or the default `done` / `canceled` statuses) take **no time** in critical path analysis and occupy nobody when levelling. Their successors can start at the project start, and dates reflect only the remaining work.
@@ -2406,6 +2428,7 @@ Any class implementing `StorageAdapter` from `@critical-path/core` can be passed
 | `CommentRepository` | `getComments(taskId)`, `getComment`, `addComment`, `updateComment`, `deleteComment`, optional `addReaction` / `removeReaction` |
 | `AttachmentRepository` | `getAttachments(filter)`, `getAttachment`, `createAttachment`, `deleteAttachment` |
 | `ActivityRepository` | `getActivities(filter)`, `queryActivities(query)`, `logActivity` |
+| `BaselineRepository` | `getBaselines(projectId)` (oldest first), `getBaseline`, `createBaseline`, `deleteBaseline` |
 | `TimeEntryRepository` | `getTimeEntries(taskId)`, `getTimeEntry`, `logTime`, `updateTimeEntry`, `deleteTimeEntry` |
 | `DependencyRepository` | `getDependencies(taskId)`, `getDependency`, `addDependency`, `removeDependency` |
 | `WebhookRepository` | `getWebhooks`, `getWebhook`, `addWebhook`, `updateWebhook`, `deleteWebhook` |
@@ -3197,8 +3220,10 @@ graph TD
 | `create_deliverable` | collaboration | An output that several tasks produce | `projectId`, `title`, `dueDate`, `taskIds` |
 | `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `taskId` |
 | `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `taskId`, `content` |
-| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort` |
+| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort`, `baselineId` |
 | `calculate_portfolio_critical_path` | scheduling | Several projects sharing people | `projectIds`, `projectOrder`, `calendars`, `levelResources` |
+| `create_baseline` | scheduling | Saving the agreed plan to track slippage | `projectId`, `name` |
+| `list_baselines` | scheduling | Finding a baseline to compare with | `projectId` |
 | `get_workload_distribution` | scheduling | Hours and utilization per person, team or category over time | `projectId`, `groupBy`, `interval`, `metric`, `startDate`, `endDate` |
 | `get_timeline_ladder` | analytics | Project status: phase health, timeline, evidence of work | `projectId`, `level` |
 | `get_task_ladder` | analytics | One task's phase, schedule position and evidence | `taskId` |
@@ -3859,6 +3884,14 @@ Register a webhook. Returns `201 { webhook, secret }`; the secret is only shown 
 
 ### `GET | PATCH | DELETE /webhooks/:webhookId`
 Read, update (including `secret` rotation and `active`), or delete a webhook. See the Webhooks guide for the delivery format and signature verification.
+
+## Baselines
+
+### `GET | POST /projects/:projectId/baselines`
+List a project's baselines (oldest first), or save the current critical path analysis as one: `{ name, calendars?, levelResources?, levelingPriority?, effort?, defaultEstimateHours?, customFields? }` (needs `plan.manage`).
+
+### `GET | DELETE /baselines/:baselineId`
+Read or delete a baseline. Compare with one by adding `?baselineId=` to `GET /projects/:projectId/critical-path`: each task gets `baseline: { startVarianceHours, finishVarianceHours }` and the analysis gets `baseline: { endVarianceHours, slippedTaskIds, addedTaskIds, removedTaskIds }`.
 
 ## Time Tracking
 

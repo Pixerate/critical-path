@@ -6,6 +6,7 @@ export * from './authorization.js';
 export * from './attachments.js';
 export * from './effort.js';
 export * from './cpm.js';
+export * from './baseline.js';
 export * from './ladder.js';
 export * from './metrics.js';
 export * from './workload.js';

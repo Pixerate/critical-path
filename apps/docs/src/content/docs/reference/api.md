@@ -170,6 +170,14 @@ Register a webhook. Returns `201 { webhook, secret }`; the secret is only shown 
 ### `GET | PATCH | DELETE /webhooks/:webhookId`
 Read, update (including `secret` rotation and `active`), or delete a webhook. See the Webhooks guide for the delivery format and signature verification.
 
+## Baselines
+
+### `GET | POST /projects/:projectId/baselines`
+List a project's baselines (oldest first), or save the current critical path analysis as one: `{ name, calendars?, levelResources?, levelingPriority?, effort?, defaultEstimateHours?, customFields? }` (needs `plan.manage`).
+
+### `GET | DELETE /baselines/:baselineId`
+Read or delete a baseline. Compare with one by adding `?baselineId=` to `GET /projects/:projectId/critical-path`: each task gets `baseline: { startVarianceHours, finishVarianceHours }` and the analysis gets `baseline: { endVarianceHours, slippedTaskIds, addedTaskIds, removedTaskIds }`.
+
 ## Time Tracking
 
 ### `GET /time-entries?taskId=:taskId` and `POST /time-entries`

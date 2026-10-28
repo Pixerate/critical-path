@@ -10,7 +10,8 @@ import type {
   Comment,
   CommentReaction,
   Attachment,
-  Deliverable
+  Deliverable,
+  Baseline
 } from '../types/index.js';
 
 export interface DomainEvent<TPayload = Record<string, unknown>> {
@@ -220,6 +221,16 @@ export interface ContainerDeletedEvent extends DomainEvent<{ containerId: string
   readonly aggregateType: 'Container';
 }
 
+export interface BaselineCreatedEvent extends DomainEvent<{ baseline: Baseline }> {
+  readonly name: 'baseline.created';
+  readonly aggregateType: 'Project';
+}
+
+export interface BaselineDeletedEvent extends DomainEvent<{ baselineId: string; projectId: string }> {
+  readonly name: 'baseline.deleted';
+  readonly aggregateType: 'Project';
+}
+
 export interface IterationCreatedEvent extends DomainEvent<{ iteration: Iteration }> {
   readonly name: 'iteration.created';
   readonly aggregateType: 'Iteration';
@@ -269,6 +280,8 @@ export type CriticalPathDomainEvent =
   | TaskUnblockedEvent
   | TaskDeletedEvent
   | TimeLoggedEvent
+  | BaselineCreatedEvent
+  | BaselineDeletedEvent
   | TimeEntryUpdatedEvent
   | TimeEntryDeletedEvent
   | CommentAddedEvent
@@ -371,6 +384,8 @@ export const DOMAIN_EVENT_NAMES = [
   'dependency.removed',
   'iteration.completed',
   'iteration.created',
+  'baseline.created',
+  'baseline.deleted',
   'iteration.deleted',
   'iteration.started',
   'iteration.updated',

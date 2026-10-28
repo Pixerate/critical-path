@@ -74,6 +74,14 @@ export const TimeEntryOutput = obj({
   loggedAt: opt(z.string())
 }).describe('A time entry');
 
+export const BaselineOutput = obj({
+  id: z.string().describe('Baseline id; pass as baselineId to calculate_critical_path'),
+  projectId: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+  projectEndDate: opt(z.string()).describe('The forecast end when the baseline was taken')
+}).describe('A saved plan to compare against');
+
 export const CommentOutput = obj({
   id: z.string(),
   taskId: z.string(),
@@ -104,6 +112,12 @@ const TaskScheduleOutput = obj({
   waitingOn: opt(z.string()).describe('With levelling: the task this one waited for'),
   isMilestone: opt(z.boolean()).describe('True for a milestone'),
   isSummary: opt(z.boolean()).describe('True for a task with subtasks: its dates and slack are roll-ups of them'),
+  baseline: opt(
+    obj({
+      startVarianceHours: z.number(),
+      finishVarianceHours: z.number().describe('Working hours later than the baseline; negative is earlier')
+    })
+  ).describe('With baselineId: how far the task moved since the baseline'),
   deadlineDate: opt(z.string()).describe("The task's deadline as an instant"),
   deadlineVarianceHours: opt(z.number()).describe('Working hours from forecast finish to deadline; negative means it will be missed')
 });
@@ -117,6 +131,14 @@ export const CriticalPathOutput = obj({
   missedDeadlineTaskIds: opt(z.array(z.string())).describe('Tasks forecast to finish after their deadline'),
   unestimatedTaskIds: opt(z.array(z.string())).describe('Unfinished tasks with no estimate, scheduled for defaultEstimateHours'),
   cyclicTaskIds: opt(z.array(z.string())).describe('Tasks on a dependency cycle; their dates are not reliable'),
+  baseline: opt(
+    obj({
+      baselineId: z.string(),
+      name: z.string(),
+      endVarianceHours: z.number().describe('Working hours the forecast end moved since the baseline; positive is a slip'),
+      slippedTaskIds: z.array(z.string()).describe('Tasks finishing later than planned, worst first')
+    })
+  ).describe('With baselineId: the comparison with that baseline'),
   tasks: z.array(TaskScheduleOutput),
   leveled: opt(z.boolean()),
   unleveledProjectEndDate: opt(z.string()).describe('With levelling: the end date before levelling'),

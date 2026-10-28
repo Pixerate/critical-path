@@ -40,7 +40,8 @@ import type {
   WorkloadDistribution,
   WorkloadDistributionOptions,
   StatusDefinition,
-  SemanticStatus
+  SemanticStatus,
+  Baseline
 } from '../types/index.js';
 import { StorageAdapter, InMemoryStore, type ActivityQuery, type Page, type TaskQuery, type TaskHourDeltas } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
@@ -90,6 +91,8 @@ import {
   TaskDependencyAddedEvent,
   TimeLoggedEvent,
   TimeEntryUpdatedEvent,
+  BaselineCreatedEvent,
+  BaselineDeletedEvent,
   TimeEntryDeletedEvent,
   CommentAddedEvent,
   CommentUpdatedEvent,
@@ -108,6 +111,7 @@ import { buildStorageKey, normalizeUploadData } from '../storage/file-storage.js
 import { generateWebhookSecret } from '../webhooks/signature.js';
 import type { DomainEvent } from '../domain/events.js';
 import { calculateCPM, calculatePortfolioCPM, type CPMOptions } from '../domain/cpm.js';
+import { compareToBaseline, toBaselineTasks } from '../domain/baseline.js';
 
 /** Options for `calculatePortfolioCriticalPath`. */
 export interface PortfolioCriticalPathOptions extends CPMOptions {
@@ -839,6 +843,7 @@ export class CriticalPathEngine {
 
     for (const container of await this.store.getContainers(id)) await this.store.deleteContainer(container.id);
     for (const iteration of await this.store.getIterations(id)) await this.store.deleteIteration(iteration.id);
+    for (const baseline of await this.store.getBaselines(id)) await this.store.deleteBaseline(baseline.id);
     for (const deliverable of await this.store.getDeliverables(id)) await cascade.deleteDeliverable(deliverable.id);
     for (const attachment of await this.store.getAttachments({ projectId: id })) await cascade.deleteAttachment(attachment.id);
 
@@ -2661,12 +2666,77 @@ export class CriticalPathEngine {
   }
 
   // --- Ladder of Abstraction & Critical Path Method ---
+  /**
+   * Critical path analysis of a project. With `baselineId`, every task also reports how far it moved
+   * since that baseline (`baseline` per task and on the analysis).
+   */
   async calculateCriticalPath(
     projectId: string,
-    options: CPMOptions = {}
+    options: CPMOptions & { baselineId?: string } = {}
   ): Promise<CriticalPathAnalysis> {
     await this.requireProjectAccess('project.read', projectId);
     const project = await this.store.getProject(projectId);
+    const baseline = options.baselineId ? await this.getBaseline(options.baselineId) : undefined;
+    if (options.baselineId && baseline?.projectId !== projectId) {
+      throw new NotFoundError(`Baseline "${options.baselineId}" not found in this project.`);
+    }
+    const analysis = await this.analyseProject(projectId, project, options);
+    return baseline ? compareToBaseline(analysis, baseline, options.schedule || project?.schedule || this.config.defaultSchedule) : analysis;
+  }
+
+  /**
+   * Saves the project's current critical path analysis as a named baseline, to measure slippage
+   * against later (`calculateCriticalPath(projectId, { baselineId })`). Takes the same options as
+   * the analysis. Needs `plan.manage`.
+   */
+  async createBaseline(projectId: string, input: { name: string; customFields?: Record<string, unknown> } & CPMOptions): Promise<Baseline> {
+    await this.requireProjectAccess('plan.manage', projectId);
+    const project = await this.requireExistingProject(projectId);
+    const { name, customFields, ...options } = input;
+    if (!name?.trim()) throw new ValidationError('A baseline needs a name.');
+    const analysis = await this.analyseProject(projectId, project, options);
+    const created = await this.store.createBaseline({
+      projectId,
+      name,
+      ...(this.actor ? { createdBy: this.actor.userId } : {}),
+      ...(analysis.projectStartDate ? { projectStartDate: analysis.projectStartDate } : {}),
+      ...(analysis.projectEndDate ? { projectEndDate: analysis.projectEndDate } : {}),
+      totalDurationHours: analysis.totalDurationHours,
+      tasks: toBaselineTasks(analysis),
+      ...(customFields ? { customFields } : {})
+    });
+    await this.publishEvent<BaselineCreatedEvent>({ name: 'baseline.created', aggregateId: projectId, aggregateType: 'Project', payload: { baseline: created } });
+    return created;
+  }
+
+  /** A project's baselines, oldest first. */
+  async getBaselines(projectId: string): Promise<Baseline[]> {
+    if (!(await this.canReadProject(projectId))) return [];
+    return this.store.getBaselines(projectId);
+  }
+
+  async getBaseline(id: string): Promise<Baseline | null> {
+    const baseline = await this.store.getBaseline(id);
+    return baseline && (await this.canReadProject(baseline.projectId)) ? baseline : null;
+  }
+
+  async deleteBaseline(id: string): Promise<boolean> {
+    const existing = await this.getBaseline(id);
+    if (!existing) return false;
+    await this.requireProjectAccess('plan.manage', existing.projectId);
+    const deleted = await this.store.deleteBaseline(id);
+    if (deleted) {
+      await this.publishEvent<BaselineDeletedEvent>({
+        name: 'baseline.deleted',
+        aggregateId: existing.projectId,
+        aggregateType: 'Project',
+        payload: { baselineId: id, projectId: existing.projectId }
+      });
+    }
+    return deleted;
+  }
+
+  private async analyseProject(projectId: string, project: Project | null, options: CPMOptions): Promise<CriticalPathAnalysis> {
     const tasks = await this.store.getTasks(projectId);
     const dependencies = await this.loadDependencies(tasks);
     const schedule = options.schedule || project?.schedule || this.config.defaultSchedule;

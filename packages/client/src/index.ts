@@ -13,6 +13,7 @@ import type {
   CreateDeliverableBody,
   UpdateDeliverableBody,
   UpdateTimeEntryBody,
+  CreateBaselineBody,
   CreateIterationBody,
   UpdateIterationBody,
   CreateCommentBody,
@@ -47,6 +48,7 @@ import type {
   PresignedUrlOptions,
   PresignedUploadResult,
   TimeEntry,
+  Baseline,
   Workflow,
   Deliverable,
   DeliverableSummary,
@@ -356,11 +358,35 @@ export class CriticalPathClient {
    * `calendars: 'assignee'` schedules each task on its assignee's or team's calendar;
    * `levelResources: true` (assignee mode) also limits each assignee to one task at a time.
    */
-  async calculateCriticalPath(projectId: string, options: CriticalPathQueryOptions = {}): Promise<CriticalPathAnalysis> {
+  /** With `baselineId`, each task also reports how far it moved since that baseline. */
+  async calculateCriticalPath(projectId: string, options: CriticalPathQueryOptions & { baselineId?: string } = {}): Promise<CriticalPathAnalysis> {
     const res = await this.request<{ analysis: CriticalPathAnalysis }>(
       `/projects/${encodeURIComponent(projectId)}/critical-path${criticalPathQuery(options)}`
     );
     return res.analysis;
+  }
+
+  async getBaselines(projectId: string): Promise<Baseline[]> {
+    const res = await this.request<{ baselines: Baseline[] }>(`/projects/${encodeURIComponent(projectId)}/baselines`);
+    return res.baselines;
+  }
+
+  /** Saves the project's current critical path analysis as a named baseline. */
+  async createBaseline(projectId: string, data: CreateBaselineBody): Promise<Baseline> {
+    const res = await this.request<{ baseline: Baseline }>(`/projects/${encodeURIComponent(projectId)}/baselines`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.baseline;
+  }
+
+  async getBaseline(id: string): Promise<Baseline> {
+    const res = await this.request<{ baseline: Baseline }>(`/baselines/${encodeURIComponent(id)}`);
+    return res.baseline;
+  }
+
+  async deleteBaseline(id: string): Promise<boolean> {
+    return this.deleteRequest(`/baselines/${encodeURIComponent(id)}`);
   }
 
   /**
@@ -938,9 +964,10 @@ export interface CriticalPathQueryOptions {
 }
 
 function criticalPathQuery(
-  options: CriticalPathQueryOptions & { projectIds?: string[]; projectOrder?: string[]; includeHiddenWork?: boolean }
+  options: CriticalPathQueryOptions & { projectIds?: string[]; projectOrder?: string[]; includeHiddenWork?: boolean; baselineId?: string }
 ): string {
   const params = new URLSearchParams();
+  if (options.baselineId) params.set('baselineId', options.baselineId);
   if (options.includeHiddenWork) params.set('includeHiddenWork', 'true');
   if (options.projectIds) params.set('projectIds', options.projectIds.join(','));
   if (options.projectOrder) params.set('projectOrder', options.projectOrder.join(','));

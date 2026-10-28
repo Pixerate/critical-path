@@ -144,6 +144,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
 - **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
 
+### core 0.53: baselines
+
+- **Check:** a custom `StorageAdapter`.
+- **Fix:** implement `getBaselines(projectId)` (oldest first), `getBaseline(id)`, `createBaseline(baseline)` (assign `id` and `createdAt`) and `deleteBaseline(id)`, and run the conformance suite.
+
 ### core 0.53: deliverables, entities and helpers
 
 - **Check:** deliverable statuses other than `planned`, `in_progress`, `in_review`, `delivered`, `canceled`; `format` or `specs` on deliverables; imports of `TaskEntity`, `ProjectEntity`, `DeliverableEntity`, `BaseEntity`, `isDraftTask`, `isArchivedTask`, `isTrashedTask`, `isTrashedOrArchivedTask`, `isWorkflowTask` (or `isTaskDraft`, `isTaskArchived`, `isTaskTrashed`, `isTaskTrashedOrArchived`, `isTaskWorkflow`); tasks whose `assigneeId` is not in `assignees`; the `'blocked'` tag; `sprintId`.

@@ -189,8 +189,10 @@ handle.unregister();
 | `create_deliverable` | collaboration | An output that several tasks produce | `{ projectId?, title, dueDate?, taskIds? }` |
 | `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `{ taskId }` |
 | `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `{ taskId, content }` |
-| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack (`calendars: 'assignee'` uses each assignee's or team's calendar; `levelResources` limits each assignee to one task at a time) | `{ projectId?, calendars?, levelResources?, levelingPriority?, effort? }` |
+| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack (`calendars: 'assignee'` uses each assignee's or team's calendar; `levelResources` limits each assignee to one task at a time) | `{ projectId?, calendars?, levelResources?, levelingPriority?, effort?, defaultEstimateHours?, baselineId? }` |
 | `calculate_portfolio_critical_path` | scheduling | Several projects (default: all readable), sharing people and teams when levelling | `{ projectIds?, projectOrder?, includeHiddenWork?, calendars?, levelResources?, levelingPriority?, effort? }` |
+| `create_baseline` | scheduling | Saving the agreed plan to track slippage against | `{ projectId?, name, calendars?, levelResources? }` |
+| `list_baselines` | scheduling | Finding a baseline to compare with (`baselineId` on `calculate_critical_path`) | `{ projectId? }` |
 | `get_workload_distribution` | scheduling | Hours, capacity and utilization per person, team or category over time | `{ projectId?, startDate?, endDate?, interval?, groupBy?, metric? }` |
 | `get_timeline_ladder` | analytics | Project status: phase health (macro), timeline (standard), evidence (concrete) | `{ projectId?, level?, containerId?, iterationId? }` |
 | `get_task_ladder` | analytics | One task's phase, schedule position and evidence | `{ taskId }` |

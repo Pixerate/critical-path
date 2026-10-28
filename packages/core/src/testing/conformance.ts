@@ -331,6 +331,15 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
       expect(await store.getTimeEntry(entry.id)).toBeNull();
       expect(await store.getTimeEntries('t1')).toHaveLength(0);
 
+      const first = await store.createBaseline({ projectId: 'p1', name: 'Plan', totalDurationHours: 16, tasks: [{ taskId: 't1', earlyStart: 0, earlyFinish: 16 }] });
+      const second = await store.createBaseline({ projectId: 'p1', name: 'Replan', totalDurationHours: 24, tasks: [] });
+      expect(await store.getBaseline(first.id)).toEqual(first);
+      // Oldest first, ties by id
+      const ordered = [first, second].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+      expect((await store.getBaselines('p1')).map((b) => b.id)).toEqual(ordered.map((b) => b.id));
+      expect(await store.deleteBaseline(first.id)).toBe(true);
+      expect(await store.getBaseline(first.id)).toBeNull();
+
       const webhook = await store.addWebhook({ name: 'Hook', url: 'https://example.com/h', secret: 'whsec_x', events: ['*'], active: true, tenantId: 'tenant-1' });
       expect(await store.getWebhook(webhook.id)).toMatchObject({ name: 'Hook', secret: 'whsec_x', events: ['*'], active: true, tenantId: 'tenant-1' });
     });

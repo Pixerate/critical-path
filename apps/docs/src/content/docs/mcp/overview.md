@@ -74,8 +74,10 @@ graph TD
 | `create_deliverable` | collaboration | An output that several tasks produce | `projectId`, `title`, `dueDate`, `taskIds` |
 | `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `taskId` |
 | `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `taskId`, `content` |
-| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort` |
+| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort`, `baselineId` |
 | `calculate_portfolio_critical_path` | scheduling | Several projects sharing people | `projectIds`, `projectOrder`, `calendars`, `levelResources` |
+| `create_baseline` | scheduling | Saving the agreed plan to track slippage | `projectId`, `name` |
+| `list_baselines` | scheduling | Finding a baseline to compare with | `projectId` |
 | `get_workload_distribution` | scheduling | Hours and utilization per person, team or category over time | `projectId`, `groupBy`, `interval`, `metric`, `startDate`, `endDate` |
 | `get_timeline_ladder` | analytics | Project status: phase health, timeline, evidence of work | `projectId`, `level` |
 | `get_task_ladder` | analytics | One task's phase, schedule position and evidence | `taskId` |
