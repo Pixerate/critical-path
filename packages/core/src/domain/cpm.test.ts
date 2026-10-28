@@ -152,7 +152,8 @@ describe('Critical Path Method (CPM)', () => {
     expect(s1.durationHours).toBe(16);
 
     const s2 = result.tasks.find((t) => t.taskId === 'T2')!;
-    expect(s2.earlyStartDate).toBe('2026-09-21T17:00:00.000Z');
+    // Work resumes at the next working moment after T1's Monday 17:00 finish
+    expect(s2.earlyStartDate).toBe('2026-09-22T09:00:00.000Z');
     expect(s2.earlyFinishDate).toBe('2026-09-22T17:00:00.000Z');
     expect(s2.durationHours).toBe(8);
   });

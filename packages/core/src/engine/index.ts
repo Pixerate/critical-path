@@ -1498,7 +1498,7 @@ export class CriticalPathEngine {
   }
 
   // --- Task Dependencies & Graph ---
-  /** Adds a dependency. Adding one that already exists (same tasks and type) returns the existing one. */
+  /** Adds a dependency. Adding one that already exists (same tasks, type and lag) returns the existing one. */
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
     if (dep.type !== 'blocking' && dep.type !== 'relates_to') {
       throw new ValidationError(`Dependency type must be 'blocking' or 'relates_to', got "${String(dep.type)}".`);
@@ -1508,8 +1508,11 @@ export class CriticalPathEngine {
     if (!upstream) throw new NotFoundError(`Task "${dep.dependsOnTaskId}" not found.`);
     await this.requireProjectAccess('task.update', task.projectId);
     const duplicate = (await this.store.getDependencies(dep.taskId)).find(
-      (d) => d.taskId === dep.taskId && d.dependsOnTaskId === dep.dependsOnTaskId && d.type === dep.type
+      (d) => d.taskId === dep.taskId && d.dependsOnTaskId === dep.dependsOnTaskId && d.type === dep.type && (d.lagHours ?? 0) === (dep.lagHours ?? 0)
     );
+    if (dep.lagHours !== undefined && !Number.isFinite(dep.lagHours)) {
+      throw new ValidationError('lagHours must be a number of working hours.');
+    }
     if (duplicate) return duplicate;
     // Enforce the Directed Acyclic Graph (DAG) invariant. Informational links never form cycles.
     if (dep.type === 'blocking') {

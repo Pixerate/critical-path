@@ -183,7 +183,9 @@ const cpm = await engine.calculateCriticalPath(projectId, { calendars: 'assignee
 
 Suppose Bob's task finishes Thursday at 17:00 and Alice, who does not work Fridays, picks up the next task. Her task starts Monday at 09:00, and everything after it moves with it. A single project calendar would have started it on Friday.
 
-How the results differ from project mode:
+Both modes run the same date-based passes; project mode simply puts every task on the project calendar. With a start date, every task starts at the next working moment after its predecessors finish (a task after a 17:00 finish starts at 09:00 the next working day). Without one, project mode reports working-hour offsets only: no dates, and deadlines and start constraints (which are dates) do not apply.
+
+How assignee mode differs:
 
 - **Dates are exact per task.** Each task starts at the next working moment on its own calendar after its predecessors finish. Each `scheduleId` names the calendar used (when the schedule has an `id`).
 - **Slack is in the task's own working hours.** A Monday–Thursday assignee has less slack across the same span than a Monday–Friday one.
@@ -285,6 +287,20 @@ cpm.tasks.find((t) => t.taskId === launch.id);
 - **Levelling** sees deadlines through slack, so with the default `levelingPriority: 'slack'` the work behind a tight deadline gets people first.
 - **`dueDate` is different:** it is informational and only used by `levelingPriority: 'dueDate'`. Use `deadline` when the schedule should hold you to the date.
 - On assignee calendars, a milestone sits at the moment its predecessors finish (for example 17:00), not the next morning.
+
+### Start constraints and lag
+
+Two more constraints are dates and waits, so they work like deadlines and need a start date in project mode:
+
+- **`earliestStart`** on a task: it starts no earlier than the first working moment at or after it ("the venue is free from the 12th"). A date-only value is the start of that day. On a summary task it applies to every leaf under it. Levelling honours it too.
+- **`lagHours`** on a `blocking` dependency: working hours (on the waiting task's calendar) between the other task's finish and this one's start, e.g. `16` to let concrete cure for two days. A negative value is a lead: the waiting task may start that long before the other finishes.
+
+```ts
+await engine.addDependency({ taskId: build.id, dependsOnTaskId: pour.id, type: 'blocking', lagHours: 16 });
+await engine.updateTask(fitOut.id, { earliestStart: '2026-11-12' });
+```
+
+A start constraint that makes a deadline impossible shows up like any other miss: negative slack and an entry in `missedDeadlineTaskIds`. Dependencies are finish-to-start; with lag or lead that covers most start-to-start and finish-to-finish needs. `plannedStartDate` stays informational.
 
 ### Summary tasks (subtasks)
 

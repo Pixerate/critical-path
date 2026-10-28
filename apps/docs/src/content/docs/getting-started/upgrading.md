@@ -144,6 +144,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
 - **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
 
+### core 0.53: one scheduling engine, start constraints and lag
+
+- **Check:** assertions on project-mode `earlyStartDate` / `lateStartDate` of tasks that follow another task, or on the exact shape of project-mode results.
+- **Fix:** expect a successor to start at the next working moment after its predecessor finishes (offsets are unchanged), and `overallocations` / `scheduleId` in project-mode results. Model "not before" dates with `earliestStart` and waits between tasks with `lagHours` instead of dummy tasks.
+
 ### core 0.53: clearing fields, dates and time entries
 
 - **Check:** request bodies with dates that are not ISO dates or date-times; a custom `StorageAdapter`; UI code that spreads update payloads into local state; code that relied on `logTime` accepting unknown task ids.

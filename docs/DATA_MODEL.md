@@ -120,6 +120,7 @@ erDiagram
         datetime actualEndDate
         datetime dueDate
         datetime deadline
+        datetime earliestStart
         boolean isMilestone
         number estimatedHours
         number loggedHours

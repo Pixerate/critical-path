@@ -487,6 +487,7 @@ export class CriticalPathRouter {
             taskId,
             dependsOnTaskId: body.dependsOnTaskId,
             type: body.type || 'blocking',
+            ...(body.lagHours !== undefined ? { lagHours: body.lagHours } : {}),
             ...(body.customFields ? { customFields: body.customFields } : {})
           });
           return this.jsonResponse({ dependency: dep }, 201);

@@ -199,6 +199,7 @@ const taskFields = {
   completedAt: isoDateOrDateTime.optional(),
   dueDate: isoDateOrDateTime.optional(),
   deadline: isoDateOrDateTime.optional(),
+  earliestStart: isoDateOrDateTime.optional(),
   isMilestone: z.boolean().optional(),
   estimatedHours: z.number().nonnegative().optional(),
   allocation: z.number().gt(0).max(1).optional(),
@@ -250,6 +251,7 @@ export type ReportAgentStatusBody = z.infer<typeof ReportAgentStatusSchema>;
 export const CreateDependencySchema = strictObject({
   dependsOnTaskId: nonEmpty,
   type: z.enum(['blocking', 'relates_to']).default('blocking'),
+  lagHours: z.number().finite().optional(),
   customFields: customFields.optional()
 });
 
