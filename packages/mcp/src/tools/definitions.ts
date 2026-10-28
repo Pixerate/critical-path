@@ -447,6 +447,38 @@ export const logTimeTool = defineTool<{ taskId: string; hours: number; descripti
   execute: async (args, target) => target.logTime(args)
 });
 
+export const updateTimeEntryTool = defineTool<{ id: string; hours?: number; description?: string; isBillable?: boolean; loggedAt?: string }>({
+  name: 'update_time_entry',
+  title: 'Update Time Entry',
+  description:
+    "Correct a time entry logged with `log_time` (its id is in that result). The task's logged hours move by the difference. You can change your own entries; other people's need a project manager. Returns the entry.",
+  toolset: 'core',
+  outputZodSchema: TimeEntryOutput,
+  zodSchema: z.object({
+    id: z.string().describe('The time entry id'),
+    hours: z.number().positive().optional().describe('Corrected hours'),
+    description: z.string().optional().describe('What was done'),
+    isBillable: z.boolean().optional().describe('Whether the time is billable'),
+    loggedAt: z.string().optional().describe('When the work was done (ISO date-time)')
+  }),
+  annotations: { idempotentHint: true },
+  execute: async (args, target) => {
+    const { id, ...updates } = args;
+    return target.updateTimeEntry(id, updates);
+  }
+});
+
+export const deleteTimeEntryTool = defineTool<{ id: string }>({
+  name: 'delete_time_entry',
+  title: 'Delete Time Entry',
+  description: "Delete a time entry logged by mistake; its hours come off the task. Confirm with the user first. Returns { success }.",
+  toolset: 'core',
+  outputZodSchema: z.object({ success: z.boolean() }),
+  zodSchema: z.object({ id: z.string().describe('The time entry id') }),
+  annotations: { destructiveHint: true, idempotentHint: true },
+  execute: async (args, target) => ({ success: await target.deleteTimeEntry(args.id) })
+});
+
 export const addDependencyTool = defineTool<{ taskId: string; dependsOnTaskId: string; type?: 'blocking' | 'relates_to' }>({
   name: 'add_dependency',
   title: 'Add Dependency',
@@ -842,6 +874,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   updateTaskTool,
   deleteTaskTool,
   logTimeTool,
+  updateTimeEntryTool,
+  deleteTimeEntryTool,
   addDependencyTool,
   removeDependencyTool,
   listDeliverablesTool,

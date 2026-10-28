@@ -1451,6 +1451,29 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
     return Number(this.db.prepare('DELETE FROM dependencies WHERE id = ?').run(id).changes) > 0;
   }
 
+  async getTimeEntry(id: string): Promise<TimeEntry | null> {
+    const r = this.db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id) as any;
+    return r ? dropNulls({ ...this.expandExtra(r), isBillable: r.isBillable !== null ? Boolean(r.isBillable) : undefined }) : null;
+  }
+
+  async updateTimeEntry(id: string, updates: Partial<Omit<TimeEntry, 'id' | 'taskId'>>): Promise<TimeEntry | null> {
+    const existing = await this.getTimeEntry(id);
+    if (!existing) return null;
+    const updated: TimeEntry = { ...existing, ...updates, id, taskId: existing.taskId };
+    this.db
+      .prepare('UPDATE time_entries SET userId = ?, hours = ?, isBillable = ?, description = ?, loggedAt = ? WHERE id = ?')
+      .run(
+        updated.userId,
+        updated.hours,
+        updated.isBillable !== undefined ? (updated.isBillable ? 1 : 0) : null,
+        updated.description || null,
+        updated.loggedAt,
+        id
+      );
+    this.writeExtra('time_entries', updated);
+    return updated;
+  }
+
   async deleteTimeEntry(id: string): Promise<boolean> {
     return Number(this.db.prepare('DELETE FROM time_entries WHERE id = ?').run(id).changes) > 0;
   }

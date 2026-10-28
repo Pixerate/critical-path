@@ -3,7 +3,7 @@ import { CriticalPathRouter } from './router.js';
 import { createNextHandler } from './adapters/next.js';
 import { createSvelteKitHandler } from './adapters/sveltekit.js';
 import { createUniversalHandler } from './adapters/universal.js';
-import { InMemoryStore, createRolePolicy, ForbiddenError, type CriticalPathPlugin } from '@critical-path/core';
+import { InMemoryStore, createRolePolicy, ForbiddenError, DEFAULT_SOFTWARE_WORKFLOW, type CriticalPathPlugin } from '@critical-path/core';
 
 describe('@critical-path/server Router Tests', () => {
   it('handles project creation and retrieval over HTTP Fetch Requests', async () => {
@@ -1203,3 +1203,55 @@ describe('@critical-path/server Router Tests', () => {
   });
 });
 
+
+describe('clearing fields and correcting time over HTTP', () => {
+  const base = 'http://localhost:3000/api/critical-path';
+  const json = (method: string, body: unknown) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+  it('clears a task field with null and validates dates', async () => {
+    const router = new CriticalPathRouter();
+    const project = await router.engine.createProject({ name: 'P' });
+    const task = await router.engine.createTask({ projectId: project.id, title: 'A', dueDate: '2026-10-09' });
+
+    const cleared = await router.handleRequest(new Request(`${base}/tasks/${task.id}`, json('PATCH', { dueDate: null })));
+    expect(cleared.status).toBe(200);
+    expect((await cleared.json()).task).not.toHaveProperty('dueDate');
+
+    const bad = await router.handleRequest(new Request(`${base}/tasks/${task.id}`, json('PATCH', { dueDate: 'next friday' })));
+    expect(bad.status).toBe(400);
+  });
+
+  it('gets, corrects and deletes time entries', async () => {
+    const router = new CriticalPathRouter();
+    const project = await router.engine.createProject({ name: 'P' });
+    const task = await router.engine.createTask({ projectId: project.id, title: 'A' });
+    const entry = await router.engine.logTime({ taskId: task.id, hours: 2 });
+
+    expect((await router.handleRequest(new Request(`${base}/time-entries/${entry.id}`))).status).toBe(200);
+    const patched = await router.handleRequest(new Request(`${base}/time-entries/${entry.id}`, json('PATCH', { hours: 3 })));
+    expect((await patched.json()).timeEntry.hours).toBe(3);
+    expect((await router.engine.getTask(task.id))?.loggedHours).toBe(3);
+
+    const deleted = await router.handleRequest(new Request(`${base}/time-entries/${entry.id}`, { method: 'DELETE' }));
+    expect(deleted.status).toBe(200);
+    expect((await router.engine.getTask(task.id))?.loggedHours).toBe(0);
+    expect((await router.handleRequest(new Request(`${base}/time-entries/${entry.id}`))).status).toBe(404);
+  });
+
+  it('answers 409 for workflow conflicts', async () => {
+    const router = new CriticalPathRouter();
+    const software = await router.engine.createWorkflow({ ...DEFAULT_SOFTWARE_WORKFLOW, name: 'Software' });
+    const project = await router.engine.createProject({ name: 'P', workflowId: software.id });
+    const simple = await router.engine.createWorkflow({
+      name: 'Simple',
+      statuses: [{ key: 'open', label: 'Open', category: 'not_started' }],
+      transitions: [],
+      defaultStatusKey: 'open'
+    });
+    await router.engine.createTask({ projectId: project.id, title: 'A', status: 'done' });
+    const res = await router.handleRequest(new Request(`${base}/projects/${project.id}`, json('PATCH', { workflowId: simple.id })));
+    expect(res.status).toBe(409);
+    const mapped = await router.handleRequest(new Request(`${base}/projects/${project.id}`, json('PATCH', { workflowId: simple.id, statusMapping: { done: 'open' } })));
+    expect(mapped.status).toBe(200);
+  });
+});

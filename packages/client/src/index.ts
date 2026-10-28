@@ -12,6 +12,7 @@ import type {
   UpdateContainerBody,
   CreateDeliverableBody,
   UpdateDeliverableBody,
+  UpdateTimeEntryBody,
   CreateIterationBody,
   UpdateIterationBody,
   CreateCommentBody,
@@ -883,6 +884,25 @@ export class CriticalPathClient {
       body: JSON.stringify(data)
     });
     return res.timeEntry;
+  }
+
+  async getTimeEntry(id: string): Promise<TimeEntry> {
+    const res = await this.request<{ timeEntry: TimeEntry }>(`/time-entries/${encodeURIComponent(id)}`);
+    return res.timeEntry;
+  }
+
+  /** Corrects a time entry; the task's hour totals move by the difference. */
+  async updateTimeEntry(id: string, updates: UpdateTimeEntryBody): Promise<TimeEntry> {
+    const res = await this.request<{ timeEntry: TimeEntry }>(`/time-entries/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+    return res.timeEntry;
+  }
+
+  /** Deletes a time entry and takes its hours off the task. */
+  async deleteTimeEntry(id: string): Promise<boolean> {
+    return this.deleteRequest(`/time-entries/${encodeURIComponent(id)}`);
   }
 
   // Agent Status / Telemetry

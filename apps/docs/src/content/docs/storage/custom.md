@@ -13,7 +13,7 @@ Any class implementing `StorageAdapter` from `@critical-path/core` can be passed
 | `CommentRepository` | `getComments(taskId)`, `getComment`, `addComment`, `updateComment`, `deleteComment`, optional `addReaction` / `removeReaction` |
 | `AttachmentRepository` | `getAttachments(filter)`, `getAttachment`, `createAttachment`, `deleteAttachment` |
 | `ActivityRepository` | `getActivities(filter)`, `queryActivities(query)`, `logActivity` |
-| `TimeEntryRepository` | `getTimeEntries(taskId)`, `logTime`, `deleteTimeEntry` |
+| `TimeEntryRepository` | `getTimeEntries(taskId)`, `getTimeEntry`, `logTime`, `updateTimeEntry`, `deleteTimeEntry` |
 | `DependencyRepository` | `getDependencies(taskId)`, `getDependency`, `addDependency`, `removeDependency` |
 | `WebhookRepository` | `getWebhooks`, `getWebhook`, `addWebhook`, `updateWebhook`, `deleteWebhook` |
 

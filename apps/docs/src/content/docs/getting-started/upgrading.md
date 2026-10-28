@@ -159,6 +159,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** projects with subtasks (`parentId`); code that sums `totalEstimatedHours`, `durationHours` or `progressPercentage` from the ladder or deliverable summaries, or reads EVM for canceled tasks; code that expects a parent task in `criticalTaskIds`.
 - **Fix:** expect parents to be roll-ups of their subtasks (`isSummary: true` in analysis results, not scheduled or counted on their own); estimate subtasks rather than parents. Expect lower totals where parents were double-counted and canceled work was included, and 100% progress when the remaining work is canceled. Read `unestimatedTaskIds`, and set `defaultEstimateHours` if 1 hour is the wrong assumption for unestimated tasks.
 
+### core 0.56: clearing fields, dates and time entries
+
+- **Check:** request bodies with dates that are not ISO dates or date-times; a custom `StorageAdapter`; UI code that spreads update payloads into local state; code that relied on `logTime` accepting unknown task ids.
+- **Fix:** send ISO dates (keep free-form text in `customFields`). Implement `getTimeEntry` and `updateTimeEntry` in custom adapters and run the conformance suite. Apply update payloads with `applyUpdate` so `null` removes a field. Send `null` (not an empty string) to clear an optional field. Correct time with `PATCH /time-entries/:id` instead of writing hours on the task.
+
 ### mcp 0.19: tool results, selection and annotations
 
 - **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.

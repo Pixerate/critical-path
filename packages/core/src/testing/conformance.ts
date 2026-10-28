@@ -323,7 +323,13 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
 
       const entry = await store.logTime({ taskId: 't1', userId: 'u1', hours: 1.5, isBillable: false, description: 'Work', loggedAt: '2026-10-01T10:00:00.000Z' });
       expect((await store.getTimeEntries('t1'))[0]).toMatchObject({ id: entry.id, hours: 1.5, isBillable: false, description: 'Work', loggedAt: '2026-10-01T10:00:00.000Z' });
+      expect(await store.getTimeEntry(entry.id)).toMatchObject({ id: entry.id, taskId: 't1', hours: 1.5 });
+      const corrected = await store.updateTimeEntry(entry.id, { hours: 2, isBillable: true, description: undefined });
+      expect(corrected).toMatchObject({ id: entry.id, taskId: 't1', userId: 'u1', hours: 2, isBillable: true });
+      expect((await store.getTimeEntry(entry.id))?.description).toBeUndefined();
+      expect(await store.updateTimeEntry('missing', { hours: 1 })).toBeNull();
       expect(await store.deleteTimeEntry(entry.id)).toBe(true);
+      expect(await store.getTimeEntry(entry.id)).toBeNull();
       expect(await store.getTimeEntries('t1')).toHaveLength(0);
 
       const webhook = await store.addWebhook({ name: 'Hook', url: 'https://example.com/h', secret: 'whsec_x', events: ['*'], active: true, tenantId: 'tenant-1' });

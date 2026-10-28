@@ -180,6 +180,8 @@ handle.unregister();
 | `create_task` | core | Adding work (auto-scoped in WebMCP) | `{ projectId?, title, description?, priority?, status?, estimatedHours?, allocation?, deadline?, isMilestone? }` |
 | `update_task` | core | Changing status, priority, assignee, estimates, deadline | `{ id, title?, status?, priority?, assigneeId?, allocation?, deadline?, isMilestone? }` |
 | `log_time` | core | Recording hours worked (the only way to add logged hours) | `{ taskId, hours, description?, isBillable?, loggedAt? }` |
+| `update_time_entry` | core | Correcting logged time (the task's hours move by the difference) | `{ id, hours?, description?, isBillable?, loggedAt? }` |
+| `delete_time_entry` | core | Removing time logged by mistake | `{ id }` |
 | `delete_task` | core | Permanent deletion (`destructiveHint`) | `{ id }` |
 | `add_dependency` | core | Making a task wait for another, so the critical path orders them; idempotent, refuses loops | `{ taskId, dependsOnTaskId, type? ('blocking' \| 'relates_to') }` |
 | `remove_dependency` | core | Removing that link, by the same two task ids; returns `{ removed, dependencyIds }` | `{ taskId, dependsOnTaskId, type? }` |

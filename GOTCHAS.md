@@ -441,7 +441,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `@critical-path/core` (`updateProject`, `updateWorkflow`, `deleteWorkflow`)
 - **Symptom / Behavior**: `PATCH /projects/:id` with a new `workflowId` returns `409`. `DELETE /workflows/:id` returns `409`. Removing a status from a workflow returns `409`.
 - **Root Cause**: Tasks left in a status the project no longer has had no allowed transitions and were stuck. Deleting a workflow silently moved its projects to another one.
-- **Solution / Workaround**: Pass `statusMapping` (old key -> new key) with the project update; the engine moves the tasks in the same operation. Move tasks out of a status before removing it, and switch projects to another workflow before deleting one. New projects are pinned to their starting workflow (`workflowId` is filled in), so marking another workflow `isDefault` later does not move them; projects created before 0.54 without a `workflowId` still follow the tenant default.
+- **Solution / Workaround**: Pass `statusMapping` (old key -> new key) with the project update; the engine moves the tasks in the same operation. Move tasks out of a status before removing it, and switch projects to another workflow before deleting one. New projects are pinned to their starting workflow (`workflowId` is filled in), so marking another workflow `isDefault` later does not move them; projects created before 0.54 without a `workflowId`, or created while their tenant had no stored workflows (they use the built-in software workflow), still follow the tenant default and move when one is added. Set `workflowId` on those projects to pin them.
 
 ### Hours Are Effort from Time Entries; `actualDuration*` Is Elapsed Time
 - **Area / Package**: `@critical-path/core` (`Task.loggedHours`, `actualHours`, `actualDurationSeconds`)
@@ -460,3 +460,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: A plan with many unestimated tasks finishes suspiciously soon; the ladder's estimated hours are lower than the CPM duration.
 - **Root Cause**: CPM must give every task a duration, so an unfinished task with no estimate and no logged effort takes `defaultEstimateHours` (default 1). Roll-ups of estimated effort (ladder, deliverable summaries, EVM) count such tasks as 0, because nobody estimated them.
 - **Solution / Workaround**: Read `unestimatedTaskIds` and estimate those tasks, or set `defaultEstimateHours` (`criticalPathDefaultEstimateHours` on the engine) to a realistic size for unestimated work.
+
+### `null` Clears a Field in Update Bodies; Optimistic State Should Use `applyUpdate`
+- **Area / Package**: `@critical-path/core/schemas`, `@critical-path/react`, `@critical-path/svelte`, custom UIs
+- **Symptom / Behavior**: A UI that spreads an update payload into local state (`{ ...task, ...updates }`) shows `dueDate: null` until the server responds, or TypeScript complains that `null` is not assignable.
+- **Root Cause**: JSON has no `undefined`, so update schemas accept `null` for optional fields and parse it to `undefined`, which the engine and stores treat as "remove". `UpdateTaskBody` and the other update body types therefore allow `null`.
+- **Solution / Workaround**: Apply payloads with `applyUpdate(record, updates)` from `@critical-path/core`, which removes fields set to `null` (the built-in React and Svelte state already do). Required fields (titles, names, task `status` and `priority`) still reject `null`. `blockedReason` keeps `null` as its value.
+
+### Custom Adapters Need `getTimeEntry` and `updateTimeEntry`
+- **Area / Package**: `@critical-path/core` (`StorageAdapter`, `TimeEntryRepository`)
+- **Symptom / Behavior**: After 0.56 a custom adapter fails to compile against `StorageAdapter`, or the conformance suite fails on time entries.
+- **Root Cause**: Time entries can now be corrected and deleted through the engine (`updateTimeEntry`, `deleteTimeEntry`, which move the task's hour totals by the difference), which needs lookups by id.
+- **Solution / Workaround**: Implement `getTimeEntry(id)` (return `null` when missing) and `updateTimeEntry(id, updates)` (merge, remove fields set to `undefined`, keep `id` and `taskId`, return `null` when missing). Implement `incrementTaskHours` atomically so concurrent logs and corrections are never lost.

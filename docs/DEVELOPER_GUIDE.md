@@ -272,7 +272,10 @@ Derived task fields are not accepted in request bodies: `semanticStatus`, `logge
 
 ### Time Tracking
 - `GET /api/critical-path/time-entries?taskId=:id` - Get time logs for task.
-- `POST /api/critical-path/time-entries` - Log time against task (hours must be a positive number; rolls up into the task's `loggedHours`).
+- `POST /api/critical-path/time-entries` - Log time against task (hours must be a positive number; the task must exist; rolls up into the task's `loggedHours`, `actualHours` and, when billable, `billableHours`).
+- `GET|PATCH|DELETE /api/critical-path/time-entries/:id` - Read, correct or delete an entry; the task's totals move by the difference. Needs `time.manage`, or `time.log` for your own entries (`time.updated` / `time.deleted` events).
+
+Update bodies (`PATCH` on tasks, projects, deliverables, containers, iterations and time entries) accept `null` to remove an optional field; required fields such as titles and names cannot be removed. Every date field must be an ISO date or date-time. In optimistic UI code, apply update payloads with `applyUpdate(record, updates)` from `@critical-path/core`, which treats `null` the same way.
 
 ### Request Validation & OpenAPI
 - Request bodies are parsed with the strict schemas in `@critical-path/core/schemas`. Invalid bodies, server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, owning `projectId` on updates), identity fields and unknown keys return `400` with `issues: [{ path, message }]`.
@@ -749,11 +752,11 @@ Discrete interfaces are provided for repository segregation:
 - `IterationRepository`
 - `CommentRepository`
 - `ActivityRepository`
-- `TimeEntryRepository`
+- `TimeEntryRepository` (`getTimeEntries`, `getTimeEntry`, `logTime`, `updateTimeEntry`, `deleteTimeEntry`)
 - `DependencyRepository`
 - `WebhookRepository`
 - `StorageAdapter` (composition of all repositories). Every entity has an optional `customFields` JSON object that adapters must round-trip (see the conformance suite).
-- `StorageAdapter.incrementTaskHours(taskId, deltas)` (optional: atomic hour totals for `logTime`; `SQLiteStore` and `InMemoryStore` implement it)
+- `StorageAdapter.incrementTaskHours(taskId, deltas)` (optional: atomic hour totals for logging, correcting and deleting time; every built-in store implements it, `FirebaseStore` in a Firestore transaction)
 - `StorageAdapter.transaction(fn)` (optional: makes cascading deletes atomic; `SQLiteStore` implements it)
 - `WebhookOutboxStore` (optional: `putWebhookJob`, `claimWebhookJobs`, `deleteWebhookJob`, for `OutboxWebhookQueue`)
 

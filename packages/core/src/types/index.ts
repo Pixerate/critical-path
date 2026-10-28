@@ -1004,6 +1004,8 @@ export type AuthorizationAction =
   | 'attachment.create'
   | 'attachment.delete'
   | 'time.log'
+  /** Editing or deleting time entries; people with `time.log` may always manage their own. */
+  | 'time.manage'
   | 'plan.manage'
   | 'workspace.manage';
 
@@ -1013,7 +1015,7 @@ export interface AuthorizationRequest {
   /** The project the action targets, for project-scoped actions. */
   project?: Project;
   /** The specific record, when relevant (e.g. the comment being edited). */
-  resource?: { type: 'task' | 'comment' | 'attachment'; ownerId?: string };
+  resource?: { type: 'task' | 'comment' | 'attachment' | 'time_entry'; ownerId?: string };
   /** Ids of the teams the actor belongs to (from `team.memberIds`), resolved by the engine. */
   teamIds: string[];
 }

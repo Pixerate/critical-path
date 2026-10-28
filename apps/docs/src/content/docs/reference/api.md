@@ -83,7 +83,7 @@ Create a new task.
 ```
 
 ### `PATCH /tasks/:taskId`
-Update a task's title, status, priority, or custom fields.
+Update a task: only the fields sent change. Send `null` to remove an optional field (`{ "dueDate": null, "assigneeId": null }`); `title`, `status` and `priority` cannot be removed. The same applies to `PATCH` on projects (except `name` and `key`), deliverables (except `title` and `status`), containers and iterations (except `name`).
 
 ### `DELETE /tasks/:taskId`
 Delete a task with its subtasks (recursively), dependencies, comments, attachments (including stored files) and time entries. Pass `?subtasks=detach` to keep subtasks and clear their `parentId` instead.
@@ -170,6 +170,14 @@ Register a webhook. Returns `201 { webhook, secret }`; the secret is only shown 
 ### `GET | PATCH | DELETE /webhooks/:webhookId`
 Read, update (including `secret` rotation and `active`), or delete a webhook. See the Webhooks guide for the delivery format and signature verification.
 
+## Time Tracking
+
+### `GET /time-entries?taskId=:taskId` and `POST /time-entries`
+List a task's time entries, or log time (`{ taskId, hours, isBillable?, description?, loggedAt?, customFields? }`). Logging adds the hours to the task's `loggedHours`, `actualHours` and (when billable) `billableHours`. The task must exist.
+
+### `GET | PATCH | DELETE /time-entries/:timeEntryId`
+Read, correct (`{ hours?, isBillable?, description?, loggedAt?, customFields? }`; `null` clears `description` or `customFields`) or delete an entry. The task's hour totals move by the difference. Needs `time.manage` (project managers and admins by default), or `time.log` for your own entries. Publishes `time.updated` / `time.deleted`.
+
 ### `POST /status`
 Reports what the caller (typically an agent) is doing, as an `agent.status_updated` domain event delivered to webhooks. Body: `{ status?, taskId?, projectId?, details?, isEngaged? }` (strict; `taskId` or `projectId` required). Requires `task.update` on the project, so it only works within the caller's tenant (`404` otherwise). Returns `{ success, status, timestamp }`.
 
@@ -196,6 +204,8 @@ Errors are returned as JSON with an `error` message and, where useful, extra det
 ### Validation
 
 Request bodies must be sent as `Content-Type: application/json`. Browsers can send cross-site form posts (`text/plain`, form data) without a CORS preflight, so other content types are rejected with `415`, which protects cookie-authenticated deployments from cross-site request forgery.
+
+Every date field must be an ISO date (`2026-10-05`) or date-time (`2026-10-05T17:00:00Z`, with or without an offset); anything else is a `400`.
 
 Request bodies are strict. Server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, and the owning `projectId` on updates), identity fields (`actorId`, `authorId`, `userId`, `uploaderId`) and unknown keys are rejected with `400`. Authors of comments, reactions, attachments and time entries are the caller resolved by `getContext`, or `anonymous`. Remove a reaction with `DELETE /comments/:commentId/reactions?emoji=<emoji>`.
 

@@ -81,6 +81,9 @@ const CLIENT_METHOD_FOR_ROUTE: Record<string, keyof CriticalPathClient> = {
   'DELETE /attachments/{attachmentId}': 'deleteAttachment',
   'GET /time-entries': 'getTimeEntries',
   'POST /time-entries': 'logTime',
+  'GET /time-entries/{timeEntryId}': 'getTimeEntry',
+  'PATCH /time-entries/{timeEntryId}': 'updateTimeEntry',
+  'DELETE /time-entries/{timeEntryId}': 'deleteTimeEntry',
   'GET /workload': 'getWorkloadDistribution',
   'POST /status': 'updateStatus'
 };
