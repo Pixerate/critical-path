@@ -451,7 +451,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 
 ### Parent Tasks Are Summaries of Their Subtasks
 - **Area / Package**: `@critical-path/core` (critical path analysis, ladder, workload, deliverable summaries)
-- **Symptom / Behavior**: After 0.53, a parent task's estimate no longer adds to totals, the parent appears in analysis results with `isSummary: true` and is missing from `criticalTaskIds`, and its dates span its subtasks.
+- **Symptom / Behavior**: After 0.55, a parent task's estimate no longer adds to totals, the parent appears in analysis results with `isSummary: true` and is missing from `criticalTaskIds`, and its dates span its subtasks.
 - **Root Cause**: Parents were summed and scheduled like any other task, so an epic of 40h with two 20h subtasks counted 80h and ran alongside its subtasks in CPM.
 - **Solution / Workaround**: Estimate subtasks, not their parents. Put dependencies and deadlines on whichever level reads best: on a parent they apply to every leaf under it. To find what drives a summary, look at its leaves (`isCritical`, `totalSlack`).
 
