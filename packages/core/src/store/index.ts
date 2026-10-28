@@ -5,6 +5,7 @@ import type {
   Project,
   Task,
   Iteration,
+  Baseline,
   Team,
   TaskContainer,
   Comment,
@@ -86,6 +87,14 @@ export interface IterationRepository {
   deleteIteration(id: string): Promise<boolean>;
 }
 
+export interface BaselineRepository {
+  /** A project's baselines, oldest first. */
+  getBaselines(projectId: string): Promise<Baseline[]>;
+  getBaseline(id: string): Promise<Baseline | null>;
+  createBaseline(baseline: Omit<Baseline, 'id' | 'createdAt'>): Promise<Baseline>;
+  deleteBaseline(id: string): Promise<boolean>;
+}
+
 export interface CommentRepository {
   getComments(taskId: string): Promise<Comment[]>;
   getComment(id: string): Promise<Comment | null>;
@@ -151,6 +160,7 @@ export interface StorageAdapter
     ContainerRepository,
     DeliverableRepository,
     IterationRepository,
+    BaselineRepository,
     CommentRepository,
     AttachmentRepository,
     ActivityRepository,
@@ -190,6 +200,7 @@ export class InMemoryStore implements StorageAdapter, WebhookOutboxStore {
   private containers = new Map<string, TaskContainer>();
   private deliverables = new Map<string, Deliverable>();
   private iterations = new Map<string, Iteration>();
+  private baselines = new Map<string, Baseline>();
   private comments = new Map<string, Comment>();
   private attachments = new Map<string, Attachment>();
   private activities: Activity[] = [];
@@ -464,6 +475,27 @@ export class InMemoryStore implements StorageAdapter, WebhookOutboxStore {
 
   async deleteIteration(id: string): Promise<boolean> {
     return this.iterations.delete(id);
+  }
+
+  // Baselines
+  async getBaselines(projectId: string): Promise<Baseline[]> {
+    return Array.from(this.baselines.values())
+      .filter((b) => b.projectId === projectId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  }
+
+  async getBaseline(id: string): Promise<Baseline | null> {
+    return this.baselines.get(id) ?? null;
+  }
+
+  async createBaseline(baseline: Omit<Baseline, 'id' | 'createdAt'>): Promise<Baseline> {
+    const created: Baseline = { ...baseline, id: `base_${crypto.randomUUID()}`, createdAt: new Date().toISOString() };
+    this.baselines.set(created.id, created);
+    return created;
+  }
+
+  async deleteBaseline(id: string): Promise<boolean> {
+    return this.baselines.delete(id);
   }
 
   // Comments

@@ -490,3 +490,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: A task with several `assignees` only books one person when levelling; setting `assigneeId` to someone not in `assignees` fails with `400`.
 - **Root Cause**: Scheduling, levelling and workload use one person's calendar and capacity per task: `assigneeId`. `assignees` lists everyone involved (people, agents, teams) for display and filtering.
 - **Solution / Workaround**: Set `assigneeId` to the person whose time the task takes, and include them in `assignees` when you use it. Split work that needs several people's time into a task per person.
+
+### Custom Adapters Need a `BaselineRepository`
+- **Area / Package**: `@critical-path/core` (`StorageAdapter`, baselines)
+- **Symptom / Behavior**: After 0.59 a custom adapter no longer compiles against `StorageAdapter`; `createBaseline` fails.
+- **Root Cause**: Baselines (saved analyses to measure slippage against) are stored entities: `getBaselines(projectId)` (oldest first), `getBaseline`, `createBaseline` (assign `id` and `createdAt`), `deleteBaseline`.
+- **Solution / Workaround**: Implement the four methods. A baseline is written once and read whole, so storing it as one JSON document per row is enough (that is what `SQLiteStore` does). The engine deletes a project's baselines with the project.
+
+### Compare Like with Like Against a Baseline
+- **Area / Package**: `@critical-path/core` (`calculateCriticalPath({ baselineId })`)
+- **Symptom / Behavior**: Every task shows a large variance right after taking a baseline.
+- **Root Cause**: The baseline froze an analysis made with some options (`calendars`, `levelResources`, `effort`); comparing with an analysis made with different options measures the difference between the modes, not slippage.
+- **Solution / Workaround**: Pass the same options to `createBaseline` and to the analyses you compare. Variances are working hours on the project calendar; dated analyses compare dates, undated ones offsets.

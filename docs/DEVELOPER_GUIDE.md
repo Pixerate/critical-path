@@ -743,6 +743,7 @@ Discrete interfaces are provided for repository segregation:
 - `IterationRepository`
 - `CommentRepository`
 - `ActivityRepository`
+- `BaselineRepository` (`getBaselines`, `getBaseline`, `createBaseline`, `deleteBaseline`)
 - `TimeEntryRepository` (`getTimeEntries`, `getTimeEntry`, `logTime`, `updateTimeEntry`, `deleteTimeEntry`)
 - `DependencyRepository`
 - `WebhookRepository`
@@ -1050,6 +1051,8 @@ With `levelResources: true`, tasks are placed in priority order (`levelingPriori
 Tasks can take part of their assignee's time with `allocation` (0–1, default 1). Estimates are effort, so a 16h task at 0.5 spans 32 working hours in every critical path calculation. Levelling then lets an assignee run tasks side by side while the total stays at 100%, and assignee-mode results list `overallocations` (who is above 100%, when, and through which tasks).
 
 Tasks with subtasks are summary tasks: they are not scheduled, dependencies on them apply to every leaf task under them, their deadline caps those leaves, and they are reported as roll-ups (`isSummary: true`, not in `criticalTaskIds`). Workload, the ladder and deliverable summaries count effort from leaf tasks only, and leave canceled tasks out of estimates and progress (their logged hours still count). Unestimated unfinished tasks are scheduled for `defaultEstimateHours` (default 1; engine default `criticalPathDefaultEstimateHours`) and listed in `unestimatedTaskIds`. `getTaskEstimateHours(task)` is the one helper that reads an estimate.
+
+Baselines freeze an analysis to measure slippage: `engine.createBaseline(projectId, { name, ...analysis options })` (`plan.manage`), `getBaselines`, `getBaseline`, `deleteBaseline`, and `calculateCriticalPath(projectId, { baselineId })` adds per-task `baseline: { startVarianceHours, finishVarianceHours }` and an analysis-level `baseline` comparison (`endVarianceHours`, `slippedTaskIds`, `addedTaskIds`, `removedTaskIds`). Routes: `GET|POST /projects/:id/baselines`, `GET|DELETE /baselines/:id`, `?baselineId=` on the critical path route. Storage adapters implement `BaselineRepository`.
 
 Both CPM modes run on one date-based engine; project mode puts every task on the project calendar, and without a start date reports working-hour offsets only. `earliestStart` on a task is a start-no-earlier-than constraint, and `lagHours` on a dependency waits that many working hours after the predecessor finishes (negative for a lead); both apply in levelling and need a start date in project mode.
 

@@ -24,7 +24,7 @@ describe('agent tool discovery', () => {
   describe('tool selection', () => {
     it('exposes toolsets, combined with exact tool names', () => {
       const names = selectTools({ toolsets: ['scheduling'], tools: ['get_task'] }).map((t) => t.name);
-      expect(names).toEqual(['get_task', 'calculate_critical_path', 'calculate_portfolio_critical_path', 'get_workload_distribution']);
+      expect(names).toEqual(['get_task', 'calculate_critical_path', 'calculate_portfolio_critical_path', 'create_baseline', 'list_baselines', 'get_workload_distribution']);
     });
 
     it('exposes only tools that change nothing in read-only mode', () => {
@@ -99,6 +99,8 @@ describe('agent tool discovery', () => {
         ['list_comments', { taskId: design.id }],
         ['calculate_critical_path', { projectId: project.id, calendars: 'assignee' }],
         ['calculate_critical_path', { projectId: project.id, calendars: 'assignee', levelResources: true, effort: 'remaining' }],
+        ['create_baseline', { projectId: project.id, name: 'Agreed plan' }],
+        ['list_baselines', { projectId: project.id }],
         ['calculate_portfolio_critical_path', { calendars: 'assignee', levelResources: true }],
         ['get_timeline_ladder', { projectId: project.id, level: 'all' }],
         ['get_task_ladder', { taskId: build.id }],

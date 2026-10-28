@@ -6,6 +6,7 @@ import type {
   Project,
   Task,
   Iteration,
+  Baseline,
   Team,
   TaskContainer,
   Comment,
@@ -274,6 +275,14 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
         status TEXT NOT NULL,
         createdAt TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS baselines (
+        id TEXT PRIMARY KEY,
+        projectId TEXT NOT NULL,
+        data TEXT NOT NULL,
+        createdAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_baselines_project ON baselines (projectId);
 
       CREATE TABLE IF NOT EXISTS comments (
         id TEXT PRIMARY KEY,
@@ -1097,6 +1106,27 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
     );
     this.writeExtra('iterations', updated);
     return updated;
+  }
+
+  // --- Baselines (stored whole as JSON: they are written once and read whole) ---
+  async getBaselines(projectId: string): Promise<Baseline[]> {
+    const rows = this.db.prepare('SELECT * FROM baselines WHERE projectId = ? ORDER BY createdAt, id').all(projectId) as any[];
+    return rows.map((r) => JSON.parse(r.data));
+  }
+
+  async getBaseline(id: string): Promise<Baseline | null> {
+    const row = this.db.prepare('SELECT * FROM baselines WHERE id = ?').get(id) as any;
+    return row ? JSON.parse(row.data) : null;
+  }
+
+  async createBaseline(baseline: Omit<Baseline, 'id' | 'createdAt'>): Promise<Baseline> {
+    const created: Baseline = { ...baseline, id: `base_${crypto.randomUUID()}`, createdAt: new Date().toISOString() };
+    this.db.prepare('INSERT INTO baselines (id, projectId, data, createdAt) VALUES (?, ?, ?, ?)').run(created.id, created.projectId, JSON.stringify(created), created.createdAt);
+    return created;
+  }
+
+  async deleteBaseline(id: string): Promise<boolean> {
+    return Number(this.db.prepare('DELETE FROM baselines WHERE id = ?').run(id).changes) > 0;
   }
 
   async deleteIteration(id: string): Promise<boolean> {

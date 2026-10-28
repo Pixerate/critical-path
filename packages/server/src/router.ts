@@ -395,8 +395,18 @@ export class CriticalPathRouter {
         }
       } else if (subResource === 'critical-path') {
         if (method === 'GET') {
-          const analysis = await engine.calculateCriticalPath(projectId, criticalPathQuery(url));
+          const baselineId = url.searchParams.get('baselineId') || undefined;
+          const analysis = await engine.calculateCriticalPath(projectId, { ...criticalPathQuery(url), baselineId });
           return this.jsonResponse({ analysis });
+        }
+      } else if (subResource === 'baselines' && segments.length === 3) {
+        if (method === 'GET') {
+          return this.jsonResponse({ baselines: await engine.getBaselines(projectId) });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateBaselineSchema);
+          const baseline = await engine.createBaseline(projectId, body);
+          return this.jsonResponse({ baseline }, 201);
         }
       } else if (subResource === 'ladder' || subResource === 'timeline-ladder') {
         if (method === 'GET') {
@@ -794,6 +804,17 @@ export class CriticalPathRouter {
     }
 
     // Time Tracking API
+    if (segments[0] === 'baselines' && segments.length === 2) {
+      if (method === 'GET') {
+        const baseline = await engine.getBaseline(segments[1]);
+        return baseline ? this.jsonResponse({ baseline }) : this.jsonResponse({ error: 'Baseline not found' }, 404);
+      }
+      if (method === 'DELETE') {
+        const deleted = await engine.deleteBaseline(segments[1]);
+        return deleted ? this.jsonResponse({ success: true }) : this.jsonResponse({ error: 'Baseline not found' }, 404);
+      }
+    }
+
     if (segments[0] === 'time-entries' && segments.length === 2) {
       const entryId = segments[1];
       if (method === 'GET') {

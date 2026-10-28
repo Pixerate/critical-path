@@ -315,6 +315,23 @@ A task with subtasks is a **summary task**. It is not scheduled itself: its subt
 
 An unfinished task with no estimate and no logged effort is scheduled for `defaultEstimateHours` (default 1) and listed in `unestimatedTaskIds`, so a half-estimated plan does not look more certain than it is. Set the assumption per call (`defaultEstimateHours`, `?defaultEstimateHours=` over HTTP) or on the engine (`criticalPathDefaultEstimateHours`). An explicit estimate of 0 counts as an estimate.
 
+### Baselines
+
+A baseline is a named, frozen copy of a project's analysis: the plan to measure slippage against. Take one when a plan is agreed, then pass its id to later analyses:
+
+```ts
+const plan = await engine.createBaseline(projectId, { name: 'Agreed plan', calendars: 'assignee' });
+
+const now = await engine.calculateCriticalPath(projectId, { calendars: 'assignee', baselineId: plan.id });
+now.baseline;  // { endVarianceHours: 16, slippedTaskIds: [...], addedTaskIds: [...], removedTaskIds: [...] }
+now.tasks[0].baseline; // { startVarianceHours: 8, finishVarianceHours: 16 }
+```
+
+- Variances are working hours on the project calendar; positive is later than the plan. Dated analyses compare dates, so re-running from a later start shows the delay; undated ones compare offsets.
+- `slippedTaskIds` lists leaf tasks that finish later than planned, worst first. Tasks added since are in `addedTaskIds`, removed ones in `removedTaskIds`.
+- `createBaseline` takes the same options as the analysis (`calendars`, `levelResources`, `effort`, ...); compare like with like. It needs `plan.manage`; reading needs access to the project. Baselines are deleted with their project.
+- Over HTTP: `POST /projects/:projectId/baselines`, `GET /projects/:projectId/baselines`, `GET | DELETE /baselines/:baselineId`, and `?baselineId=` on `GET /projects/:projectId/critical-path`. MCP: `create_baseline`, `list_baselines`, and `baselineId` on `calculate_critical_path`.
+
 ### Finished tasks
 
 Completed and canceled tasks (by `semanticStatus`, or the default `done` / `canceled` statuses) take **no time** in critical path analysis and occupy nobody when levelling. Their successors can start at the project start, and dates reflect only the remaining work.

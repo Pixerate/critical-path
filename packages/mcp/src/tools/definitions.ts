@@ -11,6 +11,7 @@ import {
   DeliverableOutput,
   CommentOutput,
   TimeEntryOutput,
+  BaselineOutput,
   CriticalPathOutput,
   PortfolioCriticalPathOutput,
   TimelineLadderOutput,
@@ -31,7 +32,7 @@ export type BackendContext = CriticalPathEngine | CriticalPathClient;
 export const TOOLSETS = {
   core: 'Projects, tasks and task dependencies: find, read, create, update and delete',
   collaboration: 'Deliverables and task comments',
-  scheduling: 'Critical path, portfolio scheduling and workload/capacity',
+  scheduling: 'Critical path, portfolio scheduling, baselines and workload/capacity',
   analytics: 'Project status ladder, task metrics, earned value and progress history',
   guidance: 'Skills: step-by-step playbooks for multi-step jobs'
 } as const;
@@ -691,6 +692,7 @@ export const calculateCriticalPathTool = defineTool<{
   levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
   effort?: 'estimate' | 'remaining';
   defaultEstimateHours?: number;
+  baselineId?: string;
 }>({
   name: 'calculate_critical_path',
   title: 'Calculate Critical Path',
@@ -720,7 +722,8 @@ export const calculateCriticalPathTool = defineTool<{
       .number()
       .nonnegative()
       .optional()
-      .describe('Hours to assume for tasks with no estimate (default 1). They are listed in unestimatedTaskIds')
+      .describe('Hours to assume for tasks with no estimate (default 1). They are listed in unestimatedTaskIds'),
+    baselineId: z.string().optional().describe('Compare with a baseline from `list_baselines`: each task reports how far it moved, and the result lists slipped tasks')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
@@ -728,8 +731,47 @@ export const calculateCriticalPathTool = defineTool<{
     if (!projectId) {
       throw new Error('projectId is required to calculate the critical path. Find one with `list_projects`.');
     }
-    const { calendars, levelResources, levelingPriority, effort, defaultEstimateHours } = args;
-    return (target as any).calculateCriticalPath(projectId, { calendars, levelResources, levelingPriority, effort, defaultEstimateHours });
+    const { calendars, levelResources, levelingPriority, effort, defaultEstimateHours, baselineId } = args;
+    return (target as any).calculateCriticalPath(projectId, { calendars, levelResources, levelingPriority, effort, defaultEstimateHours, baselineId });
+  }
+});
+
+export const createBaselineTool = defineTool<{ projectId?: string; name: string; calendars?: 'project' | 'assignee'; levelResources?: boolean }>({
+  name: 'create_baseline',
+  title: 'Create Baseline',
+  description:
+    'Save the project\'s current schedule as a named baseline (for example when a plan is agreed), so later analyses can show what slipped. Use the same calendars/levelResources you analyse with. Returns the baseline with its id.',
+  toolset: 'scheduling',
+  outputZodSchema: BaselineOutput,
+  zodSchema: z.object({
+    projectId: z.string().optional().describe('Project ID (inferred from active view in browser if omitted)'),
+    name: z.string().describe('What the plan is, e.g. "Approved plan" or "Sprint 4 start"'),
+    calendars: z.enum(['project', 'assignee']).optional().describe("'assignee' schedules each task on its assignee's calendar"),
+    levelResources: z.boolean().optional().describe("With calendars 'assignee': one task at a time per person")
+  }),
+  execute: async (args, target, ambientContext) => {
+    const projectId = args.projectId || ambientContext?.projectId;
+    if (!projectId) throw new Error('projectId is required. Find one with `list_projects`.');
+    const { projectId: _projectId, ...input } = args;
+    return target.createBaseline(projectId, input);
+  }
+});
+
+export const listBaselinesTool = defineTool<{ projectId?: string }>({
+  name: 'list_baselines',
+  title: 'List Baselines',
+  description:
+    'List a project\'s saved baselines, oldest first. Pass one\'s id as baselineId to `calculate_critical_path` to see slippage since then. Returns { baselines }.',
+  toolset: 'scheduling',
+  outputZodSchema: z.object({ baselines: z.array(BaselineOutput) }),
+  zodSchema: z.object({
+    projectId: z.string().optional().describe('Project ID (inferred from active view in browser if omitted)')
+  }),
+  annotations: { readOnlyHint: true },
+  execute: async (args, target, ambientContext) => {
+    const projectId = args.projectId || ambientContext?.projectId;
+    if (!projectId) throw new Error('projectId is required. Find one with `list_projects`.');
+    return { baselines: await target.getBaselines(projectId) };
   }
 });
 
@@ -894,6 +936,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   addCommentTool,
   calculateCriticalPathTool,
   calculatePortfolioCriticalPathTool,
+  createBaselineTool,
+  listBaselinesTool,
   getTimelineLadderTool,
   getTaskLadderTool,
   getTaskMetricsTool,

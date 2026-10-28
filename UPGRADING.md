@@ -169,6 +169,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** deliverable statuses other than `planned`, `in_progress`, `in_review`, `delivered`, `canceled`; `format` or `specs` on deliverables; imports of `TaskEntity`, `ProjectEntity`, `DeliverableEntity`, `BaseEntity`, `isDraftTask`, `isArchivedTask`, `isTrashedTask`, `isTrashedOrArchivedTask`, `isWorkflowTask` (or `isTaskDraft`, `isTaskArchived`, `isTaskTrashed`, `isTaskTrashedOrArchived`, `isTaskWorkflow`); tasks whose `assigneeId` is not in `assignees`; the `'blocked'` tag; `sprintId`.
 - **Fix:** set `deliverableStatusDefinitions` on projects that use other statuses (`CREATIVE_DELIVERABLE_STATUSES` for the old list). Move `format` / `specs` into `customFields`. Use the engine instead of entity classes (`createTask`, `updateTask`, `logTime`). Model drafts, archiving or trash as statuses or `customFields` your app filters on. Make `assigneeId` one of `assignees`. Set `isBlocked` instead of tagging `'blocked'`. Use `iterationId`.
 
+### core 0.59: baselines
+
+- **Check:** a custom `StorageAdapter`.
+- **Fix:** implement `getBaselines(projectId)` (oldest first), `getBaseline(id)`, `createBaseline(baseline)` (assign `id` and `createdAt`) and `deleteBaseline(id)`, and run the conformance suite.
+
 ### mcp 0.19: tool results, selection and annotations
 
 - **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.
