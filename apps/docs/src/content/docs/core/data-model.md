@@ -54,6 +54,29 @@ In many organizations, teams use custom statuses like `qa_in_review`, `waiting_o
 | `completed` | Successfully resolved; unblocks downstream tasks | `done`, `closed` |
 | `canceled` | Abandoned or discarded; bypasses blockers | `canceled` |
 
+A task's `status` must be one of its project's statuses (the project's `statusDefinitions`, else its workflow's); anything else is rejected. `semanticStatus` is always derived from the status's definition and cannot be set directly. Keys are never guessed from their spelling: data written around the engine with an unknown key counts as `not_started`.
+
+### Derived fields
+
+The engine maintains these fields; request bodies that include them are rejected:
+
+- `semanticStatus`: from the status definition.
+- `loggedHours`, `actualHours`, `billableHours`: effort, summed from time entries (`engine.logTime`, `POST /time-entries`, MCP `log_time`).
+- `actualDurationSeconds`, `actualDurationMinutes`, `inProgressSince`: elapsed time in progress, measured from status changes. Elapsed time is not effort, so it never changes the hours above.
+- `blockedSince`, `blockedDurationSeconds`, `billableDurationMinutes`.
+
+`completedAt`, `actualStartDate` and `actualEndDate` stay writable for imports and corrections.
+
+### Changing a project's workflow
+
+New projects are pinned to the workflow they start with. To switch one, pass a mapping for every status its tasks are in that the new workflow does not have:
+
+```typescript
+await engine.updateProject(projectId, { workflowId: newWorkflow.id }, { statusMapping: { in_review: 'todo' } });
+```
+
+Over HTTP, send `statusMapping` in the `PATCH /projects/:id` body. Without a complete mapping the update is refused with `409` and nothing changes. Removing a status from a workflow that tasks are still in, or deleting a workflow that a project uses, is also refused with `409`.
+
 ---
 
 ## Custom Fields on Every Entity

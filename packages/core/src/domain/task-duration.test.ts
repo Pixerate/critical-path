@@ -137,7 +137,8 @@ describe('Task Execution Timestamps & Cumulative In-Progress Duration', () => {
       const paused = await engine.updateTask(task.id, { status: 'todo' });
       expect(paused?.inProgressSince).toBeNull();
       expect(paused?.actualDurationSeconds).toBe(7200);
-      expect(paused?.actualHours).toBe(2);
+      // Elapsed time is not effort: actualHours only grows with logged time
+      expect(paused?.actualHours).toBeUndefined();
 
       // 3. Complete task at 14:00 (move from todo to done)
       vi.setSystemTime(new Date('2026-09-23T14:00:00Z'));

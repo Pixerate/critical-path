@@ -281,7 +281,20 @@ export interface Task {
   updatedAt: string;
 }
 
-export type CreateTaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'priority'> & {
+/** Task fields the engine derives (from the status, time entries and status timers); callers cannot set them. */
+export type DerivedTaskField =
+  | 'semanticStatus'
+  | 'loggedHours'
+  | 'actualHours'
+  | 'billableHours'
+  | 'actualDurationMinutes'
+  | 'billableDurationMinutes'
+  | 'actualDurationSeconds'
+  | 'inProgressSince'
+  | 'blockedSince'
+  | 'blockedDurationSeconds';
+
+export type CreateTaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'priority' | DerivedTaskField> & {
   status?: TaskStatus;
   priority?: Priority;
 };

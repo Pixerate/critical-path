@@ -155,12 +155,12 @@ export class TaskEntity extends BaseEntity {
 
     const status = input.status || options?.workflow?.defaultStatusKey || 'todo';
     const statusDef = resolveStatusDefinition(status, options?.workflow?.statuses);
-    const semanticStatus = input.semanticStatus || statusDef.category;
+    const semanticStatus = statusDef.category;
     const actualStartDate = input.actualStartDate ?? (semanticStatus === 'in_progress' ? now : undefined);
-    const inProgressSince = input.inProgressSince ?? (semanticStatus === 'in_progress' ? now : undefined);
+    const inProgressSince = semanticStatus === 'in_progress' ? now : undefined;
     const actualEndDate = input.actualEndDate ?? ((semanticStatus === 'completed' || semanticStatus === 'canceled') ? now : undefined);
     const isBlocked = input.isBlocked ?? false;
-    const blockedSince = input.blockedSince ?? (isBlocked && semanticStatus === 'in_progress' ? now : undefined);
+    const blockedSince = isBlocked && semanticStatus === 'in_progress' ? now : undefined;
 
     const task = new TaskEntity({
       ...input,
@@ -172,13 +172,11 @@ export class TaskEntity extends BaseEntity {
       actualStartDate,
       inProgressSince,
       actualEndDate,
-      actualDurationSeconds: input.actualDurationSeconds,
-      blockedDurationSeconds: input.blockedDurationSeconds,
       blockedSince,
       isBlocked,
       blockedReason: input.blockedReason ?? null,
       priority: input.priority || 'medium',
-      loggedHours: input.loggedHours ?? 0,
+      loggedHours: 0,
       progress: input.progress ?? 0,
       tags: input.tags ?? [],
       todos: input.todos ?? [],

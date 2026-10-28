@@ -238,15 +238,16 @@ const deliverable = await engine.createDeliverable({
 });
 
 // 2. Attach tasks to deliverable
-await engine.createTask({
+const storyboard = await engine.createTask({
   projectId: 'proj_1',
   deliverableId: deliverable.id,
   title: 'Storyboard & Animatic',
   status: 'approved',
   estimatedHours: 12,
-  loggedHours: 12,
   progress: 100
 });
+// Logged hours come from time entries
+await engine.logTime({ taskId: storyboard.id, hours: 12 });
 
 // 3. Rollup metrics
 const summary = await engine.getDeliverableSummary(deliverable.id);

@@ -142,7 +142,13 @@ export const CreateProjectSchema = strictObject({
   targetEndDate: isoString.optional(),
   customFields: customFields.optional()
 });
-export const UpdateProjectSchema = CreateProjectSchema.partial();
+export const UpdateProjectSchema = CreateProjectSchema.partial().extend({
+  /**
+   * Not stored. When the update changes the project's statuses, maps each status tasks are in that
+   * the project will no longer have to its replacement (see `engine.updateProject`).
+   */
+  statusMapping: z.record(nonEmpty).optional()
+});
 
 // --- Tasks ---
 
@@ -150,7 +156,6 @@ const taskFields = {
   title: nonEmpty,
   description: z.string().optional(),
   status: z.string().optional(),
-  semanticStatus: SemanticStatusSchema.optional(),
   priority: z.string().optional(),
   taskType: z.string().optional(),
   assigneeId: z.string().optional(),
@@ -180,16 +185,7 @@ const taskFields = {
   isMilestone: z.boolean().optional(),
   estimatedHours: z.number().nonnegative().optional(),
   allocation: z.number().gt(0).max(1).optional(),
-  loggedHours: z.number().nonnegative().optional(),
-  actualHours: z.number().nonnegative().optional(),
-  billableHours: z.number().nonnegative().optional(),
   estimatedDurationMinutes: z.number().nonnegative().optional(),
-  actualDurationMinutes: z.number().nonnegative().optional(),
-  billableDurationMinutes: z.number().nonnegative().optional(),
-  actualDurationSeconds: z.number().nonnegative().optional(),
-  inProgressSince: isoString.nullable().optional(),
-  blockedDurationSeconds: z.number().nonnegative().optional(),
-  blockedSince: isoString.nullable().optional(),
   progress: z.number().min(0).max(100).optional(),
   isBlocked: z.boolean().optional(),
   blockedReason: z.string().nullable().optional(),

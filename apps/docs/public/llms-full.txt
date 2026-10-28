@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-28T13:29:25.786Z
+> Documentation generated on: 2026-10-28T13:37:11.501Z
 
 ================================================================================
 
@@ -401,6 +401,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
 - **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
 
+### core 0.53: statuses, workflows and derived fields
+
+- **Check:** task statuses that are not in the project's workflow (including custom keys you relied on being classified by name); request bodies or `createTask` calls that include `semanticStatus`, `loggedHours`, `actualHours`, `billableHours`, `actualDuration*`, `billableDurationMinutes`, `inProgressSince`, `blockedSince` or `blockedDurationSeconds`; code that reads `actualHours` as elapsed time; project updates that change `workflowId`, `workflow` or `statusDefinitions`; workflow deletes; MCP `update_task` calls with `loggedHours`.
+- **Fix:** add missing statuses to the workflow with the right `category`. Log hours with `logTime` / `POST /time-entries` / MCP `log_time` instead of writing them. Read elapsed time from `actualDurationSeconds`. Pass `statusMapping` when changing a project's statuses (a `409` lists the statuses that need one). Switch projects off a workflow before deleting it. Handle `409` (`ConflictError`) where you call these.
+
 ### core 0.53: dependency types and blocking
 
 - **Check:** `type: 'blocked_by'` anywhere (requests, seed data, stored dependency records); code that reads `task.isBlocked` to decide whether dependencies are finished, or that sets `isBlocked` when adding a dependency; `task.unblocked` handlers that assume the task was marked blocked; assertions that `relates_to` links appear in `upstreamTasks`.
@@ -707,6 +712,29 @@ In many organizations, teams use custom statuses like `qa_in_review`, `waiting_o
 | `in_progress` | Active work underway | `in_progress`, `in_review` |
 | `completed` | Successfully resolved; unblocks downstream tasks | `done`, `closed` |
 | `canceled` | Abandoned or discarded; bypasses blockers | `canceled` |
+
+A task's `status` must be one of its project's statuses (the project's `statusDefinitions`, else its workflow's); anything else is rejected. `semanticStatus` is always derived from the status's definition and cannot be set directly. Keys are never guessed from their spelling: data written around the engine with an unknown key counts as `not_started`.
+
+### Derived fields
+
+The engine maintains these fields; request bodies that include them are rejected:
+
+- `semanticStatus`: from the status definition.
+- `loggedHours`, `actualHours`, `billableHours`: effort, summed from time entries (`engine.logTime`, `POST /time-entries`, MCP `log_time`).
+- `actualDurationSeconds`, `actualDurationMinutes`, `inProgressSince`: elapsed time in progress, measured from status changes. Elapsed time is not effort, so it never changes the hours above.
+- `blockedSince`, `blockedDurationSeconds`, `billableDurationMinutes`.
+
+`completedAt`, `actualStartDate` and `actualEndDate` stay writable for imports and corrections.
+
+### Changing a project's workflow
+
+New projects are pinned to the workflow they start with. To switch one, pass a mapping for every status its tasks are in that the new workflow does not have:
+
+```typescript
+await engine.updateProject(projectId, { workflowId: newWorkflow.id }, { statusMapping: { in_review: 'todo' } });
+```
+
+Over HTTP, send `statusMapping` in the `PATCH /projects/:id` body. Without a complete mapping the update is refused with `409` and nothing changes. Removing a status from a workflow that tasks are still in, or deleting a workflow that a project uses, is also refused with `409`.
 
 ---
 
@@ -3077,7 +3105,8 @@ graph TD
 | `list_tasks` | core | Finding tasks by project, status, priority, assignee, iteration, deliverable, container or parent; returns `{ tasks, nextCursor }` | `projectId`, `status`, `priority`, `assigneeId`, `parentId`, `limit`, `cursor` |
 | `get_task` | core | One task's full record; with `includeDependencies`, the tasks it waits for and the tasks waiting for it | `id`, `includeDependencies` |
 | `create_task` | core | Adding work | `projectId`, `title`, `estimatedHours`, `priority`, `assigneeId` |
-| `update_task` | core | Changing status, priority, assignee, estimates, logged hours, blocked state | `id`, plus the fields to change |
+| `update_task` | core | Changing status, priority, assignee, estimates, deadline, blocked state | `id`, plus the fields to change |
+| `log_time` | core | Recording hours worked (the only way to add logged hours) | `taskId`, `hours`, `description` |
 | `delete_task` | core | Permanent deletion (destructive) | `id` |
 | `add_dependency` | core | Making a task wait for another so the critical path orders them; adding an existing link returns it, a loop is refused | `taskId`, `dependsOnTaskId`, `type` |
 | `remove_dependency` | core | Removing that link by the same two task ids; returns `{ removed, dependencyIds }` | `taskId`, `dependsOnTaskId`, `type` |

@@ -10,6 +10,7 @@ import {
   DependencyOutput,
   DeliverableOutput,
   CommentOutput,
+  TimeEntryOutput,
   CriticalPathOutput,
   PortfolioCriticalPathOutput,
   TimelineLadderOutput,
@@ -373,7 +374,6 @@ export const updateTaskTool = defineTool<{
   tags?: string[];
   estimatedHours?: number;
   allocation?: number;
-  loggedHours?: number;
   isBlocked?: boolean;
   blockedReason?: string;
   customFields?: Record<string, unknown>;
@@ -381,7 +381,7 @@ export const updateTaskTool = defineTool<{
   name: 'update_task',
   title: 'Update Task',
   description:
-    'Change an existing task: title, description, status, priority, assignee, due date, deadline, milestone flag, estimate, logged hours, allocation, blocked state, tags or custom fields. Only the fields you pass change. Use it to move a task through its workflow or re-plan it. Returns the updated task.',
+    'Change an existing task: title, description, status, priority, assignee, due date, deadline, milestone flag, estimate, allocation, blocked state, tags or custom fields. Only the fields you pass change. Use it to move a task through its workflow or re-plan it. Returns the updated task.',
   toolset: 'core',
   outputZodSchema: TaskOutput,
   zodSchema: z.object({
@@ -402,7 +402,6 @@ export const updateTaskTool = defineTool<{
       .max(1)
       .optional()
       .describe("Share of the assignee's time the task takes, in (0, 1]; e.g. 0.5 for half-time. Estimates are effort, so a 0.5 task takes twice as long"),
-    loggedHours: z.number().optional().describe('Total hours worked so far'),
     isBlocked: z.boolean().optional().describe('Whether the task is blocked'),
     blockedReason: z.string().optional().describe('Reason why the task is blocked'),
     customFields: z.record(z.unknown()).optional().describe('Custom field values as a JSON object (validated against the project\'s field definitions for tasks)')
@@ -429,6 +428,23 @@ export const deleteTaskTool = defineTool<{ id: string }>({
     const success = await target.deleteTask(args.id);
     return { success };
   }
+});
+
+export const logTimeTool = defineTool<{ taskId: string; hours: number; description?: string; isBillable?: boolean; loggedAt?: string }>({
+  name: 'log_time',
+  title: 'Log Time',
+  description:
+    "Record time worked on a task. The task's logged hours are the sum of its time entries, so this is how hours are added (they cannot be set directly). Returns the time entry.",
+  toolset: 'core',
+  outputZodSchema: TimeEntryOutput,
+  zodSchema: z.object({
+    taskId: z.string().describe('The task worked on'),
+    hours: z.number().positive().describe('Hours worked, e.g. 1.5'),
+    description: z.string().optional().describe('What was done'),
+    isBillable: z.boolean().optional().describe('Whether the time is billable (default true)'),
+    loggedAt: z.string().optional().describe('When the work was done (ISO date-time; default now)')
+  }),
+  execute: async (args, target) => target.logTime(args)
 });
 
 export const addDependencyTool = defineTool<{ taskId: string; dependsOnTaskId: string; type?: 'blocking' | 'relates_to' }>({
@@ -813,6 +829,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   createTaskTool,
   updateTaskTool,
   deleteTaskTool,
+  logTimeTool,
   addDependencyTool,
   removeDependencyTool,
   listDeliverablesTool,

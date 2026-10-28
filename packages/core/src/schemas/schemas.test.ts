@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { z } from 'zod';
 import type {
   CreateTaskInput,
+  DerivedTaskField,
   Task,
   CreateProjectInput,
   Project,
@@ -53,13 +54,16 @@ type ServerAssigned = 'id' | 'createdAt' | 'updatedAt' | 'tenantId';
 // Identity is resolved by the server (withActor), never accepted in payloads.
 type CommentIdentity = 'authorId' | 'authorType';
 type UploaderIdentity = 'uploaderId' | 'uploaderType';
+// Derived by the engine (from the status, time entries and status timers), never accepted in payloads.
+type DerivedTaskFields = DerivedTaskField;
 
 const keyChecks: true[] = [
-  true as SameKeys<Infer<typeof CreateTaskSchema>, Omit<CreateTaskInput, 'key'>>,
-  true as SameKeys<Infer<typeof UpdateTaskSchema>, Omit<Task, ServerAssigned | 'key' | 'projectId'>>,
+  true as SameKeys<Infer<typeof CreateTaskSchema>, Omit<CreateTaskInput, 'key' | DerivedTaskFields>>,
+  true as SameKeys<Infer<typeof UpdateTaskSchema>, Omit<Task, ServerAssigned | 'key' | 'projectId' | DerivedTaskFields>>,
   // `workflow` is a denormalised copy resolved from `workflowId`, so it is not writable.
   true as SameKeys<Infer<typeof CreateProjectSchema>, Omit<CreateProjectInput, 'workflow' | 'tenantId'>>,
-  true as SameKeys<Infer<typeof UpdateProjectSchema>, Omit<Project, ServerAssigned | 'workflow'>>,
+  // statusMapping is an instruction for the update, not a stored field.
+  true as SameKeys<Omit<Infer<typeof UpdateProjectSchema>, 'statusMapping'>, Omit<Project, ServerAssigned | 'workflow'>>,
   true as SameKeys<Infer<typeof CreateWorkflowSchema>, Omit<Workflow, ServerAssigned>>,
   true as SameKeys<Infer<typeof CreateDeliverableSchema>, CreateDeliverableInput>,
   true as SameKeys<Infer<typeof UpdateDeliverableSchema>, Omit<Deliverable, ServerAssigned | 'projectId'>>,

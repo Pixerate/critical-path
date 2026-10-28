@@ -149,6 +149,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** `type: 'blocked_by'` anywhere (requests, seed data, stored dependency records); code that reads `task.isBlocked` to decide whether dependencies are finished, or that sets `isBlocked` when adding a dependency; `task.unblocked` handlers that assume the task was marked blocked; assertions that `relates_to` links appear in `upstreamTasks`.
 - **Fix:** send `{ taskId: <waiting task>, dependsOnTaskId: <task it waits for>, type: 'blocking' }` instead of `blocked_by`, and migrate stored `blocked_by` records the same way (they are still read correctly meanwhile). Read `getTaskLifecycleState(id).isBlocked` (dependencies or a manual block) or `.blockingTaskIds` (dependencies only). Clear manual blocks yourself; the engine no longer does. Read a dependency's direction with `precedenceOf(dependency)`.
 
+### core 0.54: statuses, workflows and derived fields
+
+- **Check:** task statuses that are not in the project's workflow (including custom keys you relied on being classified by name); request bodies or `createTask` calls that include `semanticStatus`, `loggedHours`, `actualHours`, `billableHours`, `actualDuration*`, `billableDurationMinutes`, `inProgressSince`, `blockedSince` or `blockedDurationSeconds`; code that reads `actualHours` as elapsed time; project updates that change `workflowId`, `workflow` or `statusDefinitions`; workflow deletes; MCP `update_task` calls with `loggedHours`.
+- **Fix:** add missing statuses to the workflow with the right `category`. Log hours with `logTime` / `POST /time-entries` / MCP `log_time` instead of writing them. Read elapsed time from `actualDurationSeconds`. Pass `statusMapping` when changing a project's statuses (a `409` lists the statuses that need one). Switch projects off a workflow before deleting it. Handle `409` (`ConflictError`) where you call these.
+
 ### mcp 0.19: tool results, selection and annotations
 
 - **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.

@@ -256,7 +256,6 @@ describe('@critical-path/server Router Tests', () => {
       title: 'Animation Pass 1',
       status: 'done',
       estimatedHours: 10,
-      loggedHours: 10,
       deliverableId
     });
 
