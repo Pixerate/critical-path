@@ -183,7 +183,8 @@ export interface TaskDependency {
   id: string;
   taskId: string;
   dependsOnTaskId: string;
-  type: 'blocking' | 'blocked_by' | 'relates_to';
+  /** `'blocking'`: `taskId` cannot start until `dependsOnTaskId` finishes. `'relates_to'`: an informational link. */
+  type: 'blocking' | 'relates_to';
   /** Your own data for this record (any JSON object). Stored and returned as-is. */
   customFields?: Record<string, unknown>;
 }
@@ -746,6 +747,12 @@ export interface CriticalPathAnalysis {
   overallocations?: Overallocation[];
   /** Tasks forecast to finish after their `deadline`. */
   missedDeadlineTaskIds: string[];
+  /**
+   * Present when dependencies form a cycle: the tasks on it or waiting on it. They are scheduled in
+   * input order so the analysis completes, but their dates are not reliable. The engine refuses
+   * cycles, so this only happens with data written around it or passed straight to `calculateCPM`.
+   */
+  cyclicTaskIds?: string[];
 }
 
 /** Critical path analysis across several projects (`calculatePortfolioCriticalPath`). */

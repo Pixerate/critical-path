@@ -191,12 +191,12 @@ describe('agent tool discovery', () => {
       expect(text(missing)).toMatch(/list_tasks/);
     });
 
-    it('reads blocked_by records in the direction the scheduler uses', async () => {
+    it('reads legacy blocked_by records in the direction the scheduler uses', async () => {
       const project = await engine.createProject({ name: 'Launch' });
       const design = await engine.createTask({ projectId: project.id, title: 'Design' });
       const build = await engine.createTask({ projectId: project.id, title: 'Build' });
       // Stored the other way round: build (dependsOnTaskId) waits for design (taskId).
-      const record = await engine.addDependency({ taskId: design.id, dependsOnTaskId: build.id, type: 'blocked_by' });
+      const record = await engine.store.addDependency({ taskId: design.id, dependsOnTaskId: build.id, type: 'blocked_by' as 'blocking' });
       const client = await connect({ engine });
 
       const buildView = await call(client, 'get_task', { id: build.id, includeDependencies: true });

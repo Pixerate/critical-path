@@ -731,6 +731,10 @@ await engine.addDependency({
 });
 ```
 
+Dependencies are `blocking` (`taskId` waits for `dependsOnTaskId`) or `relates_to` (informational: never schedules, blocks or forms a cycle). `blocked_by` was removed in 0.53; stored records are still read correctly through `precedenceOf(dependency)`, the single helper that reads a dependency's direction. `calculateCPM` lists tasks on a cycle that bypassed the engine in `cyclicTaskIds`.
+
+Blocking has two independent sources: dependencies (derived, `getTaskLifecycleState(id).blockingTaskIds`) and a manual block (`isBlocked`, `blockedReason`, stored). When a task finishes, `task.unblocked` is published for downstream tasks that are now free to start, without changing them; manual blocks are only cleared by people or your code. Canceled upstream tasks count as satisfied everywhere.
+
 ### Interface-Segregated Repositories
 Discrete interfaces are provided for repository segregation:
 - `ProjectRepository`

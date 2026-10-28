@@ -11,7 +11,7 @@
 
 - **Domain-Driven Design (DDD) Engine**: Rich aggregates (`TaskEntity`, `ProjectEntity`) encapsulating lifecycle invariants, state transitions, time tracking, and uncommitted domain events.
 - **Typed Domain Event Bus**: In-memory pub/sub `DomainEventBus` enabling reactive subscriptions to granular domain events (`task.created`, `task.status_changed`, `time.logged`, `dependency.added`, etc.).
-- **DAG Graph Cycle Invariant**: Built-in topological validation (`detectDependencyCycle`, `CircularDependencyError`) to ensure strict acyclic task dependency graphs.
+- **DAG Graph Cycle Invariant**: Built-in topological validation (`detectDependencyCycle`, `CircularDependencyError`) to ensure strict acyclic task dependency graphs. Dependencies are `blocking` or `relates_to` (informational, never part of the schedule or cycle check); `precedenceOf` reads a dependency's direction.
 - **Custom Field Value Object Validation**: Strict type-checking (`validateCustomFieldValues`, `CustomFieldValidationError`) against configured project field schemas.
 - **Interface Segregated Repositories**: Focused repository contracts (`ProjectRepository`, `TaskRepository`, `WorkflowRepository`, etc.) composed into `StorageAdapter`.
 - **Plugin Lifecycle Architecture**: Extensible hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`, etc.).

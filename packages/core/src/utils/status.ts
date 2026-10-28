@@ -83,10 +83,11 @@ export function deriveTaskLifecycleState(
   const isActive = semanticStatus === 'in_progress';
   const isCancelled = semanticStatus === 'canceled';
 
-  // Dependency & Flow Indicators
+  // Dependency & Flow Indicators. Completed and canceled upstream tasks no longer hold this one up
+  // (the same rule as auto-unblocking and critical path analysis).
   const blockingTasks = upstreamTasks.filter((t) => {
     const upstreamDef = resolveStatusDefinition(t.status, customDefinitions);
-    return upstreamDef.category !== 'completed';
+    return upstreamDef.category !== 'completed' && upstreamDef.category !== 'canceled';
   });
   const blockingTaskIds = blockingTasks.map((t) => t.id);
   const isExplicitlyBlocked = Boolean(task.isBlocked === true);

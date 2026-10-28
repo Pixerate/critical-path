@@ -21,6 +21,7 @@ import type {
   WorkSchedule
 } from '../types/index.js';
 import { calculateCPM, getTaskDurationHours } from './cpm.js';
+import { precedenceOf } from './graph.js';
 import { DEFAULT_WORK_SCHEDULE, getWorkingDaysBetween } from './calendar.js';
 
 export interface LadderContext {
@@ -343,15 +344,10 @@ export function buildTimelineLadder(
   }
 
   for (const dep of dependencies) {
-    if (dep.type === 'blocking') {
-      // dep.taskId depends on dep.dependsOnTaskId
-      // dep.dependsOnTaskId blocks dep.taskId
-      blockingMap.get(dep.taskId)?.push(dep.dependsOnTaskId);
-      dependentMap.get(dep.dependsOnTaskId)?.push(dep.taskId);
-    } else if (dep.type === 'blocked_by') {
-      blockingMap.get(dep.dependsOnTaskId)?.push(dep.taskId);
-      dependentMap.get(dep.taskId)?.push(dep.dependsOnTaskId);
-    }
+    const edge = precedenceOf(dep);
+    if (!edge) continue;
+    blockingMap.get(edge.after)?.push(edge.before);
+    dependentMap.get(edge.before)?.push(edge.after);
   }
 
   // Subtask hierarchy (parentId -> children)
