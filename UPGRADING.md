@@ -139,6 +139,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
 - **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
 
+### core 0.53: dependency types and blocking
+
+- **Check:** `type: 'blocked_by'` anywhere (requests, seed data, stored dependency records); code that reads `task.isBlocked` to decide whether dependencies are finished, or that sets `isBlocked` when adding a dependency; `task.unblocked` handlers that assume the task was marked blocked; assertions that `relates_to` links appear in `upstreamTasks`.
+- **Fix:** send `{ taskId: <waiting task>, dependsOnTaskId: <task it waits for>, type: 'blocking' }` instead of `blocked_by`, and migrate stored `blocked_by` records the same way (they are still read correctly meanwhile). Read `getTaskLifecycleState(id).isBlocked` (dependencies or a manual block) or `.blockingTaskIds` (dependencies only). Clear manual blocks yourself; the engine no longer does. Read a dependency's direction with `precedenceOf(dependency)`.
+
 ### mcp 0.19: tool results, selection and annotations
 
 - **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.

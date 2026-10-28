@@ -140,7 +140,7 @@ erDiagram
         string id PK
         string taskId FK
         string dependsOnTaskId FK
-        string type "blocking | blocked_by | relates_to"
+        string type "blocking | relates_to"
     }
 
     COMMENT {
@@ -259,13 +259,14 @@ Calculated dynamically by the engine based on task metadata, dates, assignees, e
 ## Dependency Graph
 
 Tasks can establish relationships using `TaskDependency`:
-- `blocking`: `taskId` cannot proceed until `dependsOnTaskId` is completed.
-- `blocked_by`: Inverse of blocking.
-- `relates_to`: Informational link.
+- `blocking`: `taskId` cannot start until `dependsOnTaskId` finishes (completed or canceled).
+- `relates_to`: Informational link. It never schedules, blocks or forms a cycle.
+
+(`blocked_by`, the inverse of `blocking`, was removed in 0.53. Stored records are still read the right way round; `precedenceOf(dependency)` is the one helper that reads a dependency's direction.)
 
 Querying `engine.getTaskDependencyGraph(taskId)` returns:
-- `upstreamTasks`: Tasks that `taskId` depends on.
-- `downstreamTasks`: Tasks that depend on `taskId`.
+- `upstreamTasks`: Tasks that `taskId` waits for (`blocking` only).
+- `downstreamTasks`: Tasks that wait for `taskId` (`blocking` only).
 - `dependencies`: Raw dependency records.
 
 ### DAG Invariant & Cycle Prevention

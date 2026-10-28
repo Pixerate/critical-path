@@ -20,6 +20,7 @@ import {
   toDateString
 } from './calendar.js';
 import { isTaskInProgress } from '../utils/status.js';
+import { precedenceOf } from './graph.js';
 
 export function getTaskDurationHours(task: Task): number {
   // A milestone is a point in time: it never takes effort, whatever its estimates say
@@ -153,6 +154,8 @@ interface TaskGraph {
   /** successors[u]: tasks that can only start after u finishes. */
   successors: Map<string, Set<string>>;
   topoOrder: string[];
+  /** Tasks that are on, or wait on, a dependency cycle. */
+  cyclicTaskIds: string[];
 }
 
 function buildGraph(tasks: Task[], dependencies: TaskDependency[]): TaskGraph {
@@ -171,22 +174,10 @@ function buildGraph(tasks: Task[], dependencies: TaskDependency[]): TaskGraph {
   }
 
   for (const dep of dependencies) {
-    let sourceId: string | null = null;
-    let targetId: string | null = null;
-
-    if (dep.type === 'blocking') {
-      // taskId depends on dependsOnTaskId (dependsOnTaskId -> taskId)
-      sourceId = dep.dependsOnTaskId;
-      targetId = dep.taskId;
-    } else if (dep.type === 'blocked_by') {
-      // dependsOnTaskId is blocked by taskId (taskId -> dependsOnTaskId)
-      sourceId = dep.taskId;
-      targetId = dep.dependsOnTaskId;
-    }
-
-    if (sourceId && targetId && taskMap.has(sourceId) && taskMap.has(targetId) && sourceId !== targetId) {
-      prerequisites.get(targetId)!.add(sourceId);
-      successors.get(sourceId)!.add(targetId);
+    const edge = precedenceOf(dep);
+    if (edge && taskMap.has(edge.before) && taskMap.has(edge.after) && edge.before !== edge.after) {
+      prerequisites.get(edge.after)!.add(edge.before);
+      successors.get(edge.before)!.add(edge.after);
     }
   }
 
@@ -217,16 +208,13 @@ function buildGraph(tasks: Task[], dependencies: TaskDependency[]): TaskGraph {
     }
   }
 
-  // If there's a cycle or disconnected nodes not processed in topoOrder, append them
-  if (topoOrder.length < taskIds.length) {
-    for (const id of taskIds) {
-      if (!topoOrder.includes(id)) {
-        topoOrder.push(id);
-      }
-    }
-  }
+  // Tasks on or after a dependency cycle never reach in-degree 0. Schedule them in input order so
+  // the analysis still completes, and report them (`cyclicTaskIds`): their dates are not reliable.
+  const sorted = new Set(topoOrder);
+  const cyclicTaskIds = taskIds.filter((id) => !sorted.has(id));
+  topoOrder.push(...cyclicTaskIds);
 
-  return { taskMap, taskIds, prerequisites, successors, topoOrder };
+  return { taskMap, taskIds, prerequisites, successors, topoOrder, cyclicTaskIds };
 }
 
 /**
@@ -306,8 +294,11 @@ function scheduleOnDates(
 
   const early = forwardPass(topoOrder, prerequisites, ctx);
   const late = backwardPass([...topoOrder].reverse(), (id) => successors.get(id)!, endOfProjects(early), ctx);
-  const analyse = (seg: ProjectSegment, e: Dates, l: Dates, extra?: (id: string) => Partial<TaskCriticalPathSchedule>) =>
-    buildAnalysis(seg, calculatedAt, e, l, ctx, extra);
+  const cyclic = new Set(graph.cyclicTaskIds);
+  const analyse = (seg: ProjectSegment, e: Dates, l: Dates, extra?: (id: string) => Partial<TaskCriticalPathSchedule>) => {
+    const cyclicTaskIds = seg.taskIds.filter((id) => cyclic.has(id));
+    return { ...buildAnalysis(seg, calculatedAt, e, l, ctx, extra), ...(cyclicTaskIds.length ? { cyclicTaskIds } : {}) };
+  };
 
   if (!options.levelResources) {
     const overallocations = findOverallocations(taskMap, early, resourcesOf);
@@ -830,12 +821,13 @@ export function calculateCPM(
     };
   }
 
-  const { taskMap, taskIds, prerequisites, successors, topoOrder } = buildGraph(tasks, dependencies);
+  const graph = buildGraph(tasks, dependencies);
+  const { taskMap, taskIds, prerequisites, successors, topoOrder } = graph;
   if (options.levelResources && options.calendars !== 'assignee') {
     throw new Error("levelResources requires calendars: 'assignee'.");
   }
   if (options.calendars === 'assignee') {
-    return calculateCalendarCPM(projectId, calculatedAt, { taskMap, taskIds, prerequisites, successors, topoOrder }, options);
+    return calculateCalendarCPM(projectId, calculatedAt, graph, options);
   }
 
   // Deadlines as project-calendar hours from the start. Without a start date there is nothing to
@@ -988,6 +980,7 @@ export function calculateCPM(
     projectEndDate,
     criticalTaskIds,
     missedDeadlineTaskIds: missedDeadlines(schedules),
+    ...(graph.cyclicTaskIds.length ? { cyclicTaskIds: graph.cyclicTaskIds } : {}),
     tasks: schedules
   };
 }

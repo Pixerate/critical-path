@@ -228,7 +228,7 @@ export type ReportAgentStatusBody = z.infer<typeof ReportAgentStatusSchema>;
 
 export const CreateDependencySchema = strictObject({
   dependsOnTaskId: nonEmpty,
-  type: z.enum(['blocking', 'blocked_by', 'relates_to']).default('blocking'),
+  type: z.enum(['blocking', 'relates_to']).default('blocking'),
   customFields: customFields.optional()
 });
 

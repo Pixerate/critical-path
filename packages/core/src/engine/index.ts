@@ -97,7 +97,7 @@ import {
 } from '../domain/events.js';
 import { validateAttachmentUrl, AttachmentValidationError } from '../domain/entities.js';
 import { validateCustomFieldValues, validateCustomFieldDefinitions } from '../domain/custom-fields.js';
-import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
+import { detectDependencyCycle, CircularDependencyError, precedenceOf } from '../domain/graph.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../domain/errors.js';
 import { WebhookDispatcher, assertWebhookUrl } from '../webhooks/dispatcher.js';
 import { buildStorageKey, normalizeUploadData } from '../storage/file-storage.js';
@@ -1194,9 +1194,12 @@ export class CriticalPathEngine {
   }
 
   /**
-   * After a task completes or is canceled, unblocks downstream tasks whose upstream tasks are all
-   * completed or canceled. Runs on an elevated view, so upstream tasks the caller cannot read still
-   * count, and resolves each task's status against its own project's definitions.
+   * After a task completes or is canceled, publishes `task.unblocked` for each downstream task whose
+   * upstream tasks are now all completed or canceled, so it is free to start. Dependency blocking is
+   * derived (see `getTaskLifecycleState`), so nothing is written to the task: a manual block
+   * (`isBlocked`, `blockedReason`) stays until someone clears it. Runs on an elevated view, so
+   * upstream tasks the caller cannot read still count, and resolves each task's status against its
+   * own project's definitions.
    */
   private async checkAndUnblockDownstreamTasks(completedTask: Task): Promise<void> {
     try {
@@ -1213,40 +1216,28 @@ export class CriticalPathEngine {
         }
         return resolveStatusDefinition(task.status, statusDefsByProject.get(task.projectId)).category;
       };
+      const isFinished = async (task: Task) => {
+        const category = await categoryOf(task);
+        return category === 'completed' || category === 'canceled';
+      };
 
       for (const downstream of graph.downstreamTasks) {
-        const category = await categoryOf(downstream);
-        if (category === 'completed' || category === 'canceled') continue;
-        // Nothing to unblock; don't publish task.unblocked for tasks that were never blocked.
-        if (!downstream.isBlocked && !downstream.blockedReason && !downstream.blockedSince) continue;
-
+        if (await isFinished(downstream)) continue;
         const downstreamGraph = await engine.getTaskDependencyGraph(downstream.id);
         let allSatisfied = true;
         for (const up of downstreamGraph.upstreamTasks) {
-          const upCategory = await categoryOf(up);
-          if (upCategory !== 'completed' && upCategory !== 'canceled') {
+          if (!(await isFinished(up))) {
             allSatisfied = false;
             break;
           }
         }
         if (!allSatisfied) continue;
 
-        const updates: Partial<Task> = { isBlocked: false, blockedReason: null };
-        if (downstream.blockedSince) {
-          const startMs = new Date(downstream.blockedSince).getTime();
-          const endMs = Date.now();
-          if (!isNaN(startMs) && endMs >= startMs) {
-            updates.blockedDurationSeconds = (downstream.blockedDurationSeconds ?? 0) + (endMs - startMs) / 1000;
-          }
-          updates.blockedSince = null;
-        }
-        const updatedDownstream = (await this.store.updateTask(downstream.id, updates)) ?? downstream;
-
         await this.publishEvent<TaskUnblockedEvent>({
           name: 'task.unblocked',
           aggregateId: downstream.id,
           aggregateType: 'Task',
-          payload: { task: updatedDownstream, upstreamTaskId: completedTask.id }
+          payload: { task: downstream, upstreamTaskId: completedTask.id }
         });
         await this.store.logActivity({
           projectId: downstream.projectId,
@@ -1410,6 +1401,9 @@ export class CriticalPathEngine {
   // --- Task Dependencies & Graph ---
   /** Adds a dependency. Adding one that already exists (same tasks and type) returns the existing one. */
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
+    if (dep.type !== 'blocking' && dep.type !== 'relates_to') {
+      throw new ValidationError(`Dependency type must be 'blocking' or 'relates_to', got "${String(dep.type)}".`);
+    }
     const [task, upstream] = await Promise.all([this.getTask(dep.taskId), this.getTask(dep.dependsOnTaskId)]);
     if (!task) throw new NotFoundError(`Task "${dep.taskId}" not found.`);
     if (!upstream) throw new NotFoundError(`Task "${dep.dependsOnTaskId}" not found.`);
@@ -1418,11 +1412,13 @@ export class CriticalPathEngine {
       (d) => d.taskId === dep.taskId && d.dependsOnTaskId === dep.dependsOnTaskId && d.type === dep.type
     );
     if (duplicate) return duplicate;
-    // Enforce Directed Acyclic Graph (DAG) Invariant
-    const reachableDeps = await this.collectUpstreamDependencies(dep.dependsOnTaskId);
-    const cycleCheck = detectDependencyCycle(reachableDeps, dep);
-    if (cycleCheck.hasCycle) {
-      throw new CircularDependencyError(dep.taskId, dep.dependsOnTaskId, cycleCheck.cyclePath);
+    // Enforce the Directed Acyclic Graph (DAG) invariant. Informational links never form cycles.
+    if (dep.type === 'blocking') {
+      const reachableDeps = await this.collectUpstreamDependencies(dep.dependsOnTaskId);
+      const cycleCheck = detectDependencyCycle(reachableDeps, dep);
+      if (cycleCheck.hasCycle) {
+        throw new CircularDependencyError(dep.taskId, dep.dependsOnTaskId, cycleCheck.cyclePath);
+      }
     }
 
     const created = await this.store.addDependency(dep);
@@ -1458,11 +1454,13 @@ export class CriticalPathEngine {
 
       for (const deps of results) {
         for (const d of deps) {
-          // getDependencies returns edges in both directions; follow only outgoing ones.
-          if (!visited.has(d.taskId)) continue;
+          // getDependencies returns edges touching the task in both directions; follow the ones
+          // where a visited task waits for another.
+          const edge = precedenceOf(d);
+          if (!edge || !visited.has(edge.after)) continue;
           edges.set(d.id, d);
-          if (!visited.has(d.dependsOnTaskId) && !next.includes(d.dependsOnTaskId)) {
-            next.push(d.dependsOnTaskId);
+          if (!visited.has(edge.before) && !next.includes(edge.before)) {
+            next.push(edge.before);
           }
         }
       }
@@ -1480,11 +1478,13 @@ export class CriticalPathEngine {
     const upstreamTaskIds = new Set<string>();
     const downstreamTaskIds = new Set<string>();
 
+    // Upstream and downstream follow scheduling edges only; `relates_to` links stay in `dependencies`.
     for (const dep of dependencies) {
-      if (dep.taskId === taskId) {
-        upstreamTaskIds.add(dep.dependsOnTaskId);
-      } else if (dep.dependsOnTaskId === taskId) {
-        downstreamTaskIds.add(dep.taskId);
+      const edge = precedenceOf(dep);
+      if (edge?.after === taskId) {
+        upstreamTaskIds.add(edge.before);
+      } else if (edge?.before === taskId) {
+        downstreamTaskIds.add(edge.after);
       }
     }
 

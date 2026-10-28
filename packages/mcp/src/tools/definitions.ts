@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { CriticalPathEngine, Task, TaskDependency, TaskDependencyGraph } from '@critical-path/core';
+import { precedenceOf } from '@critical-path/core';
 import type { CriticalPathClient } from '@critical-path/client';
 import {
   ProjectOutput,
@@ -241,6 +242,13 @@ export const getTaskTool = defineTool<{ id: string; includeDependencies?: boolea
     if (!task || !args.includeDependencies) return task;
     const graph = await getDependencyGraph(target, args.id);
     const related = new Map<string, Task>([...graph.upstreamTasks, ...graph.downstreamTasks].map((t) => [t.id, t]));
+    // relates_to partners are not upstream or downstream work, so look them up separately
+    for (const dependency of graph.dependencies) {
+      const otherId = dependency.taskId === args.id ? dependency.dependsOnTaskId : dependency.taskId;
+      if (related.has(otherId) || otherId === args.id) continue;
+      const other = await target.getTask(otherId).catch(() => null);
+      if (other) related.set(otherId, other);
+    }
     const dependsOn: DependencyLink[] = [];
     const dependents: DependencyLink[] = [];
     for (const dependency of graph.dependencies) {
@@ -264,14 +272,11 @@ interface DependencyLink {
   type: 'blocking' | 'relates_to';
 }
 
-/**
- * Which task waits for which. A `blocked_by` record is stored the other way round: its
- * `dependsOnTaskId` waits for its `taskId` (see the scheduler in `@critical-path/core`).
- */
+/** Which task waits for which, read the way the scheduler reads it (`precedenceOf` in core). */
 function dependencyDirection(dependency: TaskDependency): { waiting: string; waitedFor: string } {
-  return dependency.type === 'blocked_by'
-    ? { waiting: dependency.dependsOnTaskId, waitedFor: dependency.taskId }
-    : { waiting: dependency.taskId, waitedFor: dependency.dependsOnTaskId };
+  const edge = precedenceOf(dependency);
+  // relates_to links have no direction; show them as recorded
+  return edge ? { waiting: edge.after, waitedFor: edge.before } : { waiting: dependency.taskId, waitedFor: dependency.dependsOnTaskId };
 }
 
 const linkType = (dependency: TaskDependency): DependencyLink['type'] => (dependency.type === 'relates_to' ? 'relates_to' : 'blocking');

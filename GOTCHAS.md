@@ -418,3 +418,15 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: A task past its `dueDate` still shows positive slack.
 - **Root Cause**: `dueDate` is informational (it only orders levelling under `levelingPriority: 'dueDate'`). Only `deadline` constrains the backward pass. A date-only `deadline` means the end of that working day on the task's calendar, so `2026-10-05` is 17:00 on the default schedule, not midnight.
 - **Solution / Workaround**: Set `deadline` for dates the schedule must hold. Milestones (`isMilestone: true`) are zero-duration, so their estimates are ignored everywhere `getTaskDurationHours` is used; ladder and metrics roll-ups that read `estimatedHours` directly do not know about milestones, so leave estimates off milestone tasks.
+
+### `task.unblocked` Does Not Change the Task, and Manual Blocks Stay
+- **Area / Package**: `@critical-path/core` (auto-unblocking, `isBlocked`, `getTaskLifecycleState`)
+- **Symptom / Behavior**: After upgrading to 0.53, a task with `isBlocked: true` stays blocked when its upstream work finishes, and `task.unblocked` fires for tasks that were never marked blocked.
+- **Root Cause**: Blocking has two sources. Dependency blocking is derived from the graph (`blockingTaskIds` in the lifecycle state) and never stored. `isBlocked` / `blockedReason` are a manual block, for reasons the graph does not know, and only people or your code clear them. Before 0.53 auto-unblocking cleared manual blocks, which silently dropped reasons such as "waiting on client sign-off". `task.unblocked` now means "every upstream task is finished, this one is free to start".
+- **Solution / Workaround**: Read `getTaskLifecycleState(id).isBlocked` (either source) or `.blockingTaskIds` (dependencies only) instead of `task.isBlocked`. Do not set `isBlocked` to mirror dependencies. If your app used to set `isBlocked` when adding a dependency, stop: the lifecycle state already reports it.
+
+### Dependency Direction: Use `precedenceOf`
+- **Area / Package**: `@critical-path/core` (`TaskDependency`, `domain/graph.ts`)
+- **Symptom / Behavior**: Code that reads `dependency.taskId` / `dependsOnTaskId` directly treats `relates_to` links as blocking, or reads legacy `blocked_by` records backwards.
+- **Root Cause**: Only `blocking` dependencies are scheduling edges. Records stored before 0.53 may still have `type: 'blocked_by'`, which is the same edge with the ids swapped. Before 0.53 the cycle check, the dependency graph and lifecycle state ignored the type while the critical path respected it, so they disagreed.
+- **Solution / Workaround**: Use `precedenceOf(dependency)` (returns `{ before, after }` or `null` for informational links) wherever you need direction. To clean up legacy data, swap the ids of `blocked_by` records and set `type: 'blocking'`.

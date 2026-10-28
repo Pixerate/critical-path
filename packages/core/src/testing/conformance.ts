@@ -316,7 +316,7 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
 
     it('round-trips dependencies, time entries and webhooks', async () => {
       const store = await createStore();
-      const dep = await store.addDependency({ taskId: 'a', dependsOnTaskId: 'b', type: 'blocked_by' });
+      const dep = await store.addDependency({ taskId: 'a', dependsOnTaskId: 'b', type: 'relates_to' });
       expect(await store.getDependency(dep.id)).toEqual(dep);
       expect(await store.getDependencies('b')).toHaveLength(1);
       expect(await store.removeDependency(dep.id)).toBe(true);
@@ -384,7 +384,7 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
       expect((await store.getTimeEntries(task.id))[0]).toMatchObject({ id: entry.id, customFields: custom });
 
       const other = await store.createTask({ projectId: project.id, title: 'Other', status: 'todo', priority: 'medium' });
-      const dependency = await store.addDependency({ taskId: task.id, dependsOnTaskId: other.id, type: 'blocked_by', customFields: custom });
+      const dependency = await store.addDependency({ taskId: task.id, dependsOnTaskId: other.id, type: 'relates_to', customFields: custom });
       expect((await store.getDependency(dependency.id))?.customFields).toEqual(custom);
       expect((await store.getDependencies(task.id))[0].customFields).toEqual(custom);
 

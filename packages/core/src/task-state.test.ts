@@ -343,7 +343,7 @@ describe('Task State Behaviour & Dependency Validation', () => {
       expect(stateC?.blockingTaskIds).toHaveLength(0);
     });
 
-    it('emits task.unblocked domain event and auto-transitions status from blocked to todo when dependencies complete', async () => {
+    it('emits task.unblocked when dependencies complete', async () => {
       const engine = new CriticalPathEngine();
       const project = await engine.createProject({ key: 'UNBLK', name: 'Auto Unblock Project' });
 
@@ -353,13 +353,10 @@ describe('Task State Behaviour & Dependency Validation', () => {
         status: 'todo'
       });
 
-      // Create downstream task with isBlocked = true
       const taskDownstream = await engine.createTask({
         projectId: project.id,
         title: 'Run Integration Tests',
-        status: 'todo',
-        isBlocked: true,
-        blockedReason: 'Waiting on compilation'
+        status: 'todo'
       });
 
       await engine.addDependency({
@@ -383,11 +380,8 @@ describe('Task State Behaviour & Dependency Validation', () => {
       expect(unblockedEvents[0].aggregateId).toBe(taskDownstream.id);
       expect(unblockedEvents[0].payload.upstreamTaskId).toBe(taskUpstream.id);
 
-      // Verify downstream task is unblocked
       const updatedDownstream = await engine.getTask(taskDownstream.id);
       expect(updatedDownstream?.status).toBe('todo');
-      expect(updatedDownstream?.isBlocked).toBe(false);
-      expect(updatedDownstream?.blockedReason).toBeNull();
 
       // Verify lifecycle state is ready and unblocked
       const lifecycle = await engine.getTaskLifecycleState(taskDownstream.id);
@@ -405,8 +399,7 @@ describe('Task State Behaviour & Dependency Validation', () => {
       const downstream = await engine.createTask({
         projectId: project.id,
         title: 'Final Assembly',
-        status: 'todo',
-        isBlocked: true
+        status: 'todo'
       });
 
       await engine.addDependency({ taskId: downstream.id, dependsOnTaskId: up1.id, type: 'blocking' });
@@ -423,9 +416,6 @@ describe('Task State Behaviour & Dependency Validation', () => {
       // Downstream should NOT be unblocked because up2 is still incomplete
       expect(unblockedEvents).toHaveLength(0);
 
-      let taskState = await engine.getTask(downstream.id);
-      expect(taskState?.isBlocked).toBe(true);
-
       let lifecycle = await engine.getTaskLifecycleState(downstream.id);
       expect(lifecycle?.isBlocked).toBe(true);
       expect(lifecycle?.blockingTaskIds).toEqual([up2.id]);
@@ -435,9 +425,7 @@ describe('Task State Behaviour & Dependency Validation', () => {
 
       // Now it should be unblocked
       expect(unblockedEvents).toHaveLength(1);
-      taskState = await engine.getTask(downstream.id);
-      expect(taskState?.status).toBe('todo');
-      expect(taskState?.isBlocked).toBe(false);
+      expect((await engine.getTask(downstream.id))?.status).toBe('todo');
 
       lifecycle = await engine.getTaskLifecycleState(downstream.id);
       expect(lifecycle?.isBlocked).toBe(false);

@@ -397,7 +397,7 @@ describe('CriticalPathEngine Core Tests', () => {
     expect(backlogPrev).toEqual([]);
   });
 
-  it('automatically unblocks downstream tasks and publishes task.unblocked event when upstream task completes', async () => {
+  it('publishes task.unblocked when the upstream task completes, leaving a manual block in place', async () => {
     const engine = new CriticalPathEngine();
     const proj = await engine.createProject({ key: 'UNBLK', name: 'Auto-Unblock Project' });
 
@@ -435,9 +435,11 @@ describe('CriticalPathEngine Core Tests', () => {
     expect(unblockedEvents[0].payload.task.id).toBe(downstream.id);
     expect(unblockedEvents[0].payload.upstreamTaskId).toBe(upstream.id);
 
+    // The manual block is the user's to clear; dependency blocking is derived
     const refreshedDownstream = await engine.getTask(downstream.id);
     expect(refreshedDownstream?.status).toBe('todo');
-    expect(refreshedDownstream?.isBlocked).toBe(false);
+    expect(refreshedDownstream).toMatchObject({ isBlocked: true, blockedReason: 'Waiting on upstream' });
+    expect((await engine.getTaskLifecycleState(downstream.id))?.blockingTaskIds).toEqual([]);
   });
 
   it('allows VFX workflow transitions from revision_requested to in_production', async () => {

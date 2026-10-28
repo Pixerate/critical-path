@@ -5,6 +5,7 @@ import {
   NotFoundError,
   SQLiteStore,
   ValidationError,
+  calculateCPM,
   createRolePolicy,
   type DomainEvent
 } from '../index.js';
@@ -40,34 +41,56 @@ describe('auto-unblocking', () => {
     return { engine, events, project, task };
   }
 
-  it('does not announce tasks that were never blocked', async () => {
+  it('announces a downstream task once its last upstream task finishes, without writing to it', async () => {
     const { engine, events, task } = await setup();
     const up = await task('Up');
+    const other = await task('Other');
     const down = await task('Down');
     await engine.addDependency({ taskId: down.id, dependsOnTaskId: up.id, type: 'blocking' });
-    await engine.updateTask(up.id, { status: 'in_progress' });
+    await engine.addDependency({ taskId: down.id, dependsOnTaskId: other.id, type: 'blocking' });
+    expect((await engine.getTaskLifecycleState(down.id))?.isBlocked).toBe(true);
+
     await engine.updateTask(up.id, { status: 'done' });
-    expect(events).toHaveLength(0);
+    expect(events).toHaveLength(0); // `other` is still open
+    const before = await engine.getTask(down.id);
+    await engine.updateTask(other.id, { status: 'done' });
+    expect(events).toHaveLength(1);
+    expect(await engine.getTask(down.id)).toEqual(before);
+    expect((await engine.getTaskLifecycleState(down.id))?.isBlocked).toBe(false);
   });
 
-  it('treats canceled upstream tasks as satisfied, and unblocks when one is canceled', async () => {
+  it('keeps a manual block when dependencies finish', async () => {
+    const { engine, events, task } = await setup();
+    const up = await task('Up');
+    const down = await task('Down', { isBlocked: true, blockedReason: 'waiting on client sign-off' });
+    await engine.addDependency({ taskId: down.id, dependsOnTaskId: up.id, type: 'blocking' });
+
+    await engine.updateTask(up.id, { status: 'done' });
+    expect(events).toHaveLength(1);
+    expect(await engine.getTask(down.id)).toMatchObject({ isBlocked: true, blockedReason: 'waiting on client sign-off' });
+    expect((await engine.getTaskLifecycleState(down.id))?.isBlocked).toBe(true);
+  });
+
+  it('treats canceled upstream tasks as satisfied, everywhere', async () => {
     const { engine, events, task } = await setup();
     const done = await task('Done');
     const dropped = await task('Dropped');
-    const down = await task('Down', { isBlocked: true, blockedReason: 'waiting' });
+    const down = await task('Down');
     await engine.addDependency({ taskId: down.id, dependsOnTaskId: done.id, type: 'blocking' });
     await engine.addDependency({ taskId: down.id, dependsOnTaskId: dropped.id, type: 'blocking' });
 
     await engine.updateTask(dropped.id, { status: 'canceled' });
-    expect((await engine.getTask(down.id))?.isBlocked).toBe(true); // `done` is still open
-    await engine.updateTask(done.id, { status: 'in_progress' });
+    expect(events).toHaveLength(0); // `done` is still open
+    expect((await engine.getTaskLifecycleState(down.id))?.blockingTaskIds).toEqual([done.id]);
     await engine.updateTask(done.id, { status: 'done' });
-    expect(await engine.getTask(down.id)).toMatchObject({ isBlocked: false, blockedReason: null });
     expect(events).toHaveLength(1);
+    expect((await engine.getTaskLifecycleState(down.id))?.isBlocked).toBe(false);
   });
 
   it("reads each upstream task's status with its own project's definitions", async () => {
     const engine = new CriticalPathEngine();
+    const events: DomainEvent[] = [];
+    engine.events.subscribe('task.unblocked', (e) => void events.push(e));
     // 'shipped' means completed only in the shipping project's workflow
     const flow = await engine.createWorkflow({
       name: 'Shipping',
@@ -81,11 +104,11 @@ describe('auto-unblocking', () => {
     const shipping = await engine.createProject({ name: 'Shipping', workflowId: flow.id });
     const product = await engine.createProject({ name: 'Product' });
     const up = await engine.createTask({ projectId: shipping.id, title: 'Ship' });
-    const down = await engine.createTask({ projectId: product.id, title: 'Announce', isBlocked: true });
+    const down = await engine.createTask({ projectId: product.id, title: 'Announce' });
     await engine.addDependency({ taskId: down.id, dependsOnTaskId: up.id, type: 'blocking' });
 
     await engine.updateTask(up.id, { status: 'shipped' });
-    expect((await engine.getTask(down.id))?.isBlocked).toBe(false);
+    expect(events.map((e) => e.aggregateId)).toEqual([down.id]);
   });
 
   it('keeps tasks blocked by upstream work the caller cannot read', async () => {
@@ -100,9 +123,59 @@ describe('auto-unblocking', () => {
     await alice.addDependency({ taskId: down.id, dependsOnTaskId: first.id, type: 'blocking' });
     await engine.addDependency({ taskId: down.id, dependsOnTaskId: hidden.id, type: 'blocking' });
 
+    const events: DomainEvent[] = [];
+    engine.events.subscribe('task.unblocked', (e) => void events.push(e));
     await alice.updateTask(first.id, { status: 'in_progress' });
     await alice.updateTask(first.id, { status: 'done' });
-    expect((await engine.getTask(down.id))?.isBlocked).toBe(true);
+    expect(events).toHaveLength(0);
+  });
+});
+
+describe('dependency types', () => {
+  it('rejects real cycles and allows informational back-links', async () => {
+    const engine = new CriticalPathEngine();
+    const project = await engine.createProject({ name: 'P' });
+    const [a, b] = await Promise.all(['A', 'B'].map((title) => engine.createTask({ projectId: project.id, title })));
+    await engine.addDependency({ taskId: b.id, dependsOnTaskId: a.id, type: 'blocking' });
+    await expect(engine.addDependency({ taskId: a.id, dependsOnTaskId: b.id, type: 'blocking' })).rejects.toThrow(/circular/);
+    await expect(engine.addDependency({ taskId: a.id, dependsOnTaskId: b.id, type: 'relates_to' })).resolves.toMatchObject({ type: 'relates_to' });
+    // relates_to links are not upstream or downstream work
+    expect((await engine.getTaskDependencyGraph(a.id)).upstreamTasks).toEqual([]);
+    expect((await engine.getTaskLifecycleState(a.id))?.isBlocked).toBe(false);
+  });
+
+  it('rejects types outside the model, including the removed blocked_by', async () => {
+    const engine = new CriticalPathEngine();
+    const project = await engine.createProject({ name: 'P' });
+    const [a, b] = await Promise.all(['A', 'B'].map((title) => engine.createTask({ projectId: project.id, title })));
+    for (const type of ['blocked_by', 'finish_to_start']) {
+      await expect(engine.addDependency({ taskId: a.id, dependsOnTaskId: b.id, type: type as 'blocking' })).rejects.toThrow(ValidationError);
+    }
+  });
+
+  it('reads legacy blocked_by records in scheduling order, and finds cycles through them', async () => {
+    const store = new InMemoryStore();
+    const engine = new CriticalPathEngine({ store });
+    const project = await engine.createProject({ name: 'P', startDate: '2026-10-05T09:00:00.000Z' });
+    const a = await engine.createTask({ projectId: project.id, title: 'A', estimatedHours: 8 });
+    const b = await engine.createTask({ projectId: project.id, title: 'B', estimatedHours: 8 });
+    // Written by an older release: B waits for A
+    await store.addDependency({ taskId: a.id, dependsOnTaskId: b.id, type: 'blocked_by' as 'blocking' });
+
+    expect((await engine.getTaskDependencyGraph(b.id)).upstreamTasks.map((t) => t.id)).toEqual([a.id]);
+    const analysis = await engine.calculateCriticalPath(project.id);
+    expect(analysis.tasks.find((t) => t.taskId === b.id)?.earlyStart).toBe(8);
+    await expect(engine.addDependency({ taskId: a.id, dependsOnTaskId: b.id, type: 'blocking' })).rejects.toThrow(/circular/);
+  });
+
+  it('reports cycles that reach critical path analysis', () => {
+    const task = (id: string) => ({ id, projectId: 'p', title: id, status: 'todo', priority: 'medium', estimatedHours: 8, createdAt: '', updatedAt: '' }) as const;
+    const analysis = calculateCPM('p', [task('A'), task('B'), task('C')], [
+      { id: '1', taskId: 'A', dependsOnTaskId: 'B', type: 'blocking' },
+      { id: '2', taskId: 'B', dependsOnTaskId: 'A', type: 'blocking' }
+    ]);
+    expect(analysis.cyclicTaskIds).toEqual(['A', 'B']);
+    expect(calculateCPM('p', [task('C')], []).cyclicTaskIds).toBeUndefined();
   });
 });
 
