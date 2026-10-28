@@ -6,9 +6,13 @@ import {
   SQLiteStore,
   ValidationError,
   calculateCPM,
+  ConflictError,
+  DEFAULT_SOFTWARE_WORKFLOW,
+  resolveStatusDefinition,
   createRolePolicy,
   type DomainEvent
 } from '../index.js';
+import { UpdateTaskSchema } from '../schemas/index.js';
 
 describe('project deletion', () => {
   it('finds subtasks without reloading the whole project for every task', async () => {
@@ -266,5 +270,95 @@ describe('milestones and deadlines', () => {
     await engine.updateTask(launch.id, { deadline: undefined });
     expect((await engine.getTask(launch.id))?.deadline).toBeUndefined();
     expect((await engine.calculateCriticalPath(project.id)).missedDeadlineTaskIds).toEqual([]);
+  });
+});
+
+describe('status integrity', () => {
+  it('rejects statuses outside the project workflow and never guesses from spelling', async () => {
+    const engine = new CriticalPathEngine();
+    const project = await engine.createProject({ name: 'P' });
+    await expect(engine.createTask({ projectId: project.id, title: 'A', status: 'unfinished' })).rejects.toThrow(/not in this project's workflow/);
+    const task = await engine.createTask({ projectId: project.id, title: 'A' });
+    await expect(engine.updateTask(task.id, { status: 'qa' })).rejects.toThrow(ValidationError);
+    expect(resolveStatusDefinition('unfinished').category).toBe('not_started');
+    expect(resolveStatusDefinition('done').category).toBe('completed');
+  });
+
+  it('derives semanticStatus from the status, ignoring callers', async () => {
+    const engine = new CriticalPathEngine();
+    const project = await engine.createProject({ name: 'P' });
+    const task = await engine.createTask({ projectId: project.id, title: 'A', semanticStatus: 'completed' } as Parameters<typeof engine.createTask>[0]);
+    expect(task).toMatchObject({ status: 'todo', semanticStatus: 'not_started' });
+    const updated = await engine.updateTask(task.id, { semanticStatus: 'completed' });
+    expect(updated?.semanticStatus).toBe('not_started');
+  });
+
+  it('does not accept derived fields over the API', () => {
+    for (const field of ['semanticStatus', 'loggedHours', 'actualHours', 'billableHours', 'inProgressSince', 'blockedSince']) {
+      expect(UpdateTaskSchema.safeParse({ [field]: field === 'semanticStatus' ? 'completed' : 1 }).success).toBe(false);
+    }
+    expect(UpdateTaskSchema.safeParse({ completedAt: '2026-01-02T00:00:00.000Z' }).success).toBe(true);
+  });
+
+  it('keeps logged effort when a task leaves in-progress', async () => {
+    const engine = new CriticalPathEngine();
+    const project = await engine.createProject({ name: 'P' });
+    const task = await engine.createTask({ projectId: project.id, title: 'A', estimatedHours: 10 });
+    await engine.updateTask(task.id, { status: 'in_progress' });
+    await engine.logTime({ taskId: task.id, hours: 6 });
+    const done = await engine.updateTask(task.id, { status: 'done' });
+    expect(done).toMatchObject({ loggedHours: 6, actualHours: 6 });
+    expect(done?.actualDurationSeconds).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('workflow changes', () => {
+  async function setup() {
+    const engine = new CriticalPathEngine();
+    const simple = await engine.createWorkflow({
+      name: 'Simple',
+      statuses: [
+        { key: 'open', label: 'Open', category: 'not_started' },
+        { key: 'closed', label: 'Closed', category: 'completed' }
+      ],
+      transitions: [],
+      defaultStatusKey: 'open'
+    });
+    const project = await engine.createProject({ name: 'P', workflowId: simple.id });
+    return { engine, simple, project };
+  }
+
+  it('requires a status mapping when switching a project to a workflow without its tasks’ statuses', async () => {
+    const { engine, project } = await setup();
+    const software = await engine.createWorkflow({ ...DEFAULT_SOFTWARE_WORKFLOW, name: 'Software' });
+    const task = await engine.createTask({ projectId: project.id, title: 'A', status: 'closed' });
+
+    await expect(engine.updateProject(project.id, { workflowId: software.id })).rejects.toThrow(ConflictError);
+    expect((await engine.getProject(project.id))?.workflowId).toBe(project.workflowId);
+
+    await engine.updateProject(project.id, { workflowId: software.id }, { statusMapping: { closed: 'done' } });
+    expect(await engine.getTask(task.id)).toMatchObject({ status: 'done', semanticStatus: 'completed' });
+    expect(await engine.getAllowedTaskTransitions(task.id)).not.toEqual([]);
+  });
+
+  it('refuses to delete a workflow in use, or to remove statuses tasks are in', async () => {
+    const { engine, simple, project } = await setup();
+    await engine.createTask({ projectId: project.id, title: 'A', status: 'closed' });
+    await expect(engine.deleteWorkflow(simple.id)).rejects.toThrow(ConflictError);
+    await expect(engine.updateWorkflow(simple.id, { statuses: [simple.statuses[0]] })).rejects.toThrow(/closed/);
+    // Adding a status is fine
+    await expect(
+      engine.updateWorkflow(simple.id, { statuses: [...simple.statuses, { key: 'parked', label: 'Parked', category: 'not_started' }] })
+    ).resolves.toBeTruthy();
+  });
+
+  it('pins the default workflow at creation, so a new default does not move projects', async () => {
+    const engine = new CriticalPathEngine();
+    const first = await engine.createWorkflow({ ...DEFAULT_SOFTWARE_WORKFLOW, name: 'First', isDefault: true });
+    const project = await engine.createProject({ name: 'P' });
+    expect(project.workflowId).toBe(first.id);
+    await engine.updateWorkflow(first.id, { isDefault: false });
+    await engine.createWorkflow({ ...DEFAULT_SOFTWARE_WORKFLOW, name: 'Second', isDefault: true });
+    expect((await engine.resolveProjectWorkflow(project.id))?.id).toBe(first.id);
   });
 });

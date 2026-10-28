@@ -62,7 +62,7 @@ export function inferTaskProgress(
   // 3. Effort / Hours Progress (Logged vs Estimated)
   let effortProgress: number | undefined;
   const estimatedH = task.estimatedHours || (task.estimatedDurationMinutes ? task.estimatedDurationMinutes / 60 : 0);
-  const loggedH = task.loggedHours || task.actualHours || 0;
+  const loggedH = task.loggedHours ?? task.actualHours ?? 0;
   if (estimatedH > 0) {
     effortProgress = Math.min(100, Math.round((loggedH / estimatedH) * 1000) / 10);
   }

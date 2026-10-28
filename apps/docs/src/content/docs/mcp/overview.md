@@ -63,7 +63,8 @@ graph TD
 | `list_tasks` | core | Finding tasks by project, status, priority, assignee, iteration, deliverable, container or parent; returns `{ tasks, nextCursor }` | `projectId`, `status`, `priority`, `assigneeId`, `parentId`, `limit`, `cursor` |
 | `get_task` | core | One task's full record; with `includeDependencies`, the tasks it waits for and the tasks waiting for it | `id`, `includeDependencies` |
 | `create_task` | core | Adding work | `projectId`, `title`, `estimatedHours`, `priority`, `assigneeId` |
-| `update_task` | core | Changing status, priority, assignee, estimates, logged hours, blocked state | `id`, plus the fields to change |
+| `update_task` | core | Changing status, priority, assignee, estimates, deadline, blocked state | `id`, plus the fields to change |
+| `log_time` | core | Recording hours worked (the only way to add logged hours) | `taskId`, `hours`, `description` |
 | `delete_task` | core | Permanent deletion (destructive) | `id` |
 | `add_dependency` | core | Making a task wait for another so the critical path orders them; adding an existing link returns it, a loop is refused | `taskId`, `dependsOnTaskId`, `type` |
 | `remove_dependency` | core | Removing that link by the same two task ids; returns `{ removed, dependencyIds }` | `taskId`, `dependsOnTaskId`, `type` |

@@ -233,8 +233,12 @@ All endpoints return JSON responses.
 - `GET /api/critical-path/workflows` - List all workflows.
 - `POST /api/critical-path/workflows` - Create workflow.
 - `GET /api/critical-path/workflows/:id` - Get workflow by ID.
-- `PATCH /api/critical-path/workflows/:id` - Update workflow.
-- `DELETE /api/critical-path/workflows/:id` - Delete workflow.
+- `PATCH /api/critical-path/workflows/:id` - Update workflow. Removing a status that tasks in a project using the workflow are still in returns `409`.
+- `DELETE /api/critical-path/workflows/:id` - Delete workflow. Returns `409` while any project uses it (including as its tenant default).
+
+A task's `status` must be one of its project's statuses (`statusDefinitions`, else its workflow's): anything else is a `400`. `semanticStatus` is always derived from the status. New projects are pinned to the workflow they start with (`workflowId` is set from the tenant default), so adding a new default later does not move them. Changing a project's statuses (`PATCH /projects/:id` with `workflowId`, `workflow` or `statusDefinitions`) needs `statusMapping` (old key -> new key) for every status its tasks are in that the project will no longer have, or it returns `409`; the tasks are moved in the same operation.
+
+Derived task fields are not accepted in request bodies: `semanticStatus`, `loggedHours`, `actualHours`, `billableHours`, `actualDurationSeconds`, `actualDurationMinutes`, `billableDurationMinutes`, `inProgressSince`, `blockedSince`, `blockedDurationSeconds`. Hours come from time entries (`POST /time-entries`); elapsed in-progress time (`actualDuration*`) is measured from status changes and is never counted as effort.
 
 ### Tasks
 - `GET /api/critical-path/tasks` - List tasks oldest first, paginated (`limit` up to 500, default 100; follow `nextCursor`). Filters: `projectId`, `status` and `priority` (comma-separated), `assigneeId` (also matches `assignees`), `iterationId`, `deliverableId`, `containerId`, `parentId` (`none` = top-level).

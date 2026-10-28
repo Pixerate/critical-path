@@ -64,6 +64,14 @@ export const DeliverableOutput = obj({
   dueDate: opt(z.string())
 }).describe('A deliverable');
 
+export const TimeEntryOutput = obj({
+  id: z.string(),
+  taskId: z.string(),
+  hours: z.number(),
+  userId: opt(z.string()),
+  loggedAt: opt(z.string())
+}).describe('A time entry');
+
 export const CommentOutput = obj({
   id: z.string(),
   taskId: z.string(),
