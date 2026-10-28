@@ -14,5 +14,5 @@ Clearing fields over HTTP, validated dates, and correctable time entries.
 - Time entries can be corrected and deleted: `engine.getTimeEntry` / `updateTimeEntry` / `deleteTimeEntry`, `GET | PATCH | DELETE /time-entries/:id`, and the matching client methods. The task's hour totals move by the difference, and `time.updated` / `time.deleted` events are published. A new `time.manage` permission (project managers and admins) covers other people's entries; anyone with `time.log` can manage their own.
 - `logTime` always requires the task to exist (it used to store orphan entries when no policy was enforced), and logs inside a transaction where the store supports one.
 - **BREAKING (custom adapters):** `TimeEntryRepository` gains `getTimeEntry(id)` and `updateTimeEntry(id, updates)`.
-- `FirebaseStore` updates every document inside `runTransaction` when the db supports it and implements `incrementTaskHours`, so concurrent updates and time logs are no longer lost.
+- `FirebaseStore` updates every document inside `runTransaction` when the db supports it and implements `incrementTaskHours`, so concurrent updates and time logs are no longer lost. Pass Firestore's `FieldValue` as the new `fieldValue` option to add hour totals with `FieldValue.increment` (atomic, no contention) instead of transactions.
 - MCP: new `update_time_entry` and `delete_time_entry` tools.
