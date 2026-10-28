@@ -28,7 +28,7 @@ import type {
   WorkloadGroupBy,
   WorkloadMetric
 } from '@critical-path/core';
-import { resolveStatusDefinition, isTempTaskId } from '@critical-path/core';
+import { resolveStatusDefinition, isTempTaskId, applyUpdate } from '@critical-path/core';
 import { registerWebMcpTools, type ToolsetName } from '@critical-path/mcp/web';
 import { useCriticalPathClient } from './provider.js';
 
@@ -274,7 +274,7 @@ export function useTasks(projectId?: string) {
       if (!previousTask) return prev;
       return prev.map((t) =>
         t.id === targetId || t.id === taskId
-          ? { ...t, ...updates, updatedAt: new Date().toISOString() }
+          ? { ...applyUpdate(t, updates), updatedAt: new Date().toISOString() }
           : t
       );
     });

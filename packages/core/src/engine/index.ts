@@ -41,7 +41,7 @@ import type {
   WorkloadDistributionOptions,
   StatusDefinition
 } from '../types/index.js';
-import { StorageAdapter, InMemoryStore, type ActivityQuery, type Page, type TaskQuery } from '../store/index.js';
+import { StorageAdapter, InMemoryStore, type ActivityQuery, type Page, type TaskQuery, type TaskHourDeltas } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
 import { deriveTaskLifecycleState, resolveStatusDefinition } from '../utils/status.js';
 import {
@@ -87,6 +87,8 @@ import {
   DeliverableDeletedEvent,
   TaskDependencyAddedEvent,
   TimeLoggedEvent,
+  TimeEntryUpdatedEvent,
+  TimeEntryDeletedEvent,
   CommentAddedEvent,
   CommentUpdatedEvent,
   CommentDeletedEvent,
@@ -128,6 +130,18 @@ import {
 import { calculateWorkloadDistribution } from '../domain/workload.js';
 import { getTaskEstimateHours, getSummaryTaskIds } from '../domain/effort.js';
 import { inferTaskProgress } from '../domain/metrics.js';
+
+/** What a time entry adds to its task's hour totals (`sign` -1 to take it off). */
+function hourDeltas(entry: Pick<TimeEntry, 'hours' | 'isBillable'>, sign = 1): TaskHourDeltas {
+  const hours = sign * entry.hours;
+  return { loggedHours: hours, actualHours: hours, billableHours: entry.isBillable !== false ? hours : 0 };
+}
+
+const addDeltas = (a: TaskHourDeltas, b: TaskHourDeltas): TaskHourDeltas => ({
+  loggedHours: (a.loggedHours ?? 0) + (b.loggedHours ?? 0),
+  actualHours: (a.actualHours ?? 0) + (b.actualHours ?? 0),
+  billableHours: (a.billableHours ?? 0) + (b.billableHours ?? 0)
+});
 
 /** Every caller-settable task field, derived from the create schema so new fields are never dropped. */
 const CREATE_TASK_FIELDS = Object.keys(CreateTaskSchema.shape) as (keyof CreateTaskInput & keyof Task)[];
@@ -301,7 +315,7 @@ export class CriticalPathEngine {
   private async isAllowed(
     action: AuthorizationAction,
     project?: Project,
-    resource?: { type: 'task' | 'comment' | 'attachment'; ownerId?: string }
+    resource?: { type: 'task' | 'comment' | 'attachment' | 'time_entry'; ownerId?: string }
   ): Promise<boolean> {
     if (!this.enforcing) return true;
     if (project && !this.inActorTenant(project)) return false;
@@ -350,7 +364,7 @@ export class CriticalPathEngine {
   private async requireProjectAccess(
     action: AuthorizationAction,
     projectId: string | undefined,
-    resource?: { type: 'task' | 'comment' | 'attachment'; ownerId?: string }
+    resource?: { type: 'task' | 'comment' | 'attachment' | 'time_entry'; ownerId?: string }
   ): Promise<void> {
     if (!this.enforcing) return;
     const project = await this.readableProject(projectId);
@@ -1611,50 +1625,118 @@ export class CriticalPathEngine {
   }
 
   // --- Time Tracking ---
+  /**
+   * Records time worked on a task and adds it to the task's `loggedHours`, `actualHours` and (when
+   * billable) `billableHours`. The task must exist.
+   */
   async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt' | 'userId'> & { userId?: string; loggedAt?: string }): Promise<TimeEntry> {
     if (!Number.isFinite(entry.hours) || entry.hours <= 0) {
       throw new ValidationError('Logged hours must be a positive number.');
     }
-
     const task = await this.getTask(entry.taskId);
-    if (this.enforcing) {
-      if (!task) throw new NotFoundError(`Task "${entry.taskId}" not found.`);
-      await this.requireProjectAccess('time.log', task.projectId);
-    }
-    if (task) {
-      const deltas = { loggedHours: entry.hours, actualHours: entry.hours, ...(entry.isBillable !== false ? { billableHours: entry.hours } : {}) };
-      if (this.store.incrementTaskHours) {
-        await this.store.incrementTaskHours(task.id, deltas);
-      } else {
-        // Read-modify-write: adapters without incrementTaskHours can lose concurrent logs.
-        await this.store.updateTask(task.id, {
-          loggedHours: (task.loggedHours || 0) + entry.hours,
-          actualHours: (task.actualHours || 0) + entry.hours,
-          billableHours: deltas.billableHours !== undefined ? (task.billableHours || 0) + entry.hours : task.billableHours
-        });
-      }
-    }
+    if (!task) throw new NotFoundError(`Task "${entry.taskId}" not found.`);
+    await this.requireProjectAccess('time.log', task.projectId);
 
-    const fullEntry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string } = {
-      ...entry,
-      userId: this.actor?.userId || entry.userId || task?.assigneeId || 'system',
-      loggedAt: entry.loggedAt
-    };
-
-    const created = await this.store.logTime(fullEntry);
-    const now = new Date().toISOString();
+    const created = await this.inTransaction(async (engine) => {
+      await engine.adjustTaskHours(task, hourDeltas(entry));
+      return engine.store.logTime({
+        ...entry,
+        userId: this.actor?.userId || entry.userId || task.assigneeId || 'system',
+        loggedAt: entry.loggedAt
+      });
+    });
 
     const event: TimeLoggedEvent = {
       id: `evt_${crypto.randomUUID()}`,
       name: 'time.logged',
       aggregateId: entry.taskId,
       aggregateType: 'Task',
-      occurredAt: now,
+      occurredAt: new Date().toISOString(),
       payload: { taskId: entry.taskId, timeEntry: created }
     };
     await this.events.publish(event);
 
     return created;
+  }
+
+  async getTimeEntry(id: string): Promise<TimeEntry | null> {
+    const entry = await this.store.getTimeEntry(id);
+    if (!entry) return null;
+    return (await this.getTask(entry.taskId)) ? entry : null;
+  }
+
+  /**
+   * Corrects a time entry (hours, billable flag, description, date or custom fields) and moves the
+   * task's hour totals by the difference. Needs `time.manage`, or `time.log` for your own entries.
+   */
+  async updateTimeEntry(
+    id: string,
+    updates: Partial<Pick<TimeEntry, 'hours' | 'isBillable' | 'description' | 'loggedAt' | 'customFields'>>
+  ): Promise<TimeEntry | null> {
+    const existing = await this.getTimeEntry(id);
+    if (!existing) return null;
+    const task = (await this.getTask(existing.taskId))!;
+    await this.requireProjectAccess('time.manage', task.projectId, { type: 'time_entry', ownerId: existing.userId });
+    if (updates.hours !== undefined && (!Number.isFinite(updates.hours) || updates.hours <= 0)) {
+      throw new ValidationError('Logged hours must be a positive number.');
+    }
+    const { hours, isBillable, description, loggedAt, customFields } = updates;
+    const changes = Object.fromEntries(
+      Object.entries({ hours, isBillable, description, loggedAt, customFields }).filter(([key]) => key in updates)
+    ) as Partial<TimeEntry>;
+    const next = { ...existing, ...changes };
+
+    const updated = await this.inTransaction(async (engine) => {
+      await engine.adjustTaskHours(task, addDeltas(hourDeltas(next), hourDeltas(existing, -1)));
+      return engine.store.updateTimeEntry(id, changes);
+    });
+    if (updated) {
+      await this.publishEvent<TimeEntryUpdatedEvent>({
+        name: 'time.updated',
+        aggregateId: existing.taskId,
+        aggregateType: 'Task',
+        payload: { taskId: existing.taskId, timeEntry: updated, previous: existing }
+      });
+    }
+    return updated;
+  }
+
+  /** Deletes a time entry and takes its hours off the task's totals. Same permissions as `updateTimeEntry`. */
+  async deleteTimeEntry(id: string): Promise<boolean> {
+    const existing = await this.getTimeEntry(id);
+    if (!existing) return false;
+    const task = (await this.getTask(existing.taskId))!;
+    await this.requireProjectAccess('time.manage', task.projectId, { type: 'time_entry', ownerId: existing.userId });
+
+    const deleted = await this.inTransaction(async (engine) => {
+      const removed = await engine.store.deleteTimeEntry(id);
+      if (removed) await engine.adjustTaskHours(task, hourDeltas(existing, -1));
+      return removed;
+    });
+    if (deleted) {
+      await this.publishEvent<TimeEntryDeletedEvent>({
+        name: 'time.deleted',
+        aggregateId: existing.taskId,
+        aggregateType: 'Task',
+        payload: { taskId: existing.taskId, timeEntryId: id, timeEntry: existing }
+      });
+    }
+    return deleted;
+  }
+
+  /** Adds `deltas` to a task's hour totals, atomically when the store supports it. */
+  private async adjustTaskHours(task: Task, deltas: TaskHourDeltas): Promise<void> {
+    if (this.store.incrementTaskHours) {
+      await this.store.incrementTaskHours(task.id, deltas);
+      return;
+    }
+    // Read-modify-write: adapters without incrementTaskHours can lose concurrent logs.
+    const current = (await this.store.getTask(task.id)) ?? task;
+    await this.store.updateTask(task.id, {
+      loggedHours: (current.loggedHours ?? 0) + (deltas.loggedHours ?? 0),
+      actualHours: (current.actualHours ?? 0) + (deltas.actualHours ?? 0),
+      billableHours: (current.billableHours ?? 0) + (deltas.billableHours ?? 0)
+    });
   }
 
   // --- Comments ---

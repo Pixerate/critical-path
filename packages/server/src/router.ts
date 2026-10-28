@@ -793,7 +793,24 @@ export class CriticalPathRouter {
     }
 
     // Time Tracking API
-    if (segments[0] === 'time-entries') {
+    if (segments[0] === 'time-entries' && segments.length === 2) {
+      const entryId = segments[1];
+      if (method === 'GET') {
+        const entry = await engine.getTimeEntry(entryId);
+        return entry ? this.jsonResponse({ timeEntry: entry }) : this.jsonResponse({ error: 'Time entry not found' }, 404);
+      }
+      if (method === 'PATCH') {
+        const updates = await this.readBody(request, schemas.UpdateTimeEntrySchema);
+        const entry = await engine.updateTimeEntry(entryId, updates);
+        return entry ? this.jsonResponse({ timeEntry: entry }) : this.jsonResponse({ error: 'Time entry not found' }, 404);
+      }
+      if (method === 'DELETE') {
+        const deleted = await engine.deleteTimeEntry(entryId);
+        return deleted ? this.jsonResponse({ success: true }) : this.jsonResponse({ error: 'Time entry not found' }, 404);
+      }
+    }
+
+    if (segments[0] === 'time-entries' && segments.length === 1) {
       if (method === 'GET') {
         const taskId = url.searchParams.get('taskId');
         if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);

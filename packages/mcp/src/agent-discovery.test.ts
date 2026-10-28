@@ -74,6 +74,7 @@ describe('agent tool discovery', () => {
       const build = await engine.createTask({ projectId: project.id, title: 'Build', estimatedHours: 16, assigneeId: 'ana' });
       await engine.addDependency({ taskId: build.id, dependsOnTaskId: design.id, type: 'blocking' });
       await engine.logTime({ taskId: design.id, hours: 3 });
+      const entry = await engine.logTime({ taskId: design.id, hours: 1 });
 
       // The SDK client validates structuredContent against the outputSchema of each listed tool.
       const client = await connect({ engine });
@@ -88,6 +89,8 @@ describe('agent tool discovery', () => {
         ['create_task', { projectId: project.id, title: 'Ship', estimatedHours: 2, assigneeId: 'ana' }],
         ['update_task', { id: build.id, priority: 'high' }],
         ['log_time', { taskId: design.id, hours: 1.5, description: 'Wireframes' }],
+        ['update_time_entry', { id: entry.id, hours: 2 }],
+        ['delete_time_entry', { id: entry.id }],
         ['add_dependency', { taskId: build.id, dependsOnTaskId: design.id }],
         ['remove_dependency', { taskId: build.id, dependsOnTaskId: design.id, type: 'relates_to' }],
         ['create_deliverable', { projectId: project.id, title: 'Beta', taskIds: [design.id] }],

@@ -1,4 +1,4 @@
-import type { ProjectFilter, StorageAdapter } from './index.js';
+import type { ProjectFilter, StorageAdapter, TaskHourDeltas } from './index.js';
 import { matchesActivityQuery, matchesTaskQuery, paginate, type ActivityQuery, type Page, type TaskQuery } from './query.js';
 import type {
   Project,
@@ -19,14 +19,24 @@ import type {
 import { generateProjectKey } from '../utils/key.js';
 import type { WebhookOutboxEntry, WebhookOutboxStore } from '../webhooks/outbox.js';
 
+type FirestoreSnapshot = { exists: boolean; id: string; data(): any };
+
+/** A document reference, as returned by `collection(name).doc(id)`. */
+export interface FirestoreDocRef {
+  id: string;
+  get(): Promise<FirestoreSnapshot>;
+  set(data: any, options?: { merge?: boolean }): Promise<void>;
+  delete(): Promise<void>;
+}
+
 export interface FirestoreDBInterface {
+  /**
+   * Firestore's `runTransaction`. When present (it is on a real Firestore instance), updates read
+   * and write inside a transaction, so concurrent writers retry instead of overwriting each other.
+   */
+  runTransaction?<T>(fn: (tx: { get(ref: FirestoreDocRef): Promise<FirestoreSnapshot>; set(ref: FirestoreDocRef, data: any): unknown }) => Promise<T>): Promise<T>;
   collection(name: string): {
-    doc(id?: string): {
-      id: string;
-      get(): Promise<{ exists: boolean; id: string; data(): any }>;
-      set(data: any, options?: { merge?: boolean }): Promise<void>;
-      delete(): Promise<void>;
-    };
+    doc(id?: string): FirestoreDocRef;
     get(): Promise<{ docs: Array<{ id: string; data(): any }> }>;
     where(field: string, op: string, value: any): {
       get(): Promise<{ docs: Array<{ id: string; data(): any }> }>;
@@ -36,6 +46,19 @@ export interface FirestoreDBInterface {
 
 export class InMemoryFirestoreMock implements FirestoreDBInterface {
   private collections = new Map<string, Map<string, any>>();
+  private queue: Promise<unknown> = Promise.resolve();
+
+  /** Runs transactions one at a time, which is what Firestore's retries amount to for tests. */
+  runTransaction<T>(fn: (tx: { get(ref: FirestoreDocRef): Promise<FirestoreSnapshot>; set(ref: FirestoreDocRef, data: any): unknown }) => Promise<T>): Promise<T> {
+    const writes: Array<() => Promise<void>> = [];
+    const run = this.queue.then(async () => {
+      const result = await fn({ get: (ref) => ref.get(), set: (ref, data) => void writes.push(() => ref.set(data)) });
+      for (const write of writes) await write();
+      return result;
+    });
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
 
   private getCollectionMap(name: string) {
     if (!this.collections.has(name)) {
@@ -139,6 +162,26 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
     this.db = config.db;
   }
 
+  /**
+   * Reads a document, applies `change` and writes the whole result (so fields cleared with
+   * `undefined` are removed). Runs inside `runTransaction` when the db has it, so concurrent updates
+   * to one document cannot drop each other's changes.
+   */
+  private async modify<T>(collection: string, id: string, change: (current: T) => T): Promise<T | null> {
+    const ref = this.db.collection(collection).doc(id);
+    const apply = (snap: FirestoreSnapshot) => (snap.exists ? change({ ...snap.data(), id: snap.id } as T) : null);
+    if (this.db.runTransaction) {
+      return this.db.runTransaction(async (tx) => {
+        const next = apply(await tx.get(ref));
+        if (next) tx.set(ref, sanitizeFirestoreData(next));
+        return next;
+      });
+    }
+    const next = apply(await ref.get());
+    if (next) await ref.set(sanitizeFirestoreData(next));
+    return next;
+  }
+
   // --- Projects ---
   async getProjects(filter?: ProjectFilter): Promise<Project[]> {
     const snap = filter?.tenantId
@@ -163,16 +206,7 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
   }
 
   async updateProject(id: string, updates: Partial<Project>): Promise<Project | null> {
-    const existing = await this.getProject(id);
-    if (!existing) return null;
-
-    const updated: Project = {
-      ...existing,
-      ...updates,
-      updatedAt: new Date().toISOString()
-    };
-    await this.db.collection('projects').doc(id).set(sanitizeFirestoreData(updated));
-    return updated;
+    return this.modify<Project>('projects', id, (existing) => ({ ...existing, ...updates, id, updatedAt: new Date().toISOString() }));
   }
 
   async deleteProject(id: string): Promise<boolean> {
@@ -203,16 +237,7 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
   }
 
   async updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow | null> {
-    const existing = await this.getWorkflow(id);
-    if (!existing) return null;
-
-    const updated: Workflow = {
-      ...existing,
-      ...updates,
-      updatedAt: new Date().toISOString()
-    };
-    await this.db.collection('workflows').doc(id).set(sanitizeFirestoreData(updated));
-    return updated;
+    return this.modify<Workflow>('workflows', id, (existing) => ({ ...existing, ...updates, id, updatedAt: new Date().toISOString() }));
   }
 
   async deleteWorkflow(id: string): Promise<boolean> {
@@ -243,12 +268,7 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
   }
 
   async updateTeam(id: string, updates: Partial<Team>): Promise<Team | null> {
-    const existing = await this.getTeam(id);
-    if (!existing) return null;
-
-    const updated: Team = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-    await this.db.collection('teams').doc(id).set(sanitizeFirestoreData(updated));
-    return updated;
+    return this.modify<Team>('teams', id, (existing) => ({ ...existing, ...updates, id, updatedAt: new Date().toISOString() }));
   }
 
   async deleteTeam(id: string): Promise<boolean> {
@@ -279,12 +299,7 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
   }
 
   async updateContainer(id: string, updates: Partial<TaskContainer>): Promise<TaskContainer | null> {
-    const existing = await this.getContainer(id);
-    if (!existing) return null;
-
-    const updated: TaskContainer = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-    await this.db.collection('containers').doc(id).set(sanitizeFirestoreData(updated));
-    return updated;
+    return this.modify<TaskContainer>('containers', id, (existing) => ({ ...existing, ...updates, id, updatedAt: new Date().toISOString() }));
   }
 
   async deleteContainer(id: string): Promise<boolean> {
@@ -323,12 +338,7 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
   }
 
   async updateDeliverable(id: string, updates: Partial<Deliverable>): Promise<Deliverable | null> {
-    const existing = await this.getDeliverable(id);
-    if (!existing) return null;
-
-    const updated: Deliverable = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-    await this.db.collection('deliverables').doc(id).set(sanitizeFirestoreData(updated));
-    return updated;
+    return this.modify<Deliverable>('deliverables', id, (existing) => ({ ...existing, ...updates, id, updatedAt: new Date().toISOString() }));
   }
 
   async deleteDeliverable(id: string): Promise<boolean> {
@@ -370,16 +380,7 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
   }
 
   async updateTask(id: string, updates: Partial<Task>): Promise<Task | null> {
-    const existing = await this.getTask(id);
-    if (!existing) return null;
-
-    const updated: Task = {
-      ...existing,
-      ...updates,
-      updatedAt: new Date().toISOString()
-    };
-    await this.db.collection('tasks').doc(id).set(sanitizeFirestoreData(updated));
-    return updated;
+    return this.modify<Task>('tasks', id, (existing) => ({ ...existing, ...updates, id, updatedAt: new Date().toISOString() }));
   }
 
   async deleteTask(id: string): Promise<boolean> {
@@ -410,12 +411,7 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
   }
 
   async updateIteration(id: string, updates: Partial<Iteration>): Promise<Iteration | null> {
-    const snap = await this.db.collection('iterations').doc(id).get();
-    if (!snap.exists) return null;
-
-    const updated: Iteration = { ...snap.data(), id, ...updates };
-    await this.db.collection('iterations').doc(id).set(sanitizeFirestoreData(updated));
-    return updated;
+    return this.modify<Iteration>('iterations', id, (existing) => ({ ...existing, ...updates, id }));
   }
 
   async deleteIteration(id: string): Promise<boolean> {
@@ -448,16 +444,7 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
   }
 
   async updateComment(id: string, updates: Partial<Comment>): Promise<Comment | null> {
-    const existing = await this.getComment(id);
-    if (!existing) return null;
-
-    const updated: Comment = {
-      ...existing,
-      ...updates,
-      updatedAt: new Date().toISOString()
-    };
-    await this.db.collection('comments').doc(id).set(sanitizeFirestoreData(updated));
-    return updated;
+    return this.modify<Comment>('comments', id, (existing) => ({ ...existing, ...updates, id, updatedAt: new Date().toISOString() }));
   }
 
   async deleteComment(id: string): Promise<boolean> {
@@ -612,6 +599,26 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
     return this.deleteDoc('dependencies', id);
   }
 
+  async getTimeEntry(id: string): Promise<TimeEntry | null> {
+    const doc = await this.db.collection('time_entries').doc(id).get();
+    return doc.exists ? ({ ...doc.data(), id: doc.id } as TimeEntry) : null;
+  }
+
+  async updateTimeEntry(id: string, updates: Partial<Omit<TimeEntry, 'id' | 'taskId'>>): Promise<TimeEntry | null> {
+    return this.modify<TimeEntry>('time_entries', id, (existing) => ({ ...existing, ...updates, id, taskId: existing.taskId }));
+  }
+
+  /** Adds to a task's hour totals in one transaction (when the db supports them), so concurrent logs are not lost. */
+  async incrementTaskHours(taskId: string, deltas: TaskHourDeltas): Promise<Task | null> {
+    return this.modify<Task>('tasks', taskId, (task) => {
+      const next = { ...task, updatedAt: new Date().toISOString() };
+      for (const [field, delta] of Object.entries(deltas) as Array<[keyof TaskHourDeltas, number | undefined]>) {
+        if (delta) next[field] = (next[field] ?? 0) + delta;
+      }
+      return next;
+    });
+  }
+
   async deleteTimeEntry(id: string): Promise<boolean> {
     return this.deleteDoc('time_entries', id);
   }
@@ -644,12 +651,7 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
   }
 
   async updateWebhook(id: string, updates: Partial<Omit<Webhook, 'id' | 'createdAt'>>): Promise<Webhook | null> {
-    const existing = await this.getWebhook(id);
-    if (!existing) return null;
-    const updated: Webhook = { ...existing, ...updates, id, createdAt: existing.createdAt };
-    // Write the whole document (no merge) so fields cleared with `undefined` are removed.
-    await this.db.collection('webhooks').doc(id).set(sanitizeFirestoreData(updated));
-    return updated;
+    return this.modify<Webhook>('webhooks', id, (existing) => ({ ...existing, ...updates, id, createdAt: existing.createdAt }));
   }
 
   async deleteWebhook(id: string): Promise<boolean> {

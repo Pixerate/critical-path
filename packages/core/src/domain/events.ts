@@ -100,6 +100,16 @@ export interface TimeLoggedEvent extends DomainEvent<{ timeEntry: TimeEntry; tas
   readonly aggregateType: 'Task';
 }
 
+export interface TimeEntryUpdatedEvent extends DomainEvent<{ timeEntry: TimeEntry; previous: TimeEntry; taskId: string }> {
+  readonly name: 'time.updated';
+  readonly aggregateType: 'Task';
+}
+
+export interface TimeEntryDeletedEvent extends DomainEvent<{ timeEntryId: string; timeEntry: TimeEntry; taskId: string }> {
+  readonly name: 'time.deleted';
+  readonly aggregateType: 'Task';
+}
+
 export interface CommentAddedEvent extends DomainEvent<{ comment: Comment; taskId: string }> {
   readonly name: 'comment.created';
   readonly aggregateType: 'Comment';
@@ -259,6 +269,8 @@ export type CriticalPathDomainEvent =
   | TaskUnblockedEvent
   | TaskDeletedEvent
   | TimeLoggedEvent
+  | TimeEntryUpdatedEvent
+  | TimeEntryDeletedEvent
   | CommentAddedEvent
   | CommentUpdatedEvent
   | CommentDeletedEvent
@@ -375,6 +387,8 @@ export const DOMAIN_EVENT_NAMES = [
   'team.deleted',
   'team.updated',
   'time.logged',
+  'time.updated',
+  'time.deleted',
   'workflow.created',
   'workflow.deleted',
   'workflow.updated'

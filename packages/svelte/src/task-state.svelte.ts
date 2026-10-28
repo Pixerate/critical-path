@@ -1,7 +1,7 @@
 /// <reference types="svelte" />
 import type { CreateTaskBody, UpdateTaskBody } from '@critical-path/core/schemas';
 import type { CriticalPathClient } from '@critical-path/client';
-import { type Task, type TaskStatus, isTempTaskId } from '@critical-path/core';
+import { type Task, type TaskStatus, isTempTaskId, applyUpdate } from '@critical-path/core';
 import { LatestRequest } from './latest-request.js';
 
 export class TaskState {
@@ -80,11 +80,8 @@ export class TaskState {
     let previousTask: Task | undefined;
     if (idx !== -1) {
       previousTask = this.data[idx];
-      const optimisticTask: Task = {
-        ...previousTask,
-        ...updates,
-        updatedAt: new Date().toISOString()
-      };
+      // null clears a field, as it does on the server
+      const optimisticTask: Task = { ...applyUpdate(previousTask, updates), updatedAt: new Date().toISOString() };
       const newData = [...this.data];
       newData[idx] = optimisticTask;
       this.data = newData;

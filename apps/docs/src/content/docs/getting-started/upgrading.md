@@ -144,6 +144,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
 - **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
 
+### core 0.53: clearing fields, dates and time entries
+
+- **Check:** request bodies with dates that are not ISO dates or date-times; a custom `StorageAdapter`; UI code that spreads update payloads into local state; code that relied on `logTime` accepting unknown task ids.
+- **Fix:** send ISO dates (keep free-form text in `customFields`). Implement `getTimeEntry` and `updateTimeEntry` in custom adapters and run the conformance suite. Apply update payloads with `applyUpdate` so `null` removes a field. Send `null` (not an empty string) to clear an optional field. Correct time with `PATCH /time-entries/:id` instead of writing hours on the task.
+
 ### core 0.53: summary tasks and roll-ups
 
 - **Check:** projects with subtasks (`parentId`); code that sums `totalEstimatedHours`, `durationHours` or `progressPercentage` from the ladder or deliverable summaries, or reads EVM for canceled tasks; code that expects a parent task in `criticalTaskIds`.

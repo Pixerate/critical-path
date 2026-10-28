@@ -112,7 +112,10 @@ export interface ActivityRepository {
 
 export interface TimeEntryRepository {
   getTimeEntries(taskId: string): Promise<TimeEntry[]>;
+  getTimeEntry(id: string): Promise<TimeEntry | null>;
   logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string }): Promise<TimeEntry>;
+  /** Merges `updates` into the entry (fields set to `undefined` are removed). */
+  updateTimeEntry(id: string, updates: Partial<Omit<TimeEntry, 'id' | 'taskId'>>): Promise<TimeEntry | null>;
   deleteTimeEntry(id: string): Promise<boolean>;
 }
 
@@ -594,6 +597,18 @@ export class InMemoryStore implements StorageAdapter, WebhookOutboxStore {
     const newEntry: TimeEntry = { ...entry, id, loggedAt: entry.loggedAt || new Date().toISOString() };
     this.timeEntries.set(id, newEntry);
     return newEntry;
+  }
+
+  async getTimeEntry(id: string): Promise<TimeEntry | null> {
+    return this.timeEntries.get(id) ?? null;
+  }
+
+  async updateTimeEntry(id: string, updates: Partial<Omit<TimeEntry, 'id' | 'taskId'>>): Promise<TimeEntry | null> {
+    const existing = this.timeEntries.get(id);
+    if (!existing) return null;
+    const updated: TimeEntry = { ...existing, ...updates, id, taskId: existing.taskId };
+    this.timeEntries.set(id, updated);
+    return updated;
   }
 
   async deleteTimeEntry(id: string): Promise<boolean> {

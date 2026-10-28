@@ -102,6 +102,9 @@ export const ROUTES: RouteDoc[] = [
 
   { method: 'get', path: '/time-entries', summary: 'List time entries for a task', tag: 'Time Tracking', query: ['taskId!'], responseKey: 'timeEntries' },
   { method: 'post', path: '/time-entries', summary: 'Log time against a task', tag: 'Time Tracking', body: schemas.LogTimeSchema, responseKey: 'timeEntry', status: 201 },
+  { method: 'get', path: '/time-entries/{timeEntryId}', summary: 'Get a time entry', tag: 'Time Tracking', responseKey: 'timeEntry' },
+  { method: 'patch', path: '/time-entries/{timeEntryId}', summary: "Correct a time entry (adjusts the task's hours)", tag: 'Time Tracking', body: schemas.UpdateTimeEntrySchema, responseKey: 'timeEntry' },
+  { method: 'delete', path: '/time-entries/{timeEntryId}', summary: 'Delete a time entry (takes its hours off the task)', tag: 'Time Tracking' },
 
   { method: 'get', path: '/workload', summary: 'Workload distribution across projects', tag: 'Analysis', query: ['projectId', 'startDate', 'endDate', 'interval', 'groupBy', 'metric', 'defaultWeeklyCapacityHours'], responseKey: 'workload' },
   { method: 'post', path: '/status', summary: 'Publish an agent status update', tag: 'Agents' }
