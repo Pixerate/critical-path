@@ -185,6 +185,12 @@ export interface TaskDependency {
   dependsOnTaskId: string;
   /** `'blocking'`: `taskId` cannot start until `dependsOnTaskId` finishes. `'relates_to'`: an informational link. */
   type: 'blocking' | 'relates_to';
+  /**
+   * Working hours to wait after `dependsOnTaskId` finishes before `taskId` may start (on `taskId`'s
+   * calendar), e.g. 24 for "let the concrete cure for three working days". Negative values are
+   * leads: the task may start that long before the other finishes. Default 0.
+   */
+  lagHours?: number;
   /** Your own data for this record (any JSON object). Stored and returned as-is. */
   customFields?: Record<string, unknown>;
 }
@@ -242,6 +248,12 @@ export interface Task {
    * date-only value means the end of that working day.
    */
   deadline?: string;
+  /**
+   * Earliest the task may start, enforced by critical path analysis (and levelling): "the venue is
+   * free from the 12th", "the permit arrives on Monday". A date-only value means the start of that
+   * day; the task starts at the first working moment at or after it.
+   */
+  earliestStart?: string;
   /**
    * A zero-duration checkpoint (release, sign-off, gate). Scheduled with no duration and no
    * effort whatever its estimates say; usually given a `deadline` and fed by dependencies.

@@ -164,6 +164,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** request bodies with dates that are not ISO dates or date-times; a custom `StorageAdapter`; UI code that spreads update payloads into local state; code that relied on `logTime` accepting unknown task ids.
 - **Fix:** send ISO dates (keep free-form text in `customFields`). Implement `getTimeEntry` and `updateTimeEntry` in custom adapters and run the conformance suite. Apply update payloads with `applyUpdate` so `null` removes a field. Send `null` (not an empty string) to clear an optional field. Correct time with `PATCH /time-entries/:id` instead of writing hours on the task.
 
+### core 0.57: one scheduling engine, start constraints and lag
+
+- **Check:** assertions on project-mode `earlyStartDate` / `lateStartDate` of tasks that follow another task, or on the exact shape of project-mode results.
+- **Fix:** expect a successor to start at the next working moment after its predecessor finishes (offsets are unchanged), and `overallocations` / `scheduleId` in project-mode results. Model "not before" dates with `earliestStart` and waits between tasks with `lagHours` instead of dummy tasks.
+
 ### mcp 0.19: tool results, selection and annotations
 
 - **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.

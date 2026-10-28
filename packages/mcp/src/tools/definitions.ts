@@ -298,6 +298,7 @@ export const createTaskTool = defineTool<{
   assigneeId?: string;
   dueDate?: string;
   deadline?: string;
+  earliestStart?: string;
   isMilestone?: boolean;
   tags?: string[];
   estimatedHours?: number;
@@ -321,6 +322,7 @@ export const createTaskTool = defineTool<{
     assigneeId: z.string().optional().describe('User ID to assign task to'),
     dueDate: z.string().optional().describe('Due date (ISO string)'),
     deadline: z.string().optional().describe('Latest acceptable finish (YYYY-MM-DD for the end of that working day, or an ISO date-time). Critical path analysis reports a miss as negative slack'),
+    earliestStart: z.string().optional().describe('Earliest the task may start (YYYY-MM-DD for the start of that day, or an ISO date-time), e.g. when something from outside the project arrives'),
     isMilestone: z.boolean().optional().describe('Mark the task as a milestone: a zero-duration checkpoint (release, sign-off) fed by dependencies; its estimate is ignored'),
     tags: z.array(z.string()).optional().describe('Tags for categorization'),
     estimatedHours: z.number().optional().describe('Estimated hours to complete'),
@@ -349,6 +351,7 @@ export const createTaskTool = defineTool<{
       assigneeId: args.assigneeId,
       dueDate: args.dueDate,
       deadline: args.deadline,
+      earliestStart: args.earliestStart,
       isMilestone: args.isMilestone,
       tags: args.tags || [],
       estimatedHours: args.estimatedHours,
@@ -370,6 +373,7 @@ export const updateTaskTool = defineTool<{
   assigneeId?: string;
   dueDate?: string;
   deadline?: string;
+  earliestStart?: string;
   isMilestone?: boolean;
   tags?: string[];
   estimatedHours?: number;
@@ -393,6 +397,7 @@ export const updateTaskTool = defineTool<{
     assigneeId: z.string().optional().describe('User ID to assign the task to'),
     dueDate: z.string().optional().describe('Due date (ISO string)'),
     deadline: z.string().optional().describe('Latest acceptable finish (YYYY-MM-DD for the end of that working day, or an ISO date-time). Critical path analysis reports a miss as negative slack'),
+    earliestStart: z.string().optional().describe('Earliest the task may start (YYYY-MM-DD for the start of that day, or an ISO date-time), e.g. when something from outside the project arrives'),
     isMilestone: z.boolean().optional().describe('Mark the task as a milestone: a zero-duration checkpoint (release, sign-off) fed by dependencies; its estimate is ignored'),
     tags: z.array(z.string()).optional().describe('Replaces all tags'),
     estimatedHours: z.number().optional().describe('Estimated effort in hours'),
@@ -479,7 +484,7 @@ export const deleteTimeEntryTool = defineTool<{ id: string }>({
   execute: async (args, target) => ({ success: await target.deleteTimeEntry(args.id) })
 });
 
-export const addDependencyTool = defineTool<{ taskId: string; dependsOnTaskId: string; type?: 'blocking' | 'relates_to' }>({
+export const addDependencyTool = defineTool<{ taskId: string; dependsOnTaskId: string; type?: 'blocking' | 'relates_to'; lagHours?: number }>({
   name: 'add_dependency',
   title: 'Add Dependency',
   description:
@@ -492,16 +497,21 @@ export const addDependencyTool = defineTool<{ taskId: string; dependsOnTaskId: s
     type: z
       .enum(['blocking', 'relates_to'])
       .optional()
-      .describe("'blocking' (default) affects the schedule; 'relates_to' only links the tasks for reference")
+      .describe("'blocking' (default) affects the schedule; 'relates_to' only links the tasks for reference"),
+    lagHours: z
+      .number()
+      .optional()
+      .describe('Working hours to wait after the other task finishes, e.g. 16 for two working days of curing; negative to start that much earlier')
   }),
   annotations: { idempotentHint: true },
   execute: async (args, target) => {
     const type = args.type ?? 'blocking';
+    const lag = args.lagHours !== undefined ? { lagHours: args.lagHours } : {};
     const { isEngine } = await resolveBackend(target);
     if (isEngine) {
-      return (target as CriticalPathEngine).addDependency({ taskId: args.taskId, dependsOnTaskId: args.dependsOnTaskId, type });
+      return (target as CriticalPathEngine).addDependency({ taskId: args.taskId, dependsOnTaskId: args.dependsOnTaskId, type, ...lag });
     }
-    return (target as CriticalPathClient).addDependency(args.taskId, { dependsOnTaskId: args.dependsOnTaskId, type });
+    return (target as CriticalPathClient).addDependency(args.taskId, { dependsOnTaskId: args.dependsOnTaskId, type, ...lag });
   }
 });
 

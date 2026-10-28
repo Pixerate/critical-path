@@ -14,6 +14,8 @@ A dependency has two tasks and a type:
 - `blocking`: `taskId` cannot start until `dependsOnTaskId` finishes. This is the edge the critical path, lifecycle state and auto-unblocking use.
 - `relates_to`: an informational link. It never affects the schedule, never blocks, and never forms a cycle.
 
+A `blocking` dependency can carry `lagHours`: working hours to wait after the other task finishes (negative for a lead). See [start constraints and lag](/core/calendars-and-schedules/#start-constraints-and-lag). Two links between the same tasks that differ only in lag are separate dependencies; the longer wait applies.
+
 ```typescript
 // The frontend waits for the wireframes
 await engine.addDependency({

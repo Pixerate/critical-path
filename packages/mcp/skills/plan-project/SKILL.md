@@ -18,6 +18,7 @@ Turn a goal into deliverables (dated outcomes), tasks (estimated units of work) 
 Break the goal down in your reply first and show it to the user:
 
 - **Deliverables**: 2-6 outcomes someone could accept or reject, each with a due date if the user gave one.
+- **Waits and fixed start dates**: a dependency's `lagHours` for a wait between tasks (curing, review turnaround), and a task's `earliestStart` when it cannot begin before a date. Do not invent placeholder tasks for these.
 - **Milestones** for dated checkpoints (a release, a sign-off, a review): a task with `isMilestone: true`, a `deadline` if the date is fixed, and dependencies on the tasks that must finish first. The schedule then reports whether each date will be met.
 - **Tasks** under each deliverable. Each task:
   - starts with a verb and is small enough for one person (about 2-24 hours);

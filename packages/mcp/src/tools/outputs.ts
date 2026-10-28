@@ -27,6 +27,7 @@ export const TaskOutput = obj({
   assigneeId: opt(z.string()),
   dueDate: opt(z.string()),
   deadline: opt(z.string()).describe('Latest acceptable finish, enforced by critical path analysis'),
+  earliestStart: opt(z.string()).describe('Earliest the task may start, enforced by critical path analysis'),
   isMilestone: opt(z.boolean()).describe('A zero-duration checkpoint'),
   estimatedHours: opt(z.number()),
   loggedHours: opt(z.number()),
@@ -54,7 +55,8 @@ export const DependencyOutput = obj({
   id: z.string(),
   taskId: z.string().describe('The task that waits'),
   dependsOnTaskId: z.string().describe('The task it waits for'),
-  type: z.string().describe('blocking or relates_to')
+  type: z.string().describe('blocking or relates_to'),
+  lagHours: opt(z.number()).describe('Working hours the waiting task waits after the other finishes')
 }).describe('A dependency between two tasks');
 
 export const DeliverableOutput = obj({

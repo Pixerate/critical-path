@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-28T13:52:36.546Z
+> Documentation generated on: 2026-10-28T13:58:17.101Z
 
 ================================================================================
 
@@ -401,6 +401,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
 - **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
 
+### core 0.53: one scheduling engine, start constraints and lag
+
+- **Check:** assertions on project-mode `earlyStartDate` / `lateStartDate` of tasks that follow another task, or on the exact shape of project-mode results.
+- **Fix:** expect a successor to start at the next working moment after its predecessor finishes (offsets are unchanged), and `overallocations` / `scheduleId` in project-mode results. Model "not before" dates with `earliestStart` and waits between tasks with `lagHours` instead of dummy tasks.
+
 ### core 0.53: clearing fields, dates and time entries
 
 - **Check:** request bodies with dates that are not ISO dates or date-times; a custom `StorageAdapter`; UI code that spreads update payloads into local state; code that relied on `logTime` accepting unknown task ids.
@@ -700,6 +705,7 @@ interface Task {
   sprintId?: string;
   dueDate?: string;            // ISO-8601 string (e.g. 2026-09-15T00:00:00Z); informational
   deadline?: string;           // Latest acceptable finish, enforced by critical path analysis
+  earliestStart?: string;      // Start no earlier than, enforced by critical path analysis
   isMilestone?: boolean;       // Zero-duration checkpoint (release, sign-off); estimates are ignored
   estimatedHours?: number;     // Effort, used for Critical Path calculations
   allocation?: number;         // Share of the assignee's time, (0, 1], default 1
@@ -846,6 +852,8 @@ A dependency has two tasks and a type:
 
 - `blocking`: `taskId` cannot start until `dependsOnTaskId` finishes. This is the edge the critical path, lifecycle state and auto-unblocking use.
 - `relates_to`: an informational link. It never affects the schedule, never blocks, and never forms a cycle.
+
+A `blocking` dependency can carry `lagHours`: working hours to wait after the other task finishes (negative for a lead). See [start constraints and lag](/core/calendars-and-schedules/#start-constraints-and-lag). Two links between the same tasks that differ only in lag are separate dependencies; the longer wait applies.
 
 ```typescript
 // The frontend waits for the wireframes
@@ -1400,7 +1408,9 @@ const cpm = await engine.calculateCriticalPath(projectId, { calendars: 'assignee
 
 Suppose Bob's task finishes Thursday at 17:00 and Alice, who does not work Fridays, picks up the next task. Her task starts Monday at 09:00, and everything after it moves with it. A single project calendar would have started it on Friday.
 
-How the results differ from project mode:
+Both modes run the same date-based passes; project mode simply puts every task on the project calendar. With a start date, every task starts at the next working moment after its predecessors finish (a task after a 17:00 finish starts at 09:00 the next working day). Without one, project mode reports working-hour offsets only: no dates, and deadlines and start constraints (which are dates) do not apply.
+
+How assignee mode differs:
 
 - **Dates are exact per task.** Each task starts at the next working moment on its own calendar after its predecessors finish. Each `scheduleId` names the calendar used (when the schedule has an `id`).
 - **Slack is in the task's own working hours.** A Monday–Thursday assignee has less slack across the same span than a Monday–Friday one.
@@ -1502,6 +1512,20 @@ cpm.tasks.find((t) => t.taskId === launch.id);
 - **Levelling** sees deadlines through slack, so with the default `levelingPriority: 'slack'` the work behind a tight deadline gets people first.
 - **`dueDate` is different:** it is informational and only used by `levelingPriority: 'dueDate'`. Use `deadline` when the schedule should hold you to the date.
 - On assignee calendars, a milestone sits at the moment its predecessors finish (for example 17:00), not the next morning.
+
+### Start constraints and lag
+
+Two more constraints are dates and waits, so they work like deadlines and need a start date in project mode:
+
+- **`earliestStart`** on a task: it starts no earlier than the first working moment at or after it ("the venue is free from the 12th"). A date-only value is the start of that day. On a summary task it applies to every leaf under it. Levelling honours it too.
+- **`lagHours`** on a `blocking` dependency: working hours (on the waiting task's calendar) between the other task's finish and this one's start, e.g. `16` to let concrete cure for two days. A negative value is a lead: the waiting task may start that long before the other finishes.
+
+```ts
+await engine.addDependency({ taskId: build.id, dependsOnTaskId: pour.id, type: 'blocking', lagHours: 16 });
+await engine.updateTask(fitOut.id, { earliestStart: '2026-11-12' });
+```
+
+A start constraint that makes a deadline impossible shows up like any other miss: negative slack and an entry in `missedDeadlineTaskIds`. Dependencies are finish-to-start; with lag or lead that covers most start-to-start and finish-to-finish needs. `plannedStartDate` stays informational.
 
 ### Summary tasks (subtasks)
 
@@ -3133,6 +3157,8 @@ graph TD
 | `create_task` | core | Adding work | `projectId`, `title`, `estimatedHours`, `priority`, `assigneeId` |
 | `update_task` | core | Changing status, priority, assignee, estimates, deadline, blocked state | `id`, plus the fields to change |
 | `log_time` | core | Recording hours worked (the only way to add logged hours) | `taskId`, `hours`, `description` |
+| `update_time_entry` | core | Correcting logged time | `id`, `hours` |
+| `delete_time_entry` | core | Removing time logged by mistake | `id` |
 | `delete_task` | core | Permanent deletion (destructive) | `id` |
 | `add_dependency` | core | Making a task wait for another so the critical path orders them; adding an existing link returns it, a loop is refused | `taskId`, `dependsOnTaskId`, `type` |
 | `remove_dependency` | core | Removing that link by the same two task ids; returns `{ removed, dependencyIds }` | `taskId`, `dependsOnTaskId`, `type` |

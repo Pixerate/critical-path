@@ -407,10 +407,10 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Root Cause**: Dependabot groups "minor" updates, but for 0.x packages a minor bump is breaking. `@astrojs/starlight` 0.42 requires Astro ^7, while the docs site is on Astro 5.
 - **Solution / Workaround**: Starlight is pinned to `^0.32.0`, and `.github/dependabot.yml` ignores Starlight `>=0.33.0`. Upgrade Astro and Starlight together by hand, then update both `pnpm-lock.yaml` and `apps/docs/package-lock.json` (`cd apps/docs && npm install --package-lock-only`).
 
-### Deadlines Are Ignored in Project-Calendar Mode Without a Start Date
-- **Area / Package**: `@critical-path/core` (`calculateCPM`, `Task.deadline`)
-- **Symptom / Behavior**: A task with a `deadline` that is clearly missed shows positive slack, no `deadlineDate`, and is absent from `missedDeadlineTaskIds`.
-- **Root Cause**: Project-calendar mode works in working-hour offsets from the start. Without `project.startDate` (or `projectStartDate`) there is no date to place a deadline against, so it is skipped. Assignee mode always works in dates (today when no start is set).
+### Date Constraints Are Ignored in Project-Calendar Mode Without a Start Date
+- **Area / Package**: `@critical-path/core` (`calculateCPM`, `Task.deadline`, `Task.earliestStart`)
+- **Symptom / Behavior**: A task with a `deadline` that is clearly missed shows positive slack, no `deadlineDate`, and is absent from `missedDeadlineTaskIds`; an `earliestStart` has no effect; results have no dates.
+- **Root Cause**: Without `project.startDate` (or `projectStartDate`) there is no date to place the schedule on, so project mode reports working-hour offsets only and skips deadlines and start constraints. Lag still applies (it is a duration). Assignee mode always works in dates (today when no start is set).
 - **Solution / Workaround**: Set the project's `startDate`, pass `projectStartDate`, or use `calendars: 'assignee'`.
 
 ### `dueDate` and `deadline` Are Different
@@ -472,3 +472,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: After 0.56 a custom adapter fails to compile against `StorageAdapter`, or the conformance suite fails on time entries.
 - **Root Cause**: Time entries can now be corrected and deleted through the engine (`updateTimeEntry`, `deleteTimeEntry`, which move the task's hour totals by the difference), which needs lookups by id.
 - **Solution / Workaround**: Implement `getTimeEntry(id)` (return `null` when missing) and `updateTimeEntry(id, updates)` (merge, remove fields set to `undefined`, keep `id` and `taskId`, return `null` when missing). Implement `incrementTaskHours` atomically so concurrent logs and corrections are never lost.
+
+### Successors Start the Next Working Morning in Project Mode Too
+- **Area / Package**: `@critical-path/core` (`calculateCPM`, project-calendar mode)
+- **Symptom / Behavior**: After 0.57, a task after one that finishes at 17:00 has `earlyStartDate` 09:00 the next working day instead of 17:00 the same day, and project-mode results include `overallocations` and `scheduleId`.
+- **Root Cause**: Project mode used to be a separate offset-based implementation. Both modes now run the same date-based passes, so they cannot drift; working-hour offsets (`earlyStart`, `totalDurationHours`) are unchanged.
+- **Solution / Workaround**: Read dates as "when work can begin". Compare offsets if you need to match older results.
