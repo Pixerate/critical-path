@@ -1,5 +1,24 @@
 # @critical-path/core
 
+## 0.60.0
+
+### Minor Changes
+
+- bca1fda: Paginate task comments (#149).
+  
+  - `engine.queryComments({ taskId, limit, cursor })` returns `Page<Comment>`, oldest first, with keyset cursors like `queryTasks`. `SQLiteStore` pages in SQL on a new `(taskId, createdAt, id)` index.
+  - `GET /comments?taskId=` and `GET /tasks/:taskId/comments` accept `limit` (default 100, max 500) and `cursor`, and return `nextCursor`.
+  - Client: `getComments` follows every page; new `queryComments` returns one page.
+  - MCP: `list_comments` takes `limit` and `cursor` and returns `{ comments, nextCursor }`.
+  - **BREAKING (custom adapters):** `CommentRepository` includes `queryComments(query)`.
+  - **BREAKING (HTTP API):** the comment list routes return at most 100 comments unless `limit` is set; follow `nextCursor` for the rest.
+- c29f569: Enqueue outbox webhook jobs in the same transaction as the mutation (#147).
+  
+  - When `webhookDelivery.queue` is an `OutboxWebhookQueue` over the engine's own store and the store supports `transaction` (`SQLiteStore`), every event-publishing mutation runs in a transaction that also writes its webhook jobs. A committed change always has its deliveries queued, and a rolled-back change (including a failed cascade) has none. If the jobs cannot be written, the mutation throws.
+  - `WebhookDeliveryQueue.enqueue(job, delayMs, outbox?)` receives the open transaction store, and a queue can expose `store` to opt in. `OutboxWebhookQueue.store` is now public.
+  - Stores without transactions (`FirebaseStore`, `InMemoryStore`) keep enqueueing right after the write.
+  - Behaviour change for SQLite outbox users: a failing outbox write now fails the mutation instead of being logged.
+
 ## 0.59.0
 
 ### Minor Changes
