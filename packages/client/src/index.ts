@@ -28,6 +28,7 @@ import type {
 } from '@critical-path/core/schemas';
 import type {
   ActivityQuery,
+  CommentQuery,
   Page,
   TaskQuery,
   PublicWebhook,
@@ -798,9 +799,19 @@ export class CriticalPathClient {
   }
 
   // Comments
+  /** All of a task's comments (oldest first), following pagination. Prefer `queryComments` for long threads. */
   async getComments(taskId: string): Promise<Comment[]> {
-    const res = await this.request<{ comments: Comment[] }>(`/comments?taskId=${encodeURIComponent(taskId)}`);
-    return res.comments;
+    return this.collectPages((cursor) => this.queryComments({ taskId, cursor, limit: 500 }));
+  }
+
+  /** One page of a task's comments, oldest first. */
+  async queryComments(query: CommentQuery): Promise<Page<Comment>> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    const res = await this.request<{ comments: Comment[]; nextCursor?: string }>(`/comments?${params}`);
+    return { items: res.comments, nextCursor: res.nextCursor };
   }
 
   async getComment(id: string): Promise<Comment> {

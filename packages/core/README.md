@@ -169,9 +169,10 @@ Limits apply to direct uploads (checked against the decoded size), presigned upl
 const page = await engine.queryTasks({ projectId, status: ['todo', 'in_progress'], assigneeId: 'ana', limit: 50 });
 const next = await engine.queryTasks({ projectId, limit: 50, cursor: page.nextCursor });
 const feed = await engine.queryActivities({ projectId, limit: 20 }); // newest first
+const thread = await engine.queryComments({ taskId, limit: 50 }); // oldest first
 ```
 
-Tasks page oldest first and activities newest first, using keyset cursors (`createdAt`, then `id`). `SQLiteStore` filters and pages in SQL with indexes. `FirebaseStore` pushes down the project filter and applies the rest in memory. Without `projectId`, results are limited to projects the actor can read.
+Tasks and comments page oldest first and activities newest first, using keyset cursors (`createdAt`, then `id`). `SQLiteStore` filters and pages in SQL with indexes. `FirebaseStore` pushes down the project filter and applies the rest in memory. Without `projectId`, results are limited to projects the actor can read.
 
 #### Authorization & Multi-Tenancy
 

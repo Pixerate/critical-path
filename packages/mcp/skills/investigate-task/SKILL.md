@@ -14,7 +14,7 @@ If the user named the task rather than giving its id, find it with `list_tasks` 
 1. `get_task` with `includeDependencies: true`: status, assignee, estimate, logged hours, due date, `isBlocked` and `blockedReason`, plus the tasks it waits for (`dependencies.dependsOn`, with their status) and the tasks waiting on it (`dependencies.dependents`).
 2. `get_task_metrics`: progress and variance.
 3. `get_task_ladder`: its phase (`macroPhase`) and that phase's health, and its schedule in `standard.cpm` (`isCritical`, `slackWorkingHours`).
-4. `list_comments`: what people said about it, especially recent blockers or decisions.
+4. `list_comments`: what people said about it, especially recent blockers or decisions. Comments come oldest first; follow `nextCursor` to reach the latest.
 
 ## 3. Diagnose
 

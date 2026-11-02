@@ -8,6 +8,7 @@ import {
   ValidationError,
   createRolePolicy,
   MAX_PAGE_SIZE,
+  type Comment,
   type StorageAdapter,
   type Task
 } from '../index.js';
@@ -83,6 +84,26 @@ describe.each(stores)('task and activity queries (%s)', (_name, makeStore) => {
     expect([...first.items, ...second.items].map((a) => a.id)).toEqual(all.slice(0, 4).map((a) => a.id));
   });
 
+  it('pages a task\'s comments oldest first', async () => {
+    const { engine, parent, shared } = await setup();
+    for (let i = 0; i < 7; i++) await engine.addComment({ taskId: parent.id, content: `Note ${i}` });
+    await engine.addComment({ taskId: shared.id, content: 'Elsewhere' });
+
+    const seen: Comment[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await engine.queryComments({ taskId: parent.id, limit: 3, cursor });
+      expect(page.items.length).toBeLessThanOrEqual(3);
+      seen.push(...page.items);
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    expect(seen.map((c) => c.content).sort()).toEqual([0, 1, 2, 3, 4, 5, 6].map((i) => `Note ${i}`));
+    const keys = seen.map((c) => `${c.createdAt}|${c.id}`);
+    expect([...keys].sort()).toEqual(keys);
+    await expect(engine.queryComments({ taskId: parent.id, cursor: 'nope' })).rejects.toThrow(ValidationError);
+  });
+
   it('rejects malformed cursors and clamps page sizes', async () => {
     const { engine, project } = await setup();
     await expect(engine.queryTasks({ projectId: project.id, cursor: 'not-a-cursor' })).rejects.toThrow(ValidationError);
@@ -106,5 +127,9 @@ describe('query authorization', () => {
     const feed = (await ana.queryActivities()).items;
     expect(feed.length).toBeGreaterThan(0);
     expect(feed.every((a) => a.projectId === mine.id)).toBe(true);
+
+    const hidden = (await engine.queryTasks({ projectId: secret.id })).items[0];
+    await engine.addComment({ taskId: hidden.id, content: 'Private' });
+    expect((await ana.queryComments({ taskId: hidden.id })).items).toEqual([]);
   });
 });

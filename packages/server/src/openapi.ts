@@ -49,7 +49,7 @@ export const ROUTES: RouteDoc[] = [
   { method: 'get', path: '/tasks/{taskId}', summary: 'Get a task', tag: 'Tasks', responseKey: 'task' },
   { method: 'patch', path: '/tasks/{taskId}', summary: 'Update a task (enforces workflow transitions)', tag: 'Tasks', body: schemas.UpdateTaskSchema, responseKey: 'task' },
   { method: 'delete', path: '/tasks/{taskId}', summary: 'Delete a task with its subtasks, dependencies, comments, attachments and time entries (subtasks=detach keeps subtasks)', tag: 'Tasks', query: ['subtasks'] },
-  { method: 'get', path: '/tasks/{taskId}/comments', summary: 'List task comments', tag: 'Comments', responseKey: 'comments' },
+  { method: 'get', path: '/tasks/{taskId}/comments', summary: 'List task comments (paginated oldest first; follow nextCursor)', tag: 'Comments', query: ['limit', 'cursor'], responseKey: 'comments' },
   { method: 'post', path: '/tasks/{taskId}/comments', summary: 'Comment on a task', tag: 'Comments', body: schemas.CreateCommentSchema.omit({ taskId: true }), responseKey: 'comment', status: 201 },
   { method: 'get', path: '/tasks/{taskId}/attachments', summary: 'List task attachments', tag: 'Attachments', responseKey: 'attachments' },
   { method: 'post', path: '/tasks/{taskId}/attachments', summary: 'Attach a file link to a task', tag: 'Attachments', body: schemas.CreateAttachmentSchema.omit({ taskId: true }), responseKey: 'attachment', status: 201 },
@@ -89,7 +89,7 @@ export const ROUTES: RouteDoc[] = [
 
   { method: 'get', path: '/activities', summary: 'Activity (audit) stream, newest first (follow nextCursor)', tag: 'Activity', query: ['projectId', 'taskId', 'limit', 'cursor'], responseKey: 'activities' },
 
-  { method: 'get', path: '/comments', summary: 'List comments for a task', tag: 'Comments', query: ['taskId!'], responseKey: 'comments' },
+  { method: 'get', path: '/comments', summary: 'List comments for a task (paginated oldest first; follow nextCursor)', tag: 'Comments', query: ['taskId!', 'limit', 'cursor'], responseKey: 'comments' },
   { method: 'post', path: '/comments', summary: 'Create a comment', tag: 'Comments', body: schemas.CreateCommentSchema, responseKey: 'comment', status: 201 },
   { method: 'get', path: '/comments/{commentId}', summary: 'Get a comment', tag: 'Comments', responseKey: 'comment' },
   { method: 'patch', path: '/comments/{commentId}', summary: 'Update a comment', tag: 'Comments', body: schemas.UpdateCommentSchema, responseKey: 'comment' },

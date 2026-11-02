@@ -606,22 +606,22 @@ export const createDeliverableTool = defineTool<{
   }
 });
 
-export const listCommentsTool = defineTool<{ taskId: string }>({
+export const listCommentsTool = defineTool<{ taskId: string; limit?: number; cursor?: string }>({
   name: 'list_comments',
   title: 'List Comments',
   description:
-    'List the comments on a task. Use it to read the discussion, decisions or blockers recorded there. Returns { comments }.',
+    'List the comments on a task, oldest first. Use it to read the discussion, decisions or blockers recorded there. Returns { comments, nextCursor }; pass nextCursor back as cursor for the next (newer) page.',
   toolset: 'collaboration',
-  outputZodSchema: z.object({ comments: z.array(CommentOutput) }),
+  outputZodSchema: z.object({ comments: z.array(CommentOutput), nextCursor: z.string().nullable().optional() }),
   zodSchema: z.object({
-    taskId: z.string().describe('The task ID')
+    taskId: z.string().describe('The task ID'),
+    limit: z.number().int().min(1).max(500).optional().describe('Page size (default 100)'),
+    cursor: z.string().optional().describe('nextCursor from a previous call')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target) => {
-    if ('getComments' in target && typeof (target as any).getComments === 'function') {
-      return { comments: await (target as any).getComments(args.taskId) };
-    }
-    return { comments: [] };
+    const page = await target.queryComments({ taskId: args.taskId, limit: args.limit, cursor: args.cursor });
+    return { comments: page.items, nextCursor: page.nextCursor };
   }
 });
 
