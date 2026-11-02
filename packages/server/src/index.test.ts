@@ -191,6 +191,28 @@ describe('@critical-path/server Router Tests', () => {
     expect(invalidAttData.error).toContain('Attachment URL cannot be a large data URI');
   });
 
+  it('paginates comments on both comment list routes', async () => {
+    const router = new CriticalPathRouter();
+    const proj = await router.engine.createProject({ key: 'PAG', name: 'Paging Proj' });
+    const task = await router.engine.createTask({ projectId: proj.id, title: 'Chatty Task', status: 'todo' });
+    for (let i = 0; i < 5; i++) await router.engine.addComment({ taskId: task.id, content: `Note ${i}` });
+    const get = async (path: string) => (await router.handleRequest(new Request(`http://localhost/api/critical-path${path}`))).json();
+
+    const first = await get(`/tasks/${task.id}/comments?limit=3`);
+    expect(first.comments).toHaveLength(3);
+    const rest = await get(`/comments?taskId=${task.id}&limit=3&cursor=${first.nextCursor}`);
+    expect(rest.comments).toHaveLength(2);
+    expect(rest.nextCursor).toBeUndefined();
+    expect([...first.comments, ...rest.comments].map((c: { content: string }) => c.content).sort()).toEqual(
+      [0, 1, 2, 3, 4].map((i) => `Note ${i}`)
+    );
+
+    const bad = await router.handleRequest(new Request(`http://localhost/api/critical-path/comments?taskId=${task.id}&limit=0`));
+    expect(bad.status).toBe(400);
+    const missing = await router.handleRequest(new Request('http://localhost/api/critical-path/comments'));
+    expect(missing.status).toBe(400);
+  });
+
   it('handles emoji reactions on comments via POST and DELETE /comments/:id/reactions', async () => {
     const router = new CriticalPathRouter();
     const proj = await router.engine.createProject({ key: 'RCT', name: 'Reaction Proj' });

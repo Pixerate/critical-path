@@ -22,9 +22,11 @@ import { generateProjectKey } from '../utils/key.js';
 import type { WebhookOutboxEntry, WebhookOutboxStore } from '../webhooks/outbox.js';
 import {
   matchesActivityQuery,
+  matchesCommentQuery,
   matchesTaskQuery,
   paginate,
   type ActivityQuery,
+  type CommentQuery,
   type Page,
   type TaskQuery
 } from './query.js';
@@ -97,6 +99,8 @@ export interface BaselineRepository {
 
 export interface CommentRepository {
   getComments(taskId: string): Promise<Comment[]>;
+  /** A task's comments, paginated and ordered by `(createdAt, id)` ascending (oldest first). */
+  queryComments(query: CommentQuery): Promise<Page<Comment>>;
   getComment(id: string): Promise<Comment | null>;
   addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment>;
   updateComment(id: string, updates: Partial<Comment>): Promise<Comment | null>;
@@ -501,6 +505,11 @@ export class InMemoryStore implements StorageAdapter, WebhookOutboxStore {
   // Comments
   async getComments(taskId: string): Promise<Comment[]> {
     return Array.from(this.comments.values()).filter((c) => c.taskId === taskId);
+  }
+
+  async queryComments(query: CommentQuery): Promise<Page<Comment>> {
+    const comments = Array.from(this.comments.values()).filter((c) => matchesCommentQuery(c, query));
+    return paginate(comments, (c) => c.createdAt, 'asc', query.limit, query.cursor);
   }
 
   async getComment(id: string): Promise<Comment | null> {

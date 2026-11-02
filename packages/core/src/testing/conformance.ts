@@ -272,6 +272,12 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
 
       expect(await store.getComment(first.id)).toMatchObject(input);
       expect((await store.getComments(task.id)).map((c) => c.content)).toEqual(['First', 'Second']);
+
+      const page = await store.queryComments({ taskId: task.id, limit: 1 });
+      expect(page.items.map((c) => c.content)).toEqual(['First']);
+      const next = await store.queryComments({ taskId: task.id, limit: 1, cursor: page.nextCursor });
+      expect(next.items.map((c) => c.content)).toEqual(['Second']);
+      expect(next.nextCursor).toBeUndefined();
     });
 
     it('round-trips attachments and applies every attachment filter together', async () => {

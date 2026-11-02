@@ -263,7 +263,7 @@ Derived task fields are not accepted in request bodies: `semanticStatus`, `logge
 
 ### Activity, Comments & Attachments
 - `GET /api/critical-path/activities?projectId=:id&taskId=:id` - Fetch audit stream, newest first, paginated (`limit`, `cursor` → `nextCursor`).
-- `GET /api/critical-path/comments?taskId=:id` - Fetch task comments.
+- `GET /api/critical-path/comments?taskId=:id` - Fetch task comments, oldest first, paginated (`limit` up to 500, default 100; follow `nextCursor`). `GET /api/critical-path/tasks/:id/comments` takes the same `limit` and `cursor`.
 - `POST /api/critical-path/comments` - Post comment to task.
 - `PATCH /api/critical-path/comments/:id` - Update comment content.
 - `DELETE /api/critical-path/comments/:id` - Delete comment.

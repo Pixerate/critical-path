@@ -1,5 +1,13 @@
 import type { ProjectFilter, StorageAdapter, TaskHourDeltas } from './index.js';
-import { matchesActivityQuery, matchesTaskQuery, paginate, type ActivityQuery, type Page, type TaskQuery } from './query.js';
+import {
+  matchesActivityQuery,
+  matchesTaskQuery,
+  paginate,
+  type ActivityQuery,
+  type CommentQuery,
+  type Page,
+  type TaskQuery
+} from './query.js';
 import type {
   Project,
   Task,
@@ -464,6 +472,10 @@ export class FirebaseStore implements StorageAdapter, WebhookOutboxStore {
     return snap.docs
       .map((doc) => ({ ...doc.data(), id: doc.id }) as Comment)
       .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+  }
+
+  async queryComments(query: CommentQuery): Promise<Page<Comment>> {
+    return paginate(await this.getComments(query.taskId), (c) => c.createdAt, 'asc', query.limit, query.cursor);
   }
 
   async getComment(id: string): Promise<Comment | null> {

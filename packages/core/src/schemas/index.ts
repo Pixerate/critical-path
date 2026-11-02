@@ -449,6 +449,12 @@ export const LadderQuerySchema = strictObject({
 });
 
 /** `GET /activities` query parameters. */
+export const CommentListQuerySchema = strictObject({
+  taskId: nonEmpty.optional(),
+  limit: pageLimit.optional(),
+  cursor: nonEmpty.optional()
+});
+
 export const ActivityListQuerySchema = strictObject({
   projectId: nonEmpty.optional(),
   taskId: nonEmpty.optional(),

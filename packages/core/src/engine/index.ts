@@ -43,7 +43,7 @@ import type {
   SemanticStatus,
   Baseline
 } from '../types/index.js';
-import { StorageAdapter, InMemoryStore, type ActivityQuery, type Page, type TaskQuery, type TaskHourDeltas } from '../store/index.js';
+import { StorageAdapter, InMemoryStore, type ActivityQuery, type CommentQuery, type Page, type TaskQuery, type TaskHourDeltas } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
 import { deriveTaskLifecycleState, resolveStatusDefinition } from '../utils/status.js';
 import {
@@ -1780,6 +1780,12 @@ export class CriticalPathEngine {
   async getComments(taskId: string): Promise<Comment[]> {
     if (this.enforcing && !(await this.getTask(taskId))) return [];
     return this.store.getComments(taskId);
+  }
+
+  /** One page of a task's comments, oldest first. */
+  async queryComments(query: CommentQuery): Promise<Page<Comment>> {
+    if (this.enforcing && !(await this.getTask(query.taskId))) return { items: [] };
+    return this.store.queryComments(query);
   }
 
   async getComment(id: string): Promise<Comment | null> {

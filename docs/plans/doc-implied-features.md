@@ -197,7 +197,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - **Server:** `GET /tasks` and `GET /activities` validate their query parameters (strict) and return `nextCursor`, with a default limit of 100 and a maximum of 500.
 - **Client:** `getTasks` and `getActivities` follow every page; new `queryTasks` and `queryActivities` return a single page.
 - **MCP:** `list_tasks` is paginated.
-- **Not paginated yet:** comments, which stay per-task.
+- **Comments:** `queryComments({ taskId, limit, cursor })` pages a task's comments oldest first, in SQL on SQLite; `GET /comments` and `GET /tasks/:id/comments` take `limit` and `cursor`; client `getComments` follows every page; MCP `list_comments` is paginated.
 
 
 ---

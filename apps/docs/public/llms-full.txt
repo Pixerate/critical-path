@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-28T14:13:57.751Z
+> Documentation generated on: 2026-11-02T21:30:17.213Z
 
 ================================================================================
 
@@ -401,40 +401,45 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
 - **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
 
-### core 0.53: baselines
-
-- **Check:** a custom `StorageAdapter`.
-- **Fix:** implement `getBaselines(projectId)` (oldest first), `getBaseline(id)`, `createBaseline(baseline)` (assign `id` and `createdAt`) and `deleteBaseline(id)`, and run the conformance suite.
-
-### core 0.53: deliverables, entities and helpers
-
-- **Check:** deliverable statuses other than `planned`, `in_progress`, `in_review`, `delivered`, `canceled`; `format` or `specs` on deliverables; imports of `TaskEntity`, `ProjectEntity`, `DeliverableEntity`, `BaseEntity`, `isDraftTask`, `isArchivedTask`, `isTrashedTask`, `isTrashedOrArchivedTask`, `isWorkflowTask` (or `isTaskDraft`, `isTaskArchived`, `isTaskTrashed`, `isTaskTrashedOrArchived`, `isTaskWorkflow`); tasks whose `assigneeId` is not in `assignees`; the `'blocked'` tag; `sprintId`.
-- **Fix:** set `deliverableStatusDefinitions` on projects that use other statuses (`CREATIVE_DELIVERABLE_STATUSES` for the old list). Move `format` / `specs` into `customFields`. Use the engine instead of entity classes (`createTask`, `updateTask`, `logTime`). Model drafts, archiving or trash as statuses or `customFields` your app filters on. Make `assigneeId` one of `assignees`. Set `isBlocked` instead of tagging `'blocked'`. Use `iterationId`.
-
-### core 0.53: one scheduling engine, start constraints and lag
-
-- **Check:** assertions on project-mode `earlyStartDate` / `lateStartDate` of tasks that follow another task, or on the exact shape of project-mode results.
-- **Fix:** expect a successor to start at the next working moment after its predecessor finishes (offsets are unchanged), and `overallocations` / `scheduleId` in project-mode results. Model "not before" dates with `earliestStart` and waits between tasks with `lagHours` instead of dummy tasks.
-
-### core 0.53: clearing fields, dates and time entries
-
-- **Check:** request bodies with dates that are not ISO dates or date-times; a custom `StorageAdapter`; UI code that spreads update payloads into local state; code that relied on `logTime` accepting unknown task ids.
-- **Fix:** send ISO dates (keep free-form text in `customFields`). Implement `getTimeEntry` and `updateTimeEntry` in custom adapters and run the conformance suite. Apply update payloads with `applyUpdate` so `null` removes a field. Send `null` (not an empty string) to clear an optional field. Correct time with `PATCH /time-entries/:id` instead of writing hours on the task.
-
-### core 0.53: summary tasks and roll-ups
-
-- **Check:** projects with subtasks (`parentId`); code that sums `totalEstimatedHours`, `durationHours` or `progressPercentage` from the ladder or deliverable summaries, or reads EVM for canceled tasks; code that expects a parent task in `criticalTaskIds`.
-- **Fix:** expect parents to be roll-ups of their subtasks (`isSummary: true` in analysis results, not scheduled or counted on their own); estimate subtasks rather than parents. Expect lower totals where parents were double-counted and canceled work was included, and 100% progress when the remaining work is canceled. Read `unestimatedTaskIds`, and set `defaultEstimateHours` if 1 hour is the wrong assumption for unestimated tasks.
-
-### core 0.53: statuses, workflows and derived fields
-
-- **Check:** task statuses that are not in the project's workflow (including custom keys you relied on being classified by name); request bodies or `createTask` calls that include `semanticStatus`, `loggedHours`, `actualHours`, `billableHours`, `actualDuration*`, `billableDurationMinutes`, `inProgressSince`, `blockedSince` or `blockedDurationSeconds`; code that reads `actualHours` as elapsed time; project updates that change `workflowId`, `workflow` or `statusDefinitions`; workflow deletes; MCP `update_task` calls with `loggedHours`.
-- **Fix:** add missing statuses to the workflow with the right `category`. Log hours with `logTime` / `POST /time-entries` / MCP `log_time` instead of writing them. Read elapsed time from `actualDurationSeconds`. Pass `statusMapping` when changing a project's statuses (a `409` lists the statuses that need one). Switch projects off a workflow before deleting it. Handle `409` (`ConflictError`) where you call these.
-
 ### core 0.53: dependency types and blocking
 
 - **Check:** `type: 'blocked_by'` anywhere (requests, seed data, stored dependency records); code that reads `task.isBlocked` to decide whether dependencies are finished, or that sets `isBlocked` when adding a dependency; `task.unblocked` handlers that assume the task was marked blocked; assertions that `relates_to` links appear in `upstreamTasks`.
 - **Fix:** send `{ taskId: <waiting task>, dependsOnTaskId: <task it waits for>, type: 'blocking' }` instead of `blocked_by`, and migrate stored `blocked_by` records the same way (they are still read correctly meanwhile). Read `getTaskLifecycleState(id).isBlocked` (dependencies or a manual block) or `.blockingTaskIds` (dependencies only). Clear manual blocks yourself; the engine no longer does. Read a dependency's direction with `precedenceOf(dependency)`.
+
+### core 0.54: statuses, workflows and derived fields
+
+- **Check:** task statuses that are not in the project's workflow (including custom keys you relied on being classified by name); request bodies or `createTask` calls that include `semanticStatus`, `loggedHours`, `actualHours`, `billableHours`, `actualDuration*`, `billableDurationMinutes`, `inProgressSince`, `blockedSince` or `blockedDurationSeconds`; code that reads `actualHours` as elapsed time; project updates that change `workflowId`, `workflow` or `statusDefinitions`; workflow deletes; MCP `update_task` calls with `loggedHours`.
+- **Fix:** add missing statuses to the workflow with the right `category`. Log hours with `logTime` / `POST /time-entries` / MCP `log_time` instead of writing them. Read elapsed time from `actualDurationSeconds`. Pass `statusMapping` when changing a project's statuses (a `409` lists the statuses that need one). Switch projects off a workflow before deleting it. Handle `409` (`ConflictError`) where you call these.
+
+### core 0.55: summary tasks and roll-ups
+
+- **Check:** projects with subtasks (`parentId`); code that sums `totalEstimatedHours`, `durationHours` or `progressPercentage` from the ladder or deliverable summaries, or reads EVM for canceled tasks; code that expects a parent task in `criticalTaskIds`.
+- **Fix:** expect parents to be roll-ups of their subtasks (`isSummary: true` in analysis results, not scheduled or counted on their own); estimate subtasks rather than parents. Expect lower totals where parents were double-counted and canceled work was included, and 100% progress when the remaining work is canceled. Read `unestimatedTaskIds`, and set `defaultEstimateHours` if 1 hour is the wrong assumption for unestimated tasks.
+
+### core 0.56: clearing fields, dates and time entries
+
+- **Check:** request bodies with dates that are not ISO dates or date-times; a custom `StorageAdapter`; UI code that spreads update payloads into local state; code that relied on `logTime` accepting unknown task ids.
+- **Fix:** send ISO dates (keep free-form text in `customFields`). Implement `getTimeEntry` and `updateTimeEntry` in custom adapters and run the conformance suite. Apply update payloads with `applyUpdate` so `null` removes a field. Send `null` (not an empty string) to clear an optional field. Correct time with `PATCH /time-entries/:id` instead of writing hours on the task.
+
+### core 0.57: one scheduling engine, start constraints and lag
+
+- **Check:** assertions on project-mode `earlyStartDate` / `lateStartDate` of tasks that follow another task, or on the exact shape of project-mode results.
+- **Fix:** expect a successor to start at the next working moment after its predecessor finishes (offsets are unchanged), and `overallocations` / `scheduleId` in project-mode results. Model "not before" dates with `earliestStart` and waits between tasks with `lagHours` instead of dummy tasks.
+
+### core 0.58: deliverables, entities and helpers
+
+- **Check:** deliverable statuses other than `planned`, `in_progress`, `in_review`, `delivered`, `canceled`; `format` or `specs` on deliverables; imports of `TaskEntity`, `ProjectEntity`, `DeliverableEntity`, `BaseEntity`, `isDraftTask`, `isArchivedTask`, `isTrashedTask`, `isTrashedOrArchivedTask`, `isWorkflowTask` (or `isTaskDraft`, `isTaskArchived`, `isTaskTrashed`, `isTaskTrashedOrArchived`, `isTaskWorkflow`); tasks whose `assigneeId` is not in `assignees`; the `'blocked'` tag; `sprintId`.
+- **Fix:** set `deliverableStatusDefinitions` on projects that use other statuses (`CREATIVE_DELIVERABLE_STATUSES` for the old list). Move `format` / `specs` into `customFields`. Use the engine instead of entity classes (`createTask`, `updateTask`, `logTime`). Model drafts, archiving or trash as statuses or `customFields` your app filters on. Make `assigneeId` one of `assignees`. Set `isBlocked` instead of tagging `'blocked'`. Use `iterationId`.
+
+### core 0.59: baselines
+
+- **Check:** a custom `StorageAdapter`.
+- **Fix:** implement `getBaselines(projectId)` (oldest first), `getBaseline(id)`, `createBaseline(baseline)` (assign `id` and `createdAt`) and `deleteBaseline(id)`, and run the conformance suite.
+
+### core 0.60: paginated comments
+
+- **Check:** a custom `StorageAdapter`; direct HTTP calls to `GET /comments?taskId=` or `GET /tasks/:taskId/comments` (not through `CriticalPathClient`) that expect every comment.
+- **Fix:** implement `queryComments({ taskId, limit, cursor })` returning `{ items, nextCursor }` ordered by `(createdAt, id)` ascending (`paginate` and `matchesCommentQuery` do this in memory), and run the conformance suite. For HTTP calls, follow `nextCursor` until it is absent, or use `client.getComments`, which does.
 
 ### mcp 0.19: tool results, selection and annotations
 
@@ -2373,7 +2378,7 @@ Initialize Firestore and instantiate `FirebaseStore`:
 
 ```typescript
 import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { CriticalPathEngine, FirebaseStore } from '@critical-path/core';
 
 // Initialize Firebase App with default credentials (or service account)
@@ -2381,7 +2386,8 @@ initializeApp();
 
 const db = getFirestore();
 
-const store = new FirebaseStore({ db });
+// fieldValue lets hour totals use Firestore's atomic increments
+const store = new FirebaseStore({ db, fieldValue: FieldValue });
 
 const engine = new CriticalPathEngine({ store });
 ```
@@ -2398,7 +2404,7 @@ comments  attachments  activities  time_entries  dependencies  webhooks
 webhook_outbox
 ```
 
-Updates read and write each document inside `db.runTransaction`, so concurrent changes to one record (two `PATCH` requests, or a `PATCH` racing time being logged) retry instead of overwriting each other. Hour totals use the same transactions. A `db` without `runTransaction` (such as a hand-written mock) falls back to plain reads and writes.
+Updates read and write each document inside `db.runTransaction`, so concurrent changes to one record (two `PATCH` requests, or a `PATCH` racing time being logged) retry instead of overwriting each other. Hour totals use `FieldValue.increment` when you pass `fieldValue` (recommended: it never contends), and the same transactions otherwise. A `db` without `runTransaction` (such as a hand-written mock) falls back to plain reads and writes.
 
 Queries push equality filters such as `projectId` and `tenantId` down to Firestore, which uses its automatic single-field indexes. Further task and activity filters, sorting and pagination run in memory, so very large projects are better served by SQLite or a custom adapter.
 
@@ -2425,7 +2431,7 @@ Any class implementing `StorageAdapter` from `@critical-path/core` can be passed
 | `ProjectRepository` | `getProjects`, `getProject`, `createProject`, `updateProject`, `deleteProject` |
 | `TaskRepository` | `getTasks(projectId?)`, `queryTasks(query)`, `getTask`, `createTask`, `updateTask`, `deleteTask` |
 | `WorkflowRepository`, `TeamRepository`, `ContainerRepository`, `IterationRepository`, `DeliverableRepository` | `get…s`, `get…`, `create…`, `update…`, `delete…` |
-| `CommentRepository` | `getComments(taskId)`, `getComment`, `addComment`, `updateComment`, `deleteComment`, optional `addReaction` / `removeReaction` |
+| `CommentRepository` | `getComments(taskId)`, `queryComments(query)`, `getComment`, `addComment`, `updateComment`, `deleteComment`, optional `addReaction` / `removeReaction` |
 | `AttachmentRepository` | `getAttachments(filter)`, `getAttachment`, `createAttachment`, `deleteAttachment` |
 | `ActivityRepository` | `getActivities(filter)`, `queryActivities(query)`, `logActivity` |
 | `BaselineRepository` | `getBaselines(projectId)` (oldest first), `getBaseline`, `createBaseline`, `deleteBaseline` |
@@ -2454,9 +2460,9 @@ const engine = new CriticalPathEngine({ store: new PostgresStore(pool) });
 - **Ordering.**
   - `getComments`: oldest first.
   - `getActivities`: newest first.
-  - `queryTasks`: `(createdAt, id)` ascending.
+  - `queryTasks`, `queryComments`: `(createdAt, id)` ascending.
   - `queryActivities`: `(createdAt, id)` descending.
-- **Filters.** Every filter passed to `getAttachments`, `getActivities`, `queryTasks` and `queryActivities` must be applied together. The exported helpers `matchesTaskQuery`, `matchesActivityQuery` and `paginate` implement the in-memory semantics if your database cannot push a filter down.
+- **Filters.** Every filter passed to `getAttachments`, `getActivities`, `queryTasks` and `queryActivities` must be applied together. The exported helpers `matchesTaskQuery`, `matchesActivityQuery`, `matchesCommentQuery` and `paginate` implement the in-memory semantics if your database cannot push a filter down.
 - **Hour totals (optional).** Implement `incrementTaskHours(taskId, { loggedHours?, actualHours?, billableHours? })` as a single atomic update (e.g. `UPDATE tasks SET loggedHours = COALESCE(loggedHours, 0) + $1 ...`) returning the updated task, or `null`. `logTime` uses it so concurrent logs are never lost; without it the engine falls back to read-modify-write.
 - **Transactions (optional).** Implement `transaction(fn)` to make cascading deletes atomic. Run `fn` with an adapter (`tx`) whose calls all belong to one database transaction, commit when it resolves, and roll back when it throws. A nested `transaction` call should join the outer one. Keep unrelated concurrent calls out of the transaction, for example by giving `tx` its own connection from a pool:
 
@@ -3218,7 +3224,7 @@ graph TD
 | `remove_dependency` | core | Removing that link by the same two task ids; returns `{ removed, dependencyIds }` | `taskId`, `dependsOnTaskId`, `type` |
 | `list_deliverables` | collaboration | A project's deliverables (outputs that group tasks); returns `{ deliverables }` | `projectId` |
 | `create_deliverable` | collaboration | An output that several tasks produce | `projectId`, `title`, `dueDate`, `taskIds` |
-| `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `taskId` |
+| `list_comments` | collaboration | A task's discussion, oldest first; returns `{ comments, nextCursor }` | `taskId`, `limit`, `cursor` |
 | `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `taskId`, `content` |
 | `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort`, `baselineId` |
 | `calculate_portfolio_critical_path` | scheduling | Several projects sharing people | `projectIds`, `projectOrder`, `calendars`, `levelResources` |
@@ -3601,7 +3607,7 @@ systemPrompt += '\n\n' + handle.instructions; // also mentions the ambient proje
 
 ## 📦 Structured results and annotations
 
-- Every tool declares an `outputSchema` and returns `structuredContent` (plus the same JSON as text for older clients). Results are always objects: list tools return `{ projects }`, `{ tasks, nextCursor }`, `{ deliverables }` or `{ comments }`.
+- Every tool declares an `outputSchema` and returns `structuredContent` (plus the same JSON as text for older clients). Results are always objects: list tools return `{ projects }`, `{ tasks, nextCursor }`, `{ deliverables }` or `{ comments, nextCursor }`.
 - A lookup that finds nothing (`get_task` with an unknown id, for example) is an error, not `null`.
 - Errors carry a recovery hint: a not-found error points to `list_projects` / `list_tasks`, invalid arguments point back to the input schema, and a permission error tells the agent to stop and tell the user.
 - Every tool sends the standard MCP annotations `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`. Only `delete_task` is destructive.
