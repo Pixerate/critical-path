@@ -5,7 +5,7 @@ description: Complete REST endpoint documentation exposed by @critical-path/serv
 
 The `@critical-path/server` router exposes the following REST endpoints under the configured base path (e.g. `/api/critical-path`).
 
-A machine-readable OpenAPI 3.1 document is served at `GET /openapi.json`. Its request bodies are generated from the same zod schemas the router validates with (`@critical-path/core/schemas`).
+A machine-readable OpenAPI 3.1 document is served at `GET /openapi.json`. Its request bodies are generated from the same zod schemas the router validates with (`@critical-path/core/schemas`). Plugin routes are listed too, under the `Plugins` tag unless their `openapi` metadata says otherwise.
 
 ---
 

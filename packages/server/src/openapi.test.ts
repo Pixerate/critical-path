@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CriticalPathRouter } from './router.js';
 import { ROUTES, buildOpenApiDocument } from './openapi.js';
+import { CommentReactionSchema } from '@critical-path/core/schemas';
 
 const base = 'http://localhost:3000/api/critical-path';
 
@@ -86,6 +87,45 @@ describe('OpenAPI document', () => {
     expect(createTask.required).toEqual(expect.arrayContaining(['projectId', 'title']));
     expect(createTask.properties).not.toHaveProperty('id');
     expect(doc.paths['/tasks/{taskId}/dependencies'].post.responses).toHaveProperty('409');
+  });
+
+  it('includes plugin routes, with their metadata when given', async () => {
+    const router = new CriticalPathRouter({
+      plugins: [
+        {
+          id: 'reports',
+          name: 'Reports',
+          version: '1.0.0',
+          routes: [
+            {
+              method: 'POST',
+              path: '/reports/:projectId/summary',
+              handler: () => Response.json({ ok: true }),
+              openapi: {
+                summary: 'Summarise a project',
+                tags: ['Reports'],
+                query: ['format'],
+                requestSchema: CommentReactionSchema,
+                responseSchema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+                status: 201
+              }
+            },
+            { method: 'GET', path: '/reports/health', handler: () => Response.json({}) },
+            { method: 'GET', path: '/reports/internal', handler: () => Response.json({}), openapi: { hidden: true } }
+          ]
+        }
+      ]
+    });
+    const doc = await (await router.handleRequest(new Request(`${base}/openapi.json`))).json();
+
+    const summary = doc.paths['/reports/{projectId}/summary'].post;
+    expect(summary.summary).toBe('Summarise a project');
+    expect(summary.tags).toEqual(['Reports']);
+    expect(summary.parameters.map((p: { name: string }) => p.name)).toEqual(['projectId', 'format']);
+    expect(summary.requestBody.content['application/json'].schema.required).toEqual(['emoji']);
+    expect(summary.responses['201'].content['application/json'].schema.properties.ok.type).toBe('boolean');
+    expect(doc.paths['/reports/health'].get).toMatchObject({ summary: 'Plugin route (reports)', tags: ['Plugins'] });
+    expect(doc.paths).not.toHaveProperty('/reports/internal');
   });
 
   it('respects requireAuth', async () => {

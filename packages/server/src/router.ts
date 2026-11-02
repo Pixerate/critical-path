@@ -311,7 +311,7 @@ export class CriticalPathRouter {
 
     // OpenAPI contract (behind the same auth as every other route)
     if (segments[0] === 'openapi.json' && segments.length === 1 && method === 'GET') {
-      return this.jsonResponse(buildOpenApiDocument({ serverUrl: this.openApiServerUrl(url, subpath) }));
+      return this.jsonResponse(buildOpenApiDocument({ serverUrl: this.openApiServerUrl(url, subpath), pluginRoutes: this.engine.plugins.getRoutes() }));
     }
 
     // Webhooks API

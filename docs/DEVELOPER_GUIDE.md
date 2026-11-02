@@ -290,7 +290,7 @@ Update bodies (`PATCH` on tasks, projects, deliverables, containers, iterations 
 
 ### Request Validation & OpenAPI
 - Request bodies are parsed with the strict schemas in `@critical-path/core/schemas`. Invalid bodies, server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, owning `projectId` on updates), identity fields and unknown keys return `400` with `issues: [{ path, message }]`.
-- `GET /api/critical-path/openapi.json` returns an OpenAPI 3.1 document generated from the same schemas. `buildOpenApiDocument()` from `@critical-path/server` builds it without a router.
+- `GET /api/critical-path/openapi.json` returns an OpenAPI 3.1 document generated from the same schemas. `buildOpenApiDocument()` from `@critical-path/server` builds it without a router (pass `pluginRoutes: engine.plugins.getRoutes()` to include plugin routes). Plugin routes are documented from their optional `openapi` metadata (`summary`, `description`, `tags`, `query`, `requestSchema`, `responseSchema`, `status`, `hidden`).
 - When adding a route, add it to `ROUTES` in `packages/server/src/openapi.ts` (the router only dispatches paths listed there or in `ROUTE_ALIASES`); `openapi.test.ts` calls every documented route and fails on unknown routes or mismatched response keys.
 
 ### Error Responses
