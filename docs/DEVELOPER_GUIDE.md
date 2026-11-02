@@ -263,7 +263,7 @@ Derived task fields are not accepted in request bodies: `semanticStatus`, `logge
 
 ### Activity, Comments & Attachments
 - `GET /api/critical-path/activities?projectId=:id&taskId=:id` - Fetch audit stream, newest first, paginated (`limit`, `cursor` → `nextCursor`).
-- `GET /api/critical-path/comments?taskId=:id` - Fetch task comments.
+- `GET /api/critical-path/comments?taskId=:id` - Fetch task comments, oldest first, paginated (`limit` up to 500, default 100; follow `nextCursor`). `GET /api/critical-path/tasks/:id/comments` takes the same `limit` and `cursor`.
 - `POST /api/critical-path/comments` - Post comment to task.
 - `PATCH /api/critical-path/comments/:id` - Update comment content.
 - `DELETE /api/critical-path/comments/:id` - Delete comment.
@@ -279,7 +279,7 @@ Derived task fields are not accepted in request bodies: `semanticStatus`, `logge
 - `GET /api/critical-path/webhooks` - List webhooks (secrets redacted to `hasSecret`).
 - `POST /api/critical-path/webhooks` - Register `{ name, url, events, secret?, active? }`. The response includes the signing `secret` once. `events` are domain event names or `'*'`.
 - `GET|PATCH|DELETE /api/critical-path/webhooks/:id` - Read, update/rotate, or delete a webhook.
-- Deliveries are signed (`X-CriticalPath-Signature`, verify with `verifyWebhookSignature`), time out, and retry with backoff. Configure with the engine's `webhookDelivery` option. For durable delivery use `OutboxWebhookQueue`, which stores attempts in any store implementing `WebhookOutboxStore` (all built-in stores do). Hosts resolving to private addresses are refused and redirects are not followed.
+- Deliveries are signed (`X-CriticalPath-Signature`, verify with `verifyWebhookSignature`), time out, and retry with backoff. Configure with the engine's `webhookDelivery` option. For durable delivery use `OutboxWebhookQueue`, which stores attempts in any store implementing `WebhookOutboxStore` (all built-in stores do). When the outbox is the engine's store and the store has `transaction` (`SQLiteStore`), every event-publishing mutation runs in a transaction that also writes its jobs, so changes and deliveries commit or roll back together; other stores enqueue just after the write. Hosts resolving to private addresses are refused and redirects are not followed.
 
 ### Time Tracking
 - `GET /api/critical-path/time-entries?taskId=:id` - Get time logs for task.

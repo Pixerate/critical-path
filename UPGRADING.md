@@ -174,6 +174,11 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** a custom `StorageAdapter`.
 - **Fix:** implement `getBaselines(projectId)` (oldest first), `getBaseline(id)`, `createBaseline(baseline)` (assign `id` and `createdAt`) and `deleteBaseline(id)`, and run the conformance suite.
 
+### core 0.60: paginated comments
+
+- **Check:** a custom `StorageAdapter`; direct HTTP calls to `GET /comments?taskId=` or `GET /tasks/:taskId/comments` (not through `CriticalPathClient`) that expect every comment.
+- **Fix:** implement `queryComments({ taskId, limit, cursor })` returning `{ items, nextCursor }` ordered by `(createdAt, id)` ascending (`paginate` and `matchesCommentQuery` do this in memory), and run the conformance suite. For HTTP calls, follow `nextCursor` until it is absent, or use `client.getComments`, which does.
+
 ### mcp 0.19: tool results, selection and annotations
 
 - **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.

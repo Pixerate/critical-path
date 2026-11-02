@@ -297,6 +297,54 @@ describe('webhook outbox', () => {
     expect(await restarted.processDue()).toBe(1);
   });
 
+  describe('in the mutation\'s transaction (SQLite)', () => {
+    function sqliteOutbox() {
+      const store = new SQLiteStore({ filename: ':memory:' });
+      const queue = new OutboxWebhookQueue(store, { leaseMs: 1_000 });
+      const { engine, deliveries } = engineWithCapture({ queue, retryBaseDelayMs: 0 }, { store });
+      const pending = async () => (await store.claimWebhookJobs(Date.now(), 100, 0)).map((e) => e.job.event).sort();
+      return { engine, store, queue, deliveries, pending };
+    }
+
+    it('writes jobs before the mutation returns, exactly once', async () => {
+      const { engine, queue, deliveries, pending } = sqliteOutbox();
+      await engine.createWebhook({ name: 'O', url: 'https://hooks.example.com/o', events: ['*'] });
+      const project = await engine.createProject({ name: 'Atomic' });
+      await engine.withActor({ userId: 'ana' }).createTask({ projectId: project.id, title: 'T' });
+
+      expect(await pending()).toEqual(['project.created', 'task.created']);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(await queue.processDue()).toBe(2);
+      expect(deliveries.map((d) => d.body.event).sort()).toEqual(['project.created', 'task.created']);
+    });
+
+    it('rolls the mutation back when its jobs cannot be written', async () => {
+      const { engine, store } = sqliteOutbox();
+      await engine.createWebhook({ name: 'O', url: 'https://hooks.example.com/o', events: ['project.created'] });
+      (store as any).putWebhookJob = async () => {
+        throw new Error('disk full');
+      };
+
+      await expect(engine.createProject({ name: 'Lost' })).rejects.toThrow('disk full');
+      expect(await engine.getProjects()).toEqual([]);
+    });
+
+    it('leaves no jobs when the mutation rolls back', async () => {
+      const { engine, store, pending } = sqliteOutbox();
+      const project = await engine.createProject({ name: 'Doomed' });
+      await engine.createTask({ projectId: project.id, title: 'T' });
+      await engine.createWebhook({ name: 'O', url: 'https://hooks.example.com/o', events: ['*'] });
+      (store as any).deleteProject = async () => {
+        throw new Error('constraint failed');
+      };
+
+      // The cascade deletes the task (publishing task.deleted) before the project delete fails.
+      await expect(engine.deleteProject(project.id)).rejects.toThrow('constraint failed');
+      expect(await pending()).toEqual([]);
+      expect(await engine.getTasks(project.id)).toHaveLength(1);
+    });
+  });
+
   it('requires the queue to be attached to an engine', async () => {
     await expect(new OutboxWebhookQueue(new InMemoryStore()).processDue()).rejects.toThrow(/not attached/);
   });

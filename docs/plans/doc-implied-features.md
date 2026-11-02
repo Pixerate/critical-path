@@ -123,7 +123,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - Event names are validated against `DOMAIN_EVENT_NAMES`.
 - SQLite now persists the webhook `name` and `tenantId`.
 
-**Follow-ups**: done: DNS-aware SSRF checks (resolve before each attempt, full IP range parsing, no redirects); durable `OutboxWebhookQueue` over `WebhookOutboxStore` (SQLite, Firestore, InMemory); team, container and iteration update/delete events, plus `iteration.created`. Remaining: enqueue in the same transaction as the mutation (needs follow-up 9).
+**Follow-ups**: done: DNS-aware SSRF checks (resolve before each attempt, full IP range parsing, no redirects); durable `OutboxWebhookQueue` over `WebhookOutboxStore` (SQLite, Firestore, InMemory); team, container and iteration update/delete events, plus `iteration.created`. Enqueue in the same transaction as the mutation: with an `OutboxWebhookQueue` over the engine's transactional store (SQLite), every event-publishing mutation runs in `inTransaction` and its jobs are written through the transaction; non-transactional stores (Firestore, in-memory) enqueue just after the write.
 
 ---
 
@@ -197,7 +197,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - **Server:** `GET /tasks` and `GET /activities` validate their query parameters (strict) and return `nextCursor`, with a default limit of 100 and a maximum of 500.
 - **Client:** `getTasks` and `getActivities` follow every page; new `queryTasks` and `queryActivities` return a single page.
 - **MCP:** `list_tasks` is paginated.
-- **Not paginated yet:** comments, which stay per-task.
+- **Comments:** `queryComments({ taskId, limit, cursor })` pages a task's comments oldest first, in SQL on SQLite; `GET /comments` and `GET /tasks/:id/comments` take `limit` and `cursor`; client `getComments` follows every page; MCP `list_comments` is paginated.
 
 
 ---

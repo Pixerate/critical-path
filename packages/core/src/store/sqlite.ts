@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { AsyncLocalStorage } from 'node:async_hooks';
 import type { ProjectFilter, StorageAdapter, TaskHourDeltas } from './index.js';
-import { decodeCursor, encodeCursor, pageSize, type ActivityQuery, type Page, type TaskQuery } from './query.js';
+import { decodeCursor, encodeCursor, pageSize, type ActivityQuery, type CommentQuery, type Page, type TaskQuery } from './query.js';
 import type {
   Project,
   Task,
@@ -388,7 +388,8 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks (parentId);
       CREATE INDEX IF NOT EXISTS idx_activities_project_created ON activities (projectId, createdAt, id);
       CREATE INDEX IF NOT EXISTS idx_activities_task_created ON activities (taskId, createdAt, id);
-      CREATE INDEX IF NOT EXISTS idx_comments_task ON comments (taskId);
+      DROP INDEX IF EXISTS idx_comments_task;
+      CREATE INDEX IF NOT EXISTS idx_comments_task_created ON comments (taskId, createdAt, id);
       CREATE INDEX IF NOT EXISTS idx_dependencies_task ON dependencies (taskId);
       CREATE INDEX IF NOT EXISTS idx_dependencies_upstream ON dependencies (dependsOnTaskId);
     `);
@@ -1157,6 +1158,22 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
     const stmt = this.db.prepare('SELECT * FROM comments WHERE taskId = ? ORDER BY createdAt ASC');
     const rows = stmt.all(taskId) as any[];
     return rows.map((r) => this.mapComment(r));
+  }
+
+  async queryComments(query: CommentQuery): Promise<Page<Comment>> {
+    const where = ['taskId = ?'];
+    const params: string[] = [query.taskId];
+    const after = decodeCursor(query.cursor);
+    if (after) {
+      where.push('(createdAt > ? OR (createdAt = ? AND id > ?))');
+      params.push(after[0], after[0], after[1]);
+    }
+    const size = pageSize(query.limit);
+    const sql = `SELECT * FROM comments WHERE ${where.join(' AND ')} ORDER BY createdAt ASC, id ASC LIMIT ?`;
+    const rows = this.db.prepare(sql).all(...params, size + 1) as any[];
+    const items = rows.slice(0, size).map((r) => this.mapComment(r));
+    const last = items[items.length - 1];
+    return { items, nextCursor: rows.length > size && last ? encodeCursor(last.createdAt, last.id) : undefined };
   }
 
   async getComment(id: string): Promise<Comment | null> {

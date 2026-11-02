@@ -458,8 +458,9 @@ export class CriticalPathRouter {
         }
       } else if (subResource === 'comments') {
         if (method === 'GET') {
-          const comments = await engine.getComments(taskId);
-          return this.jsonResponse({ comments });
+          const query = schemas.parsePayload(schemas.CommentListQuerySchema, Object.fromEntries(url.searchParams));
+          const page = await engine.queryComments({ ...query, taskId });
+          return this.jsonResponse({ comments: page.items, nextCursor: page.nextCursor });
         }
         if (method === 'POST') {
           const body = await this.readBody(request, schemas.CreateCommentSchema, { taskId });
@@ -731,10 +732,10 @@ export class CriticalPathRouter {
         }
       } else if (!commentId) {
         if (method === 'GET') {
-          const taskId = url.searchParams.get('taskId');
+          const { taskId, ...query } = schemas.parsePayload(schemas.CommentListQuerySchema, Object.fromEntries(url.searchParams));
           if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
-          const comments = await engine.getComments(taskId);
-          return this.jsonResponse({ comments });
+          const page = await engine.queryComments({ ...query, taskId });
+          return this.jsonResponse({ comments: page.items, nextCursor: page.nextCursor });
         }
         if (method === 'POST') {
           const body = await this.readBody(request, schemas.CreateCommentSchema);

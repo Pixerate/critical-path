@@ -71,7 +71,7 @@ systemPrompt += '\n\n' + handle.instructions; // also mentions the ambient proje
 
 ## 📦 Structured results and annotations
 
-- Every tool declares an `outputSchema` and returns `structuredContent` (plus the same JSON as text for older clients). Results are always objects: list tools return `{ projects }`, `{ tasks, nextCursor }`, `{ deliverables }` or `{ comments }`.
+- Every tool declares an `outputSchema` and returns `structuredContent` (plus the same JSON as text for older clients). Results are always objects: list tools return `{ projects }`, `{ tasks, nextCursor }`, `{ deliverables }` or `{ comments, nextCursor }`.
 - A lookup that finds nothing (`get_task` with an unknown id, for example) is an error, not `null`.
 - Errors carry a recovery hint: a not-found error points to `list_projects` / `list_tasks`, invalid arguments point back to the input schema, and a permission error tells the agent to stop and tell the user.
 - Every tool sends the standard MCP annotations `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`. Only `delete_task` is destructive.

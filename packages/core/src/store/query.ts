@@ -1,4 +1,4 @@
-import type { Activity, Task } from '../types/index.js';
+import type { Activity, Comment, Task } from '../types/index.js';
 import { ValidationError } from '../domain/errors.js';
 
 export const DEFAULT_PAGE_SIZE = 100;
@@ -29,6 +29,13 @@ export interface ActivityQuery {
   projectId?: string;
   projectIds?: string[];
   taskId?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+/** Comments on one task, oldest first. */
+export interface CommentQuery {
+  taskId: string;
   limit?: number;
   cursor?: string;
 }
@@ -86,9 +93,13 @@ export function matchesActivityQuery(activity: Activity, query: ActivityQuery): 
   return true;
 }
 
+export function matchesCommentQuery(comment: Comment, query: CommentQuery): boolean {
+  return comment.taskId === query.taskId;
+}
+
 /**
- * Sorts by `(sortKey, id)` and returns the page after `cursor`. Tasks page oldest first
- * (`asc`), activity feeds newest first (`desc`).
+ * Sorts by `(sortKey, id)` and returns the page after `cursor`. Tasks and comments page oldest
+ * first (`asc`), activity feeds newest first (`desc`).
  */
 export function paginate<T extends { id: string }>(
   items: T[],

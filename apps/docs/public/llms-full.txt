@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-11-02T21:32:34.617Z
+> Documentation generated on: 2026-11-02T21:41:02.596Z
 
 ================================================================================
 
@@ -435,6 +435,11 @@ Work through the items whose version is newer than the version you started from 
 
 - **Check:** a custom `StorageAdapter`.
 - **Fix:** implement `getBaselines(projectId)` (oldest first), `getBaseline(id)`, `createBaseline(baseline)` (assign `id` and `createdAt`) and `deleteBaseline(id)`, and run the conformance suite.
+
+### core 0.60: paginated comments
+
+- **Check:** a custom `StorageAdapter`; direct HTTP calls to `GET /comments?taskId=` or `GET /tasks/:taskId/comments` (not through `CriticalPathClient`) that expect every comment.
+- **Fix:** implement `queryComments({ taskId, limit, cursor })` returning `{ items, nextCursor }` ordered by `(createdAt, id)` ascending (`paginate` and `matchesCommentQuery` do this in memory), and run the conformance suite. For HTTP calls, follow `nextCursor` until it is absent, or use `client.getComments`, which does.
 
 ### mcp 0.19: tool results, selection and annotations
 
@@ -1983,7 +1988,7 @@ outbox.start();            // poll in this process
 
 Each attempt is a separate entry. A worker leases the entries it claims, so other workers skip them, and deletes each one after the attempt (a failed attempt first stores its retry). If a worker dies mid-delivery, the entry is claimed again when its lease expires. Delivery is therefore **at-least-once**: deduplicate on `X-CriticalPath-Delivery`. `FirebaseStore` claims without a transaction, so concurrent workers can occasionally deliver the same attempt twice.
 
-Jobs are enqueued after the mutation is stored, so a crash between the two can still drop an event.
+When the outbox uses the engine's own store and that store supports transactions (`SQLiteStore`), each mutation runs in a transaction that also writes its jobs. A committed change always has its deliveries queued, and a rolled-back change has none. If the jobs cannot be written, the mutation fails. `FirebaseStore`, `InMemoryStore` and stores without `transaction` write jobs right after the change is stored, so a crash between the two can still drop an event. A custom queue can join the transaction too: expose the store it writes to as `queue.store` and write through the `outbox` argument of `enqueue(job, delayMs, outbox)` when one is given.
 
 To use an existing job system instead, supply a `queue` that persists jobs and calls `engine.webhooks.deliver(job)` from a worker:
 
@@ -2426,7 +2431,7 @@ Any class implementing `StorageAdapter` from `@critical-path/core` can be passed
 | `ProjectRepository` | `getProjects`, `getProject`, `createProject`, `updateProject`, `deleteProject` |
 | `TaskRepository` | `getTasks(projectId?)`, `queryTasks(query)`, `getTask`, `createTask`, `updateTask`, `deleteTask` |
 | `WorkflowRepository`, `TeamRepository`, `ContainerRepository`, `IterationRepository`, `DeliverableRepository` | `get…s`, `get…`, `create…`, `update…`, `delete…` |
-| `CommentRepository` | `getComments(taskId)`, `getComment`, `addComment`, `updateComment`, `deleteComment`, optional `addReaction` / `removeReaction` |
+| `CommentRepository` | `getComments(taskId)`, `queryComments(query)`, `getComment`, `addComment`, `updateComment`, `deleteComment`, optional `addReaction` / `removeReaction` |
 | `AttachmentRepository` | `getAttachments(filter)`, `getAttachment`, `createAttachment`, `deleteAttachment` |
 | `ActivityRepository` | `getActivities(filter)`, `queryActivities(query)`, `logActivity` |
 | `BaselineRepository` | `getBaselines(projectId)` (oldest first), `getBaseline`, `createBaseline`, `deleteBaseline` |
@@ -2455,9 +2460,9 @@ const engine = new CriticalPathEngine({ store: new PostgresStore(pool) });
 - **Ordering.**
   - `getComments`: oldest first.
   - `getActivities`: newest first.
-  - `queryTasks`: `(createdAt, id)` ascending.
+  - `queryTasks`, `queryComments`: `(createdAt, id)` ascending.
   - `queryActivities`: `(createdAt, id)` descending.
-- **Filters.** Every filter passed to `getAttachments`, `getActivities`, `queryTasks` and `queryActivities` must be applied together. The exported helpers `matchesTaskQuery`, `matchesActivityQuery` and `paginate` implement the in-memory semantics if your database cannot push a filter down.
+- **Filters.** Every filter passed to `getAttachments`, `getActivities`, `queryTasks` and `queryActivities` must be applied together. The exported helpers `matchesTaskQuery`, `matchesActivityQuery`, `matchesCommentQuery` and `paginate` implement the in-memory semantics if your database cannot push a filter down.
 - **Hour totals (optional).** Implement `incrementTaskHours(taskId, { loggedHours?, actualHours?, billableHours? })` as a single atomic update (e.g. `UPDATE tasks SET loggedHours = COALESCE(loggedHours, 0) + $1 ...`) returning the updated task, or `null`. `logTime` uses it so concurrent logs are never lost; without it the engine falls back to read-modify-write.
 - **Transactions (optional).** Implement `transaction(fn)` to make cascading deletes atomic. Run `fn` with an adapter (`tx`) whose calls all belong to one database transaction, commit when it resolves, and roll back when it throws. A nested `transaction` call should join the outer one. Keep unrelated concurrent calls out of the transaction, for example by giving `tx` its own connection from a pool:
 
@@ -3237,7 +3242,7 @@ graph TD
 | `remove_dependency` | core | Removing that link by the same two task ids; returns `{ removed, dependencyIds }` | `taskId`, `dependsOnTaskId`, `type` |
 | `list_deliverables` | collaboration | A project's deliverables (outputs that group tasks); returns `{ deliverables }` | `projectId` |
 | `create_deliverable` | collaboration | An output that several tasks produce | `projectId`, `title`, `dueDate`, `taskIds` |
-| `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `taskId` |
+| `list_comments` | collaboration | A task's discussion, oldest first; returns `{ comments, nextCursor }` | `taskId`, `limit`, `cursor` |
 | `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `taskId`, `content` |
 | `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort`, `baselineId` |
 | `calculate_portfolio_critical_path` | scheduling | Several projects sharing people | `projectIds`, `projectOrder`, `calendars`, `levelResources` |
@@ -3620,7 +3625,7 @@ systemPrompt += '\n\n' + handle.instructions; // also mentions the ambient proje
 
 ## 📦 Structured results and annotations
 
-- Every tool declares an `outputSchema` and returns `structuredContent` (plus the same JSON as text for older clients). Results are always objects: list tools return `{ projects }`, `{ tasks, nextCursor }`, `{ deliverables }` or `{ comments }`.
+- Every tool declares an `outputSchema` and returns `structuredContent` (plus the same JSON as text for older clients). Results are always objects: list tools return `{ projects }`, `{ tasks, nextCursor }`, `{ deliverables }` or `{ comments, nextCursor }`.
 - A lookup that finds nothing (`get_task` with an unknown id, for example) is an error, not `null`.
 - Errors carry a recovery hint: a not-found error points to `list_projects` / `list_tasks`, invalid arguments point back to the input schema, and a permission error tells the agent to stop and tell the user.
 - Every tool sends the standard MCP annotations `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`. Only `delete_task` is destructive.
