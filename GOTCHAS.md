@@ -181,7 +181,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `@critical-path/core` (`WebhookDispatcher`, `InProcessWebhookQueue`)
 - **Symptom / Behavior**: Webhooks that were waiting for a retry never arrive after a deploy or crash. Tests that assert on deliveries are flaky.
 - **Root Cause**: The default queue schedules attempts with in-memory timers (unref'd so they never keep the process alive). Deliveries are also asynchronous, so they complete after the mutation returns.
-- **Solution / Workaround**: In tests, `await engine.webhooks.idle()` before asserting. For durable delivery, pass `new OutboxWebhookQueue(store)` as `webhookDelivery.queue` and call `start()` (or `processDue()`); it is at-least-once, so deduplicate on `X-CriticalPath-Delivery`. Alternatively, pass a queue backed by your job system that calls `engine.webhooks.deliver(job)`. Note that `engine.events.clear()` also removes the webhook subscription.
+- **Solution / Workaround**: In tests, `await engine.webhooks.idle()` before asserting. For durable delivery, pass `new OutboxWebhookQueue(store)` as `webhookDelivery.queue` and call `start()` (or `processDue()`). With `SQLiteStore` as both the engine store and the outbox, jobs are written inside the mutation's transaction, so they are in the store as soon as the call returns, and a failing outbox write makes the mutation throw; it is at-least-once, so deduplicate on `X-CriticalPath-Delivery`. Alternatively, pass a queue backed by your job system that calls `engine.webhooks.deliver(job)`. Note that `engine.events.clear()` also removes the webhook subscription.
 
 ### Webhooks Mirror Domain Events, So One Change Can Send Several Deliveries
 - **Area / Package**: `@critical-path/core` webhooks
