@@ -39,6 +39,11 @@ export interface OutboxWebhookQueueOptions {
  * A durable `WebhookDeliveryQueue`: jobs are written to a store and survive restarts. Delivery is
  * at-least-once, so receivers should de-duplicate on `X-CriticalPath-Delivery`.
  *
+ * When `store` is also the engine's store and supports `transaction` (`SQLiteStore`), every
+ * mutation that publishes events runs in a transaction and its jobs are written in it, so a
+ * committed change always has its deliveries and a rolled-back one has none. Other stores write
+ * jobs right after the change, so a crash in between can lose them.
+ *
  * ```ts
  * const store = new SQLiteStore({ filename: 'app.db' });
  * const outbox = new OutboxWebhookQueue(store);
@@ -52,7 +57,7 @@ export class OutboxWebhookQueue implements WebhookDeliveryQueue {
   private running?: Promise<number>;
 
   constructor(
-    private readonly store: WebhookOutboxStore,
+    readonly store: WebhookOutboxStore,
     private readonly options: OutboxWebhookQueueOptions = {}
   ) {}
 
@@ -60,8 +65,8 @@ export class OutboxWebhookQueue implements WebhookDeliveryQueue {
     this.deliver = deliver;
   }
 
-  async enqueue(job: WebhookDeliveryJob, delayMs: number): Promise<void> {
-    await this.store.putWebhookJob({ key: `${job.id}:${job.attempt}`, job, runAt: Date.now() + delayMs });
+  async enqueue(job: WebhookDeliveryJob, delayMs: number, outbox: WebhookOutboxStore = this.store): Promise<void> {
+    await outbox.putWebhookJob({ key: `${job.id}:${job.attempt}`, job, runAt: Date.now() + delayMs });
   }
 
   /** Delivers every job that is due now, in batches. Returns how many jobs were attempted. */

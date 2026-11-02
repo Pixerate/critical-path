@@ -123,7 +123,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - Event names are validated against `DOMAIN_EVENT_NAMES`.
 - SQLite now persists the webhook `name` and `tenantId`.
 
-**Follow-ups**: done: DNS-aware SSRF checks (resolve before each attempt, full IP range parsing, no redirects); durable `OutboxWebhookQueue` over `WebhookOutboxStore` (SQLite, Firestore, InMemory); team, container and iteration update/delete events, plus `iteration.created`. Remaining: enqueue in the same transaction as the mutation (needs follow-up 9).
+**Follow-ups**: done: DNS-aware SSRF checks (resolve before each attempt, full IP range parsing, no redirects); durable `OutboxWebhookQueue` over `WebhookOutboxStore` (SQLite, Firestore, InMemory); team, container and iteration update/delete events, plus `iteration.created`. Enqueue in the same transaction as the mutation: with an `OutboxWebhookQueue` over the engine's transactional store (SQLite), every event-publishing mutation runs in `inTransaction` and its jobs are written through the transaction; non-transactional stores (Firestore, in-memory) enqueue just after the write.
 
 ---
 

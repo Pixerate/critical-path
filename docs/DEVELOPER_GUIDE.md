@@ -279,7 +279,7 @@ Derived task fields are not accepted in request bodies: `semanticStatus`, `logge
 - `GET /api/critical-path/webhooks` - List webhooks (secrets redacted to `hasSecret`).
 - `POST /api/critical-path/webhooks` - Register `{ name, url, events, secret?, active? }`. The response includes the signing `secret` once. `events` are domain event names or `'*'`.
 - `GET|PATCH|DELETE /api/critical-path/webhooks/:id` - Read, update/rotate, or delete a webhook.
-- Deliveries are signed (`X-CriticalPath-Signature`, verify with `verifyWebhookSignature`), time out, and retry with backoff. Configure with the engine's `webhookDelivery` option. For durable delivery use `OutboxWebhookQueue`, which stores attempts in any store implementing `WebhookOutboxStore` (all built-in stores do). Hosts resolving to private addresses are refused and redirects are not followed.
+- Deliveries are signed (`X-CriticalPath-Signature`, verify with `verifyWebhookSignature`), time out, and retry with backoff. Configure with the engine's `webhookDelivery` option. For durable delivery use `OutboxWebhookQueue`, which stores attempts in any store implementing `WebhookOutboxStore` (all built-in stores do). When the outbox is the engine's store and the store has `transaction` (`SQLiteStore`), every event-publishing mutation runs in a transaction that also writes its jobs, so changes and deliveries commit or roll back together; other stores enqueue just after the write. Hosts resolving to private addresses are refused and redirects are not followed.
 
 ### Time Tracking
 - `GET /api/critical-path/time-entries?taskId=:id` - Get time logs for task.

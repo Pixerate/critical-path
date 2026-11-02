@@ -109,6 +109,7 @@ import { ValidationError, NotFoundError, ForbiddenError, ConflictError } from '.
 import { WebhookDispatcher, assertWebhookUrl } from '../webhooks/dispatcher.js';
 import { buildStorageKey, normalizeUploadData } from '../storage/file-storage.js';
 import { generateWebhookSecret } from '../webhooks/signature.js';
+import type { WebhookOutboxStore } from '../webhooks/outbox.js';
 import type { DomainEvent } from '../domain/events.js';
 import { calculateCPM, calculatePortfolioCPM, type CPMOptions } from '../domain/cpm.js';
 import { compareToBaseline, toBaselineTasks } from '../domain/baseline.js';
@@ -156,6 +157,40 @@ const addDeltas = (a: TaskHourDeltas, b: TaskHourDeltas): TaskHourDeltas => ({
 /** Every caller-settable task field, derived from the create schema so new fields are never dropped. */
 const CREATE_TASK_FIELDS = Object.keys(CreateTaskSchema.shape) as (keyof CreateTaskInput & keyof Task)[];
 
+/**
+ * Public mutations that publish events and do not already run in a transaction. With an atomic
+ * outbox they are wrapped so their writes and webhook jobs commit together.
+ */
+const TRANSACTIONAL_MUTATIONS = [
+  'createWorkflow',
+  'updateWorkflow',
+  'deleteWorkflow',
+  'createProject',
+  'createTask',
+  'updateTask',
+  'addDependency',
+  'removeDependency',
+  'addComment',
+  'updateComment',
+  'deleteComment',
+  'addCommentReaction',
+  'removeCommentReaction',
+  'createAttachment',
+  'deleteAttachment',
+  'createTeam',
+  'updateTeam',
+  'deleteTeam',
+  'createContainer',
+  'updateContainer',
+  'createDeliverable',
+  'updateDeliverable',
+  'createIteration',
+  'updateIteration',
+  'reportAgentStatus',
+  'createBaseline',
+  'deleteBaseline'
+] as const satisfies ReadonlyArray<keyof CriticalPathEngine>;
+
 export class CriticalPathEngine {
   public readonly config: CriticalPathConfig;
   public readonly store: StorageAdapter;
@@ -190,7 +225,9 @@ export class CriticalPathEngine {
       },
       config.webhookDelivery
     );
-    this.events.subscribe('*', (event) => this.webhooks.handle(event));
+    // Events whose jobs were already written inside their mutation's transaction are skipped.
+    this.events.subscribe('*', (event) => (this.outboxedEvents.has(event) ? undefined : this.webhooks.handle(event)));
+    if (this.atomicOutbox) this.runMutationsInTransactions();
     this.events.subscribe('*', (event) => {
       if (event.name.startsWith('team.')) this.teamMembership.clear();
     });
@@ -242,6 +279,32 @@ export class CriticalPathEngine {
     return !!this.actor && !this.authorizationBypassed && (!!this.config.authorize || !!this.actor.tenantId);
   }
 
+  /** Events whose webhook jobs were enqueued inside the transaction that published them. */
+  private readonly outboxedEvents = new WeakSet<object>();
+
+  /**
+   * True when webhook jobs persist in this engine's own transactional store (an
+   * `OutboxWebhookQueue` over it), so they can commit atomically with each mutation.
+   */
+  private get atomicOutbox(): boolean {
+    const outbox = this.config.webhookDelivery?.queue?.store;
+    return !!outbox && outbox === (this.store as unknown) && !!this.store.transaction;
+  }
+
+  /**
+   * Wraps every event-publishing mutation in `inTransaction`, so its writes and its outbox jobs
+   * commit together. Views made with `withActor` inherit the wrapped methods.
+   */
+  private runMutationsInTransactions(): void {
+    const self = this as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+    for (const name of TRANSACTIONAL_MUTATIONS) {
+      const method = self[name];
+      self[name] = function (this: CriticalPathEngine, ...args: unknown[]) {
+        return this.inTransaction((engine) => method.apply(engine, args));
+      };
+    }
+  }
+
   /** Tenants of events published inside a transaction, resolved before the data changed. */
   private readonly eventTenants = new WeakMap<object, string | undefined>();
 
@@ -282,6 +345,11 @@ export class CriticalPathEngine {
           if (property === 'publish') {
             return async (event: DomainEvent) => {
               this.eventTenants.set(event, await view.resolveEventTenant(event));
+              if (this.atomicOutbox) {
+                // A failed write rolls the mutation back with it.
+                await this.webhooks.handle(event, tx as StorageAdapter & WebhookOutboxStore);
+                this.outboxedEvents.add(event);
+              }
               effects.push(() => bus.publish(event));
             };
           }
