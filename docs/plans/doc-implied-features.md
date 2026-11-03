@@ -148,7 +148,7 @@ Phase 1 comes first because RBAC, webhook auth, and MCP-over-HTTP all depend on 
 - Plugin `routes` (`:param` patterns) run before the built-in routes, and `middleware` wraps every routed request after auth. Both receive the caller's `withActor` engine.
 - Before-hook output is validated (workflow transitions, custom fields) and cannot change `projectId`, `id` or `createdAt`. After-hook errors are logged. Delete hooks receive the task.
 - Required custom fields are enforced even when `customFields` is omitted.
-- Plugin routes are not in the OpenAPI document yet.
+- Plugin routes are in the OpenAPI document under `Plugins`, described by optional `openapi` metadata (zod or JSON Schema bodies and responses, `hidden` to omit).
 
 ---
 

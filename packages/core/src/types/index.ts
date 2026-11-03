@@ -578,11 +578,33 @@ export interface PluginRequestContext {
   params: Record<string, string>;
 }
 
+/**
+ * OpenAPI metadata for a plugin route. Schemas may be zod schemas (converted like the built-in
+ * request schemas) or JSON Schema objects.
+ */
+export interface PluginRouteDoc {
+  summary?: string;
+  description?: string;
+  /** Defaults to `['Plugins']`. */
+  tags?: string[];
+  /** Query parameters; names ending in `!` are required. */
+  query?: string[];
+  requestSchema?: unknown;
+  /** Schema of the success response body. */
+  responseSchema?: unknown;
+  /** Success status code; defaults to 200. */
+  status?: number;
+  /** Leave the route out of `/openapi.json`. */
+  hidden?: boolean;
+}
+
 export interface PluginRoute {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   /** Path below the router's base, with `:name` parameters, e.g. `/reports/:projectId`. */
   path: string;
   handler: (request: Request, ctx: PluginRequestContext) => Response | Promise<Response>;
+  /** How the route appears in `/openapi.json`. Undocumented routes are listed with a generic summary. */
+  openapi?: PluginRouteDoc;
 }
 
 /**

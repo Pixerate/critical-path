@@ -1,16 +1,23 @@
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import * as schemas from '@critical-path/core/schemas';
+import type { PluginRoute } from '@critical-path/core';
 
-type Method = 'get' | 'post' | 'patch' | 'delete';
+type Method = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
 interface RouteDoc {
   method: Method;
   path: string;
   summary: string;
+  description?: string;
   tag: string;
+  /** Overrides `[tag]`. */
+  tags?: string[];
   /** Query parameters; names ending in `!` are required. */
   query?: string[];
-  body?: { safeParse(data: unknown): unknown };
+  /** Zod schema (or, for plugin routes, JSON Schema) of the request body. */
+  body?: unknown;
+  /** Schema of the success body; otherwise derived from `responseKey`. */
+  responseSchema?: unknown;
   /** Key of the JSON response envelope, e.g. `task` for `{ "task": { ... } }`. */
   responseKey?: string;
   status?: number;
@@ -131,6 +138,8 @@ const errorResponse = {
 };
 
 function toJsonSchema(schema: unknown): Record<string, unknown> {
+  // Plugins may pass plain JSON Schema instead of zod.
+  if (typeof (schema as { safeParse?: unknown })?.safeParse !== 'function') return schema as Record<string, unknown>;
   const { $schema: _ignored, ...json } = zodToJsonSchema(schema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
   return json;
 }
@@ -140,6 +149,28 @@ export interface OpenApiOptions {
   serverUrl?: string;
   title?: string;
   version?: string;
+  /** Plugin routes to document, e.g. `engine.plugins.getRoutes()`. They replace built-in entries with the same path and method, as they do when routing. */
+  pluginRoutes?: Array<PluginRoute & { pluginId?: string }>;
+}
+
+function pluginRouteDocs(routes: OpenApiOptions['pluginRoutes'] = []): RouteDoc[] {
+  return routes
+    .filter((route) => !route.openapi?.hidden)
+    .map((route) => {
+      const doc = route.openapi ?? {};
+      return {
+        method: route.method.toLowerCase() as Method,
+        path: route.path.replace(/:(\w+)/g, '{$1}').replace(/^\/?/, '/'),
+        summary: doc.summary ?? `Plugin route${route.pluginId ? ` (${route.pluginId})` : ''}`,
+        description: doc.description,
+        tag: 'Plugins',
+        tags: doc.tags,
+        query: doc.query,
+        body: doc.requestSchema,
+        responseSchema: doc.responseSchema,
+        status: doc.status
+      };
+    });
 }
 
 /**
@@ -149,7 +180,7 @@ export interface OpenApiOptions {
 export function buildOpenApiDocument(options: OpenApiOptions = {}): Record<string, unknown> {
   const paths: Record<string, Record<string, unknown>> = {};
 
-  for (const route of ROUTES) {
+  for (const route of [...ROUTES, ...pluginRouteDocs(options.pluginRoutes)]) {
     const pathParams = [...route.path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
     const parameters = [
       ...pathParams.map((name) => ({ name, in: 'path', required: true, schema: { type: 'string' } })),
@@ -161,14 +192,17 @@ export function buildOpenApiDocument(options: OpenApiOptions = {}): Record<strin
       }))
     ];
     const status = String(route.status ?? 200);
-    const successSchema = route.responseKey
-      ? { type: 'object', properties: { [route.responseKey]: {} }, required: [route.responseKey] }
-      : { type: 'object' };
+    const successSchema = route.responseSchema
+      ? toJsonSchema(route.responseSchema)
+      : route.responseKey
+        ? { type: 'object', properties: { [route.responseKey]: {} }, required: [route.responseKey] }
+        : { type: 'object' };
 
     paths[route.path] ??= {};
     paths[route.path][route.method] = {
       summary: route.summary,
-      tags: [route.tag],
+      ...(route.description ? { description: route.description } : {}),
+      tags: route.tags ?? [route.tag],
       ...(parameters.length ? { parameters } : {}),
       ...(route.body
         ? { requestBody: { required: true, content: { 'application/json': { schema: toJsonSchema(route.body) } } } }
