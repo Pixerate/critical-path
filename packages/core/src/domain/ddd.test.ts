@@ -8,6 +8,8 @@ import {
   CustomFieldValidationError,
   DEFAULT_SOFTWARE_WORKFLOW,
   DEFAULT_SIMPLE_WORKFLOW,
+  DEFAULT_AGENTIC_WORKFLOW,
+  resolveBuiltInWorkflow,
   WorkflowValidationError,
   validateTransition,
   getAllowedNextStatuses,
@@ -410,6 +412,28 @@ describe('Domain-Driven Design (DDD) Enhancements Suite', () => {
       expect(validateTransition(DEFAULT_SOFTWARE_WORKFLOW, 'todo', 'backlog')).toBe(true);
       expect(getAllowedPreviousStatuses(DEFAULT_SOFTWARE_WORKFLOW, 'in_progress')).toContain('todo');
       expect(getAllowedPreviousStatuses(DEFAULT_SOFTWARE_WORKFLOW, 'todo')).toContain('backlog');
+    });
+
+    it('supports full agentic lifecycle transitions in DEFAULT_AGENTIC_WORKFLOW and resolveBuiltInWorkflow', () => {
+      expect(DEFAULT_AGENTIC_WORKFLOW.id).toBe('wf_agentic_default');
+      expect(DEFAULT_AGENTIC_WORKFLOW.statuses.map((s) => s.key)).toEqual([
+        'planning',
+        'todo',
+        'in_progress',
+        'in_review',
+        'done',
+        'canceled'
+      ]);
+      expect(validateTransition(DEFAULT_AGENTIC_WORKFLOW, 'todo', 'planning')).toBe(true);
+      expect(validateTransition(DEFAULT_AGENTIC_WORKFLOW, 'planning', 'todo')).toBe(true);
+      expect(validateTransition(DEFAULT_AGENTIC_WORKFLOW, 'planning', 'in_progress')).toBe(true);
+      expect(validateTransition(DEFAULT_AGENTIC_WORKFLOW, 'todo', 'in_progress')).toBe(true);
+      expect(validateTransition(DEFAULT_AGENTIC_WORKFLOW, 'in_progress', 'in_review')).toBe(true);
+      expect(validateTransition(DEFAULT_AGENTIC_WORKFLOW, 'in_review', 'done')).toBe(true);
+      expect(validateTransition(DEFAULT_AGENTIC_WORKFLOW, 'in_review', 'in_progress')).toBe(true);
+      expect(validateTransition(DEFAULT_AGENTIC_WORKFLOW, 'done', 'in_review')).toBe(true);
+      expect(resolveBuiltInWorkflow('wf_agentic_default')).toBe(DEFAULT_AGENTIC_WORKFLOW);
+      expect(resolveBuiltInWorkflow('wf_agentic_org_123')).toBe(DEFAULT_AGENTIC_WORKFLOW);
     });
 
     it('allows TaskEntity to transitionTo previous status without throwing WorkflowValidationError', () => {

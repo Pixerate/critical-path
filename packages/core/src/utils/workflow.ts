@@ -61,6 +61,47 @@ export const DEFAULT_SOFTWARE_WORKFLOW: Workflow = {
   updatedAt: '2026-01-01T00:00:00.000Z'
 };
 
+export const DEFAULT_AGENTIC_WORKFLOW: Workflow = {
+  id: 'wf_agentic_default',
+  name: 'Agentic Software Workflow',
+  description: 'Autonomous agent software lifecycle with proactive planning, ready queue, active execution, PR review, and completion states.',
+  statuses: [
+    DEFAULT_STATUS_DEFINITIONS.planning,
+    DEFAULT_STATUS_DEFINITIONS.todo,
+    DEFAULT_STATUS_DEFINITIONS.in_progress,
+    DEFAULT_STATUS_DEFINITIONS.in_review,
+    DEFAULT_STATUS_DEFINITIONS.done,
+    DEFAULT_STATUS_DEFINITIONS.canceled
+  ],
+  transitions: [
+    { name: 'Approve Plan / Ready to Start', fromStatusKey: 'planning', toStatusKey: 'todo' },
+    { name: 'Start Execution from Planning', fromStatusKey: 'planning', toStatusKey: 'in_progress' },
+    { name: 'Return to Planning', fromStatusKey: 'todo', toStatusKey: 'planning' },
+    { name: 'Start Implementation', fromStatusKey: 'todo', toStatusKey: 'in_progress' },
+    { name: 'Return to Planning', fromStatusKey: 'in_progress', toStatusKey: 'planning' },
+    { name: 'Return to To Do', fromStatusKey: 'in_progress', toStatusKey: 'todo' },
+    { name: 'Complete Task', fromStatusKey: 'todo', toStatusKey: 'done' },
+    { name: 'Submit PR for Review', fromStatusKey: 'in_progress', toStatusKey: 'in_review' },
+    { name: 'Complete Implementation', fromStatusKey: 'in_progress', toStatusKey: 'done' },
+    { name: 'Merge & Complete', fromStatusKey: 'in_review', toStatusKey: 'done' },
+    { name: 'Request Changes', fromStatusKey: 'in_review', toStatusKey: 'in_progress' },
+    { name: 'Return to To Do', fromStatusKey: 'in_review', toStatusKey: 'todo' },
+    { name: 'Return to Planning', fromStatusKey: 'in_review', toStatusKey: 'planning' },
+    { name: 'Reopen to Review', fromStatusKey: 'done', toStatusKey: 'in_review' },
+    { name: 'Reopen to In Progress', fromStatusKey: 'done', toStatusKey: 'in_progress' },
+    { name: 'Reopen to To Do', fromStatusKey: 'done', toStatusKey: 'todo' },
+    { name: 'Reopen to Planning', fromStatusKey: 'done', toStatusKey: 'planning' },
+    { name: 'Cancel', fromStatusKey: '*', toStatusKey: 'canceled' },
+    { name: 'Restore to Planning', fromStatusKey: 'canceled', toStatusKey: 'planning' },
+    { name: 'Restore to To Do', fromStatusKey: 'canceled', toStatusKey: 'todo' }
+  ],
+  taskTypes: DEFAULT_TASK_TYPES,
+  defaultStatusKey: 'todo',
+  isDefault: false,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z'
+};
+
 export const DEFAULT_SIMPLE_WORKFLOW: Workflow = {
   id: 'wf_simple_default',
   name: 'Simple Task Workflow',
@@ -180,6 +221,27 @@ export const DEFAULT_CREATIVE_WORKFLOW: Workflow = {
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z'
 };
+
+export function resolveBuiltInWorkflow(workflowId: string | undefined | null): Workflow | null {
+  if (!workflowId) return null;
+  const id = workflowId.trim().toLowerCase();
+  if (id === DEFAULT_AGENTIC_WORKFLOW.id || id.startsWith('wf_agentic')) {
+    return DEFAULT_AGENTIC_WORKFLOW;
+  }
+  if (id === DEFAULT_SOFTWARE_WORKFLOW.id || id.startsWith('wf_software')) {
+    return DEFAULT_SOFTWARE_WORKFLOW;
+  }
+  if (id === DEFAULT_SIMPLE_WORKFLOW.id || id.startsWith('wf_simple')) {
+    return DEFAULT_SIMPLE_WORKFLOW;
+  }
+  if (id === DEFAULT_VFX_WORKFLOW.id || id.startsWith('wf_vfx')) {
+    return DEFAULT_VFX_WORKFLOW;
+  }
+  if (id === DEFAULT_CREATIVE_WORKFLOW.id || id.startsWith('wf_creative')) {
+    return DEFAULT_CREATIVE_WORKFLOW;
+  }
+  return null;
+}
 
 export function validateTransition(
   workflow: Workflow | undefined,

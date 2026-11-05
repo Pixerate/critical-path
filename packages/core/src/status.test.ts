@@ -21,6 +21,7 @@ import type { Task, StatusDefinition, Workflow } from './types/index.js';
 describe('Universal Semantic Statuses & Implied Statuses', () => {
   describe('resolveStatusDefinition', () => {
     it('resolves core standard statuses to their semantic category', () => {
+      expect(resolveStatusDefinition('planning').category).toBe('not_started');
       expect(resolveStatusDefinition('todo').category).toBe('not_started');
       expect(resolveStatusDefinition('backlog').category).toBe('not_started');
       expect(resolveStatusDefinition('in_progress').category).toBe('in_progress');

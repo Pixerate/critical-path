@@ -8,6 +8,7 @@ import type {
 
 export const DEFAULT_STATUS_DEFINITIONS: Record<string, StatusDefinition> = {
   backlog: { key: 'backlog', label: 'Backlog', category: 'not_started' },
+  planning: { key: 'planning', label: 'Planning', category: 'not_started' },
   todo: { key: 'todo', label: 'To Do', category: 'not_started' },
   in_progress: { key: 'in_progress', label: 'In Progress', category: 'in_progress' },
   in_review: { key: 'in_review', label: 'In Review', category: 'in_progress' },

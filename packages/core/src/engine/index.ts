@@ -50,7 +50,8 @@ import {
   getAllowedPreviousStatuses,
   getAllowedTransitions,
   WorkflowValidationError,
-  DEFAULT_SOFTWARE_WORKFLOW
+  DEFAULT_SOFTWARE_WORKFLOW,
+  resolveBuiltInWorkflow
 } from '../utils/workflow.js';
 import { extractMentions } from '../utils/mentions.js';
 import {
@@ -568,6 +569,8 @@ export class CriticalPathEngine {
     if (project?.workflowId) {
       const wf = await this.store.getWorkflow(project.workflowId);
       if (wf && (wf.tenantId ?? undefined) === (project.tenantId ?? undefined)) return wf;
+      const builtIn = resolveBuiltInWorkflow(project.workflowId);
+      if (builtIn) return builtIn;
     }
 
     // Only fall back to workflows from the project's own tenant.
