@@ -27,7 +27,7 @@
   },
   "scripts": {
     "build": "tsc --build",
-    "test": "vitest run",
+    "test": "vitest run src",
     "clean": "rm -rf dist *.tsbuildinfo",
     "test:firestore": "firebase emulators:exec --only firestore --project demo-critical-path --config ../../firebase.json 'vitest run src/store/firestore-emulator.test.ts'"
   },
@@ -35,7 +35,7 @@
     "@google-cloud/firestore": "^9.3.1",
     "@types/node": "^26.6.5",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^5.0.5"
   },
   "engines": {
     "node": ">=24.0.0"

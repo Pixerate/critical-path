@@ -502,3 +502,9 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: Every task shows a large variance right after taking a baseline.
 - **Root Cause**: The baseline froze an analysis made with some options (`calendars`, `levelResources`, `effort`); comparing with an analysis made with different options measures the difference between the modes, not slippage.
 - **Solution / Workaround**: Pass the same options to `createBaseline` and to the analyses you compare. Variances are working hours on the project calendar; dated analyses compare dates, undated ones offsets.
+
+### Vitest 4+ Does Not Exclude `dist/` by Default
+- **Area / Package**: `packages/*`, `create-critical-path`, Vitest 5
+- **Symptom / Behavior**: After `pnpm run build`, running `vitest run` executes both `src/**/*.test.ts` and `dist/**/*.test.js` in parallel, doubling test runs and causing `ENOENT` / `Unexpected end of JSON input` races in `create-critical-path` when two workers regenerate `dist/templates` simultaneously.
+- **Root Cause**: `tsc --build` compiles `src/**/*.test.ts` into `dist/` (and `files` excludes `!dist/**/*.test.*` on publish). Vitest 4+ removed `'**/dist/**'` from `defaultExclude`.
+- **Solution / Workaround**: Scope package test scripts to `src` (`"test": "vitest run src"`).
