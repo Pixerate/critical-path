@@ -218,6 +218,9 @@ Critical Path exports pre-built workflows for common domain models:
 2. **`DEFAULT_SOFTWARE_WORKFLOW`**: Standard software engineering SDLC (Backlog -> To Do -> In Progress -> In Review -> Done).
 3. **`DEFAULT_VFX_WORKFLOW`**: Visual Effects production pipeline (Bidding & Draft -> Awarded -> In Production -> Internal Review -> Client Review -> Revision Requested -> Approved Final).
 4. **`DEFAULT_SIMPLE_WORKFLOW`**: Lightweight task workflow (To Do -> In Progress -> Done).
+5. **`DEFAULT_AGENTIC_WORKFLOW`**: Autonomous agent software lifecycle (Planning -> To Do -> In Progress -> In Review -> Done).
+
+A project whose `workflowId` is exactly one of these built-in ids (for example `wf_agentic_default`) uses that preset even when no workflow with that id is stored. `resolveBuiltInWorkflow(id)` performs the same lookup.
 
 ---
 

@@ -53,7 +53,8 @@ import {
   getAllowedTransitions,
   WorkflowValidationError,
   DEFAULT_SOFTWARE_WORKFLOW,
-  DEFAULT_DELIVERABLE_STATUSES
+  DEFAULT_DELIVERABLE_STATUSES,
+  resolveBuiltInWorkflow
 } from '../utils/workflow.js';
 import { extractMentions } from '../utils/mentions.js';
 import {
@@ -505,13 +506,13 @@ export class CriticalPathEngine {
     return project;
   }
 
-  /** A workflow a project may use: it must exist and belong to the project's tenant. */
+  /** A workflow a project may use: stored in the project's tenant, or a built-in. */
   private async assertUsableWorkflow(workflowId: string | undefined, tenantId: string | undefined): Promise<void> {
     if (!workflowId) return;
     const workflow = await this.store.getWorkflow(workflowId);
-    if (!workflow || (workflow.tenantId ?? undefined) !== (tenantId ?? undefined)) {
-      throw new ValidationError(`Workflow "${workflowId}" was not found.`);
-    }
+    if (workflow && (workflow.tenantId ?? undefined) === (tenantId ?? undefined)) return;
+    if (resolveBuiltInWorkflow(workflowId)) return;
+    throw new ValidationError(`Workflow "${workflowId}" was not found.`);
   }
 
   private withoutTenant<T extends { tenantId?: string }>(updates: T): T {
@@ -687,6 +688,8 @@ export class CriticalPathEngine {
     if (project?.workflowId) {
       const wf = await this.store.getWorkflow(project.workflowId);
       if (wf && (wf.tenantId ?? undefined) === (project.tenantId ?? undefined)) return wf;
+      const builtIn = resolveBuiltInWorkflow(project.workflowId);
+      if (builtIn) return builtIn;
     }
     return (await this.defaultWorkflowFor(project?.tenantId)) ?? DEFAULT_SOFTWARE_WORKFLOW;
   }

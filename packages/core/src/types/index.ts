@@ -1,7 +1,7 @@
 export type DefaultPriority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
 export type Priority = DefaultPriority | (string & {});
 
-export type DefaultTaskStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled';
+export type DefaultTaskStatus = 'backlog' | 'planning' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled';
 export type TaskStatus = DefaultTaskStatus | (string & {});
 
 export type SemanticStatus = 'not_started' | 'in_progress' | 'completed' | 'canceled';
