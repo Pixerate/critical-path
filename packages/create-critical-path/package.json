@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "tsc --build && node scripts/copy-templates.mjs",
-    "test": "vitest run",
+    "test": "vitest run src",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "devDependencies": {

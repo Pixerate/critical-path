@@ -27,7 +27,7 @@
   },
   "scripts": {
     "build": "tsc --build",
-    "test": "vitest run",
+    "test": "vitest run src",
     "clean": "rm -rf dist *.tsbuildinfo",
     "test:firestore": "firebase emulators:exec --only firestore --project demo-critical-path --config ../../firebase.json 'vitest run src/store/firestore-emulator.test.ts'"
   },

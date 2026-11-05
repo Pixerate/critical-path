@@ -34,7 +34,7 @@
   },
   "scripts": {
     "build": "node scripts/generate-skills.mjs && tsc --build",
-    "test": "vitest run",
+    "test": "vitest run src",
     "clean": "rm -rf dist *.tsbuildinfo",
     "generate:skills": "node scripts/generate-skills.mjs",
     "eval:tools": "node evals/tool-selection.mjs"
