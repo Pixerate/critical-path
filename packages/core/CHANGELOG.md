@@ -1,5 +1,13 @@
 # @critical-path/core
 
+## 0.62.0
+
+### Minor Changes
+
+- Add the `planning` status, the `DEFAULT_AGENTIC_WORKFLOW` template (`planning -> todo -> in_progress -> in_review -> done`) and `resolveBuiltInWorkflow()`.
+  
+  A project whose `workflowId` exactly matches a built-in workflow id now uses that built-in when no workflow with that id is stored for its tenant, instead of falling back to the tenant's default. Any other missing `workflowId` still falls back to the tenant's default.
+
 ## 0.61.0
 
 ### Minor Changes
