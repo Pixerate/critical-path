@@ -16,6 +16,8 @@ import {
   getNetAvailableCapacity,
   getWorkingHoursInDay
 } from './calendar.js';
+import { getTaskDurationHours } from './cpm.js';
+import { getLeafTasks } from './effort.js';
 
 export interface WorkloadContext {
   tasks: Task[];
@@ -73,18 +75,6 @@ function getBucketKey(d: Date, interval: WorkloadInterval): string {
   return toDateString(startOfMonth(d));
 }
 
-function getTaskDurationHours(task: Task): number {
-  if (typeof task.estimatedHours === 'number' && task.estimatedHours >= 0) {
-    return task.estimatedHours;
-  }
-  if (typeof task.estimatedDurationMinutes === 'number' && task.estimatedDurationMinutes >= 0) {
-    return task.estimatedDurationMinutes / 60;
-  }
-  if (typeof task.actualHours === 'number' && task.actualHours > 0) {
-    return task.actualHours;
-  }
-  return 1;
-}
 
 export function calculateWorkloadDistribution(
   context: WorkloadContext,
@@ -224,7 +214,8 @@ export function calculateWorkloadDistribution(
 
   // 3. Process Scheduled / Remaining / Blended Hours from Tasks
   if (metric === 'scheduled' || metric === 'remaining' || metric === 'blended') {
-    for (const task of tasks) {
+    // Summary tasks are spanned by their subtasks, which carry the effort
+    for (const task of getLeafTasks(tasks)) {
       const estimated = getTaskDurationHours(task);
       const logged = task.loggedHours || 0;
       let hoursToDistribute = 0;

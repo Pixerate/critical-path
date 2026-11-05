@@ -243,14 +243,13 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
         title: 'Cut',
         description: 'Deliverable',
         status: 'planned',
-        format: '4K',
-        specs: { fps: 24 },
+        semanticStatus: 'not_started',
         leadId: 'u1',
         reviewerId: 'u2',
         dueDate: '2026-11-01',
         deliveredAt: '2026-11-02T00:00:00.000Z',
         outputUrls: ['https://example.com/cut.mov'],
-        customFields: { client: 'Acme' }
+        customFields: { client: 'Acme', format: '4K', specs: { fps: 24 } }
       };
       expect(await store.getDeliverable((await store.createDeliverable(deliverable)).id)).toMatchObject(deliverable);
     });
@@ -273,6 +272,12 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
 
       expect(await store.getComment(first.id)).toMatchObject(input);
       expect((await store.getComments(task.id)).map((c) => c.content)).toEqual(['First', 'Second']);
+
+      const page = await store.queryComments({ taskId: task.id, limit: 1 });
+      expect(page.items.map((c) => c.content)).toEqual(['First']);
+      const next = await store.queryComments({ taskId: task.id, limit: 1, cursor: page.nextCursor });
+      expect(next.items.map((c) => c.content)).toEqual(['Second']);
+      expect(next.nextCursor).toBeUndefined();
     });
 
     it('round-trips attachments and applies every attachment filter together', async () => {
@@ -316,15 +321,30 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
 
     it('round-trips dependencies, time entries and webhooks', async () => {
       const store = await createStore();
-      const dep = await store.addDependency({ taskId: 'a', dependsOnTaskId: 'b', type: 'blocked_by' });
+      const dep = await store.addDependency({ taskId: 'a', dependsOnTaskId: 'b', type: 'relates_to' });
       expect(await store.getDependency(dep.id)).toEqual(dep);
       expect(await store.getDependencies('b')).toHaveLength(1);
       expect(await store.removeDependency(dep.id)).toBe(true);
 
       const entry = await store.logTime({ taskId: 't1', userId: 'u1', hours: 1.5, isBillable: false, description: 'Work', loggedAt: '2026-10-01T10:00:00.000Z' });
       expect((await store.getTimeEntries('t1'))[0]).toMatchObject({ id: entry.id, hours: 1.5, isBillable: false, description: 'Work', loggedAt: '2026-10-01T10:00:00.000Z' });
+      expect(await store.getTimeEntry(entry.id)).toMatchObject({ id: entry.id, taskId: 't1', hours: 1.5 });
+      const corrected = await store.updateTimeEntry(entry.id, { hours: 2, isBillable: true, description: undefined });
+      expect(corrected).toMatchObject({ id: entry.id, taskId: 't1', userId: 'u1', hours: 2, isBillable: true });
+      expect((await store.getTimeEntry(entry.id))?.description).toBeUndefined();
+      expect(await store.updateTimeEntry('missing', { hours: 1 })).toBeNull();
       expect(await store.deleteTimeEntry(entry.id)).toBe(true);
+      expect(await store.getTimeEntry(entry.id)).toBeNull();
       expect(await store.getTimeEntries('t1')).toHaveLength(0);
+
+      const first = await store.createBaseline({ projectId: 'p1', name: 'Plan', totalDurationHours: 16, tasks: [{ taskId: 't1', earlyStart: 0, earlyFinish: 16 }] });
+      const second = await store.createBaseline({ projectId: 'p1', name: 'Replan', totalDurationHours: 24, tasks: [] });
+      expect(await store.getBaseline(first.id)).toEqual(first);
+      // Oldest first, ties by id
+      const ordered = [first, second].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+      expect((await store.getBaselines('p1')).map((b) => b.id)).toEqual(ordered.map((b) => b.id));
+      expect(await store.deleteBaseline(first.id)).toBe(true);
+      expect(await store.getBaseline(first.id)).toBeNull();
 
       const webhook = await store.addWebhook({ name: 'Hook', url: 'https://example.com/h', secret: 'whsec_x', events: ['*'], active: true, tenantId: 'tenant-1' });
       expect(await store.getWebhook(webhook.id)).toMatchObject({ name: 'Hook', secret: 'whsec_x', events: ['*'], active: true, tenantId: 'tenant-1' });
@@ -384,7 +404,7 @@ export function runStorageAdapterConformance({ name, createStore, describe, it, 
       expect((await store.getTimeEntries(task.id))[0]).toMatchObject({ id: entry.id, customFields: custom });
 
       const other = await store.createTask({ projectId: project.id, title: 'Other', status: 'todo', priority: 'medium' });
-      const dependency = await store.addDependency({ taskId: task.id, dependsOnTaskId: other.id, type: 'blocked_by', customFields: custom });
+      const dependency = await store.addDependency({ taskId: task.id, dependsOnTaskId: other.id, type: 'relates_to', customFields: custom });
       expect((await store.getDependency(dependency.id))?.customFields).toEqual(custom);
       expect((await store.getDependencies(task.id))[0].customFields).toEqual(custom);
 

@@ -113,6 +113,8 @@ $$\text{Schedule Variance } (SV) = EV - PV$$
 $$\text{Cost Performance Index } (CPI) = \frac{EV}{AC}$$
 $$\text{Schedule Performance Index } (SPI) = \frac{EV}{PV}$$
 
+A canceled task was never going to be earned: its PV and EV are 0, so it is never behind schedule, and any hours logged on it are cost with no value (CV = -AC). Estimates are read with `getTaskEstimateHours` (milestones are 0).
+
 ---
 
 ## 5. Time-Series Progress History & Curve Profiles

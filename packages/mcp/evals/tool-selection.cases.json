@@ -5,14 +5,14 @@
   { "prompt": "What has Ana (user u_ana) got assigned in project p_1?", "expect": ["list_tasks"] },
   { "prompt": "Add a task to project p_1 to write the release notes, about 3 hours.", "expect": ["create_task", "list_tasks", "get_project"] },
   { "prompt": "Mark task t_42 as high priority.", "expect": ["update_task"] },
-  { "prompt": "I logged 5 hours on t_42 so far, record that.", "expect": ["update_task"] },
+  { "prompt": "I logged 5 hours on t_42 so far, record that.", "expect": ["log_time"] },
   { "prompt": "Delete task t_99, it was a mistake.", "expect": ["delete_task", "get_task"] },
   { "prompt": "Task t_8 can't start until t_7 is done; record that.", "expect": ["add_dependency"] },
   { "prompt": "In p_1, testing (t_12) has to wait for the build (t_11).", "expect": ["add_dependency"] },
   { "prompt": "t_8 doesn't actually need t_7 anymore, take that link out.", "expect": ["remove_dependency"] },
   { "prompt": "What is task t_42 waiting on, and what is waiting on it?", "expect": ["get_task", "get_task_ladder"] },
-  { "prompt": "What milestones are coming up in project p_1?", "expect": ["list_deliverables"] },
-  { "prompt": "Create a 'Public beta' milestone in p_1 due 2026-12-01.", "expect": ["create_deliverable"] },
+  { "prompt": "What milestones are coming up in project p_1?", "expect": ["list_tasks", "calculate_critical_path"] },
+  { "prompt": "Create a 'Public beta' milestone in p_1 due 2026-12-01.", "expect": ["create_task"] },
   { "prompt": "What did people say on task t_42?", "expect": ["list_comments"] },
   { "prompt": "Leave a note on t_42 that the API contract was approved.", "expect": ["add_comment"] },
   { "prompt": "When will project p_1 finish?", "expect": ["calculate_critical_path", "get_skill"] },
@@ -28,5 +28,9 @@
   { "prompt": "Who on the team is overloaded over the next month?", "expect": ["get_workload_distribution", "get_skill"] },
   { "prompt": "Break down our mobile app launch into a project plan.", "expect": ["get_skill", "list_projects"] },
   { "prompt": "Triage the untriaged tasks in p_1.", "expect": ["get_skill", "list_tasks"] },
-  { "prompt": "What playbooks do you have for project work?", "expect": ["get_skill"] }
+  { "prompt": "What playbooks do you have for project work?", "expect": ["get_skill"] },
+  { "prompt": "The 3 hours I logged on t_42 (time entry te_1) should have been 2.", "expect": ["update_time_entry"] },
+  { "prompt": "Remove time entry te_9, I logged it on the wrong task.", "expect": ["delete_time_entry"] },
+  { "prompt": "We just agreed the plan for p_1; save it so we can track slippage.", "expect": ["create_baseline"] },
+  { "prompt": "How much has project p_1 slipped since the plan we agreed?", "expect": ["list_baselines", "calculate_critical_path"] }
 ]

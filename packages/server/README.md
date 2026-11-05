@@ -96,12 +96,12 @@ Every request body is parsed with the zod schemas from `@critical-path/core/sche
 
 Webhooks are managed at `GET/POST /webhooks` and `GET/PATCH/DELETE /webhooks/:id` (`workspace.manage` under a role policy). `POST` returns the signing `secret` once.
 
-`GET /openapi.json` serves an OpenAPI 3.1 document whose request bodies are generated from the same schemas (behind the same auth as other routes). To publish it statically:
+`GET /openapi.json` serves an OpenAPI 3.1 document whose request bodies are generated from the same schemas (behind the same auth as other routes). It includes plugin routes, described by their `openapi` metadata (or `hidden: true` to omit one). To publish it statically:
 
 ```ts
 import { buildOpenApiDocument } from '@critical-path/server';
 
-const doc = buildOpenApiDocument({ serverUrl: 'https://app.example.com/api/critical-path' });
+const doc = buildOpenApiDocument({ serverUrl: 'https://app.example.com/api/critical-path', pluginRoutes: engine.plugins.getRoutes() });
 ```
 
 ---

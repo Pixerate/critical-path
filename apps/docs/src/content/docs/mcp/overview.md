@@ -63,16 +63,21 @@ graph TD
 | `list_tasks` | core | Finding tasks by project, status, priority, assignee, iteration, deliverable, container or parent; returns `{ tasks, nextCursor }` | `projectId`, `status`, `priority`, `assigneeId`, `parentId`, `limit`, `cursor` |
 | `get_task` | core | One task's full record; with `includeDependencies`, the tasks it waits for and the tasks waiting for it | `id`, `includeDependencies` |
 | `create_task` | core | Adding work | `projectId`, `title`, `estimatedHours`, `priority`, `assigneeId` |
-| `update_task` | core | Changing status, priority, assignee, estimates, logged hours, blocked state | `id`, plus the fields to change |
+| `update_task` | core | Changing status, priority, assignee, estimates, deadline, blocked state | `id`, plus the fields to change |
+| `log_time` | core | Recording hours worked (the only way to add logged hours) | `taskId`, `hours`, `description` |
+| `update_time_entry` | core | Correcting logged time | `id`, `hours` |
+| `delete_time_entry` | core | Removing time logged by mistake | `id` |
 | `delete_task` | core | Permanent deletion (destructive) | `id` |
 | `add_dependency` | core | Making a task wait for another so the critical path orders them; adding an existing link returns it, a loop is refused | `taskId`, `dependsOnTaskId`, `type` |
 | `remove_dependency` | core | Removing that link by the same two task ids; returns `{ removed, dependencyIds }` | `taskId`, `dependsOnTaskId`, `type` |
-| `list_deliverables` | collaboration | A project's milestones; returns `{ deliverables }` | `projectId` |
-| `create_deliverable` | collaboration | A dated milestone grouping tasks | `projectId`, `title`, `dueDate`, `taskIds` |
-| `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `taskId` |
+| `list_deliverables` | collaboration | A project's deliverables (outputs that group tasks); returns `{ deliverables }` | `projectId` |
+| `create_deliverable` | collaboration | An output that several tasks produce | `projectId`, `title`, `dueDate`, `taskIds` |
+| `list_comments` | collaboration | A task's discussion, oldest first; returns `{ comments, nextCursor }` | `taskId`, `limit`, `cursor` |
 | `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `taskId`, `content` |
-| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort` |
+| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort`, `baselineId` |
 | `calculate_portfolio_critical_path` | scheduling | Several projects sharing people | `projectIds`, `projectOrder`, `calendars`, `levelResources` |
+| `create_baseline` | scheduling | Saving the agreed plan to track slippage | `projectId`, `name` |
+| `list_baselines` | scheduling | Finding a baseline to compare with | `projectId` |
 | `get_workload_distribution` | scheduling | Hours and utilization per person, team or category over time | `projectId`, `groupBy`, `interval`, `metric`, `startDate`, `endDate` |
 | `get_timeline_ladder` | analytics | Project status: phase health, timeline, evidence of work | `projectId`, `level` |
 | `get_task_ladder` | analytics | One task's phase, schedule position and evidence | `taskId` |

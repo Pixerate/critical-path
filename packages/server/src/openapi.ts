@@ -1,16 +1,23 @@
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import * as schemas from '@critical-path/core/schemas';
+import type { PluginRoute } from '@critical-path/core';
 
-type Method = 'get' | 'post' | 'patch' | 'delete';
+type Method = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
 interface RouteDoc {
   method: Method;
   path: string;
   summary: string;
+  description?: string;
   tag: string;
+  /** Overrides `[tag]`. */
+  tags?: string[];
   /** Query parameters; names ending in `!` are required. */
   query?: string[];
-  body?: { safeParse(data: unknown): unknown };
+  /** Zod schema (or, for plugin routes, JSON Schema) of the request body. */
+  body?: unknown;
+  /** Schema of the success body; otherwise derived from `responseKey`. */
+  responseSchema?: unknown;
   /** Key of the JSON response envelope, e.g. `task` for `{ "task": { ... } }`. */
   responseKey?: string;
   status?: number;
@@ -35,8 +42,12 @@ export const ROUTES: RouteDoc[] = [
   { method: 'get', path: '/projects/{projectId}', summary: 'Get a project', tag: 'Projects', responseKey: 'project' },
   { method: 'patch', path: '/projects/{projectId}', summary: 'Update a project', tag: 'Projects', body: schemas.UpdateProjectSchema, responseKey: 'project' },
   { method: 'delete', path: '/projects/{projectId}', summary: 'Delete a project and its tasks', tag: 'Projects' },
-  { method: 'get', path: '/projects/{projectId}/critical-path', summary: 'Critical path (CPM) analysis (calendars=assignee schedules each task on its assignee or team calendar; levelResources=true also limits each assignee to one task at a time)', tag: 'Analysis', query: ['calendars', 'levelResources', 'levelingPriority', 'effort'], responseKey: 'analysis' },
-  { method: 'get', path: '/portfolio/critical-path', summary: 'Critical path across projects (projectIds, or all readable; levelResources shares people across them)', tag: 'Analysis', query: ['projectIds', 'projectOrder', 'includeHiddenWork', 'calendars', 'levelResources', 'levelingPriority', 'effort'], responseKey: 'portfolio' },
+  { method: 'get', path: '/projects/{projectId}/critical-path', summary: 'Critical path (CPM) analysis (calendars=assignee schedules each task on its assignee or team calendar; levelResources=true also limits each assignee to one task at a time)', tag: 'Analysis', query: ['calendars', 'levelResources', 'levelingPriority', 'effort', 'defaultEstimateHours', 'baselineId'], responseKey: 'analysis' },
+  { method: 'get', path: '/projects/{projectId}/baselines', summary: "List a project's baselines (oldest first)", tag: 'Analysis', responseKey: 'baselines' },
+  { method: 'post', path: '/projects/{projectId}/baselines', summary: "Save the current critical path analysis as a baseline (body takes the analysis options)", tag: 'Analysis', body: schemas.CreateBaselineSchema, responseKey: 'baseline', status: 201 },
+  { method: 'get', path: '/baselines/{baselineId}', summary: 'Get a baseline', tag: 'Analysis', responseKey: 'baseline' },
+  { method: 'delete', path: '/baselines/{baselineId}', summary: 'Delete a baseline', tag: 'Analysis' },
+  { method: 'get', path: '/portfolio/critical-path', summary: 'Critical path across projects (projectIds, or all readable; levelResources shares people across them)', tag: 'Analysis', query: ['projectIds', 'projectOrder', 'includeHiddenWork', 'calendars', 'levelResources', 'levelingPriority', 'effort', 'defaultEstimateHours'], responseKey: 'portfolio' },
   { method: 'get', path: '/projects/{projectId}/ladder', summary: 'Timeline ladder of abstraction', tag: 'Analysis', query: ['level', 'containerId', 'iterationId'], responseKey: 'ladder' },
   { method: 'get', path: '/projects/{projectId}/workload', summary: 'Project workload distribution', tag: 'Analysis', query: ['startDate', 'endDate', 'interval', 'groupBy', 'metric', 'defaultWeeklyCapacityHours'], responseKey: 'workload' },
 
@@ -45,7 +56,7 @@ export const ROUTES: RouteDoc[] = [
   { method: 'get', path: '/tasks/{taskId}', summary: 'Get a task', tag: 'Tasks', responseKey: 'task' },
   { method: 'patch', path: '/tasks/{taskId}', summary: 'Update a task (enforces workflow transitions)', tag: 'Tasks', body: schemas.UpdateTaskSchema, responseKey: 'task' },
   { method: 'delete', path: '/tasks/{taskId}', summary: 'Delete a task with its subtasks, dependencies, comments, attachments and time entries (subtasks=detach keeps subtasks)', tag: 'Tasks', query: ['subtasks'] },
-  { method: 'get', path: '/tasks/{taskId}/comments', summary: 'List task comments', tag: 'Comments', responseKey: 'comments' },
+  { method: 'get', path: '/tasks/{taskId}/comments', summary: 'List task comments (paginated oldest first; follow nextCursor)', tag: 'Comments', query: ['limit', 'cursor'], responseKey: 'comments' },
   { method: 'post', path: '/tasks/{taskId}/comments', summary: 'Comment on a task', tag: 'Comments', body: schemas.CreateCommentSchema.omit({ taskId: true }), responseKey: 'comment', status: 201 },
   { method: 'get', path: '/tasks/{taskId}/attachments', summary: 'List task attachments', tag: 'Attachments', responseKey: 'attachments' },
   { method: 'post', path: '/tasks/{taskId}/attachments', summary: 'Attach a file link to a task', tag: 'Attachments', body: schemas.CreateAttachmentSchema.omit({ taskId: true }), responseKey: 'attachment', status: 201 },
@@ -85,7 +96,7 @@ export const ROUTES: RouteDoc[] = [
 
   { method: 'get', path: '/activities', summary: 'Activity (audit) stream, newest first (follow nextCursor)', tag: 'Activity', query: ['projectId', 'taskId', 'limit', 'cursor'], responseKey: 'activities' },
 
-  { method: 'get', path: '/comments', summary: 'List comments for a task', tag: 'Comments', query: ['taskId!'], responseKey: 'comments' },
+  { method: 'get', path: '/comments', summary: 'List comments for a task (paginated oldest first; follow nextCursor)', tag: 'Comments', query: ['taskId!', 'limit', 'cursor'], responseKey: 'comments' },
   { method: 'post', path: '/comments', summary: 'Create a comment', tag: 'Comments', body: schemas.CreateCommentSchema, responseKey: 'comment', status: 201 },
   { method: 'get', path: '/comments/{commentId}', summary: 'Get a comment', tag: 'Comments', responseKey: 'comment' },
   { method: 'patch', path: '/comments/{commentId}', summary: 'Update a comment', tag: 'Comments', body: schemas.UpdateCommentSchema, responseKey: 'comment' },
@@ -102,6 +113,9 @@ export const ROUTES: RouteDoc[] = [
 
   { method: 'get', path: '/time-entries', summary: 'List time entries for a task', tag: 'Time Tracking', query: ['taskId!'], responseKey: 'timeEntries' },
   { method: 'post', path: '/time-entries', summary: 'Log time against a task', tag: 'Time Tracking', body: schemas.LogTimeSchema, responseKey: 'timeEntry', status: 201 },
+  { method: 'get', path: '/time-entries/{timeEntryId}', summary: 'Get a time entry', tag: 'Time Tracking', responseKey: 'timeEntry' },
+  { method: 'patch', path: '/time-entries/{timeEntryId}', summary: "Correct a time entry (adjusts the task's hours)", tag: 'Time Tracking', body: schemas.UpdateTimeEntrySchema, responseKey: 'timeEntry' },
+  { method: 'delete', path: '/time-entries/{timeEntryId}', summary: 'Delete a time entry (takes its hours off the task)', tag: 'Time Tracking' },
 
   { method: 'get', path: '/workload', summary: 'Workload distribution across projects', tag: 'Analysis', query: ['projectId', 'startDate', 'endDate', 'interval', 'groupBy', 'metric', 'defaultWeeklyCapacityHours'], responseKey: 'workload' },
   { method: 'post', path: '/status', summary: 'Publish an agent status update', tag: 'Agents' }
@@ -124,6 +138,8 @@ const errorResponse = {
 };
 
 function toJsonSchema(schema: unknown): Record<string, unknown> {
+  // Plugins may pass plain JSON Schema instead of zod.
+  if (typeof (schema as { safeParse?: unknown })?.safeParse !== 'function') return schema as Record<string, unknown>;
   const { $schema: _ignored, ...json } = zodToJsonSchema(schema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
   return json;
 }
@@ -133,6 +149,28 @@ export interface OpenApiOptions {
   serverUrl?: string;
   title?: string;
   version?: string;
+  /** Plugin routes to document, e.g. `engine.plugins.getRoutes()`. They replace built-in entries with the same path and method, as they do when routing. */
+  pluginRoutes?: Array<PluginRoute & { pluginId?: string }>;
+}
+
+function pluginRouteDocs(routes: OpenApiOptions['pluginRoutes'] = []): RouteDoc[] {
+  return routes
+    .filter((route) => !route.openapi?.hidden)
+    .map((route) => {
+      const doc = route.openapi ?? {};
+      return {
+        method: route.method.toLowerCase() as Method,
+        path: route.path.replace(/:(\w+)/g, '{$1}').replace(/^\/?/, '/'),
+        summary: doc.summary ?? `Plugin route${route.pluginId ? ` (${route.pluginId})` : ''}`,
+        description: doc.description,
+        tag: 'Plugins',
+        tags: doc.tags,
+        query: doc.query,
+        body: doc.requestSchema,
+        responseSchema: doc.responseSchema,
+        status: doc.status
+      };
+    });
 }
 
 /**
@@ -142,7 +180,7 @@ export interface OpenApiOptions {
 export function buildOpenApiDocument(options: OpenApiOptions = {}): Record<string, unknown> {
   const paths: Record<string, Record<string, unknown>> = {};
 
-  for (const route of ROUTES) {
+  for (const route of [...ROUTES, ...pluginRouteDocs(options.pluginRoutes)]) {
     const pathParams = [...route.path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
     const parameters = [
       ...pathParams.map((name) => ({ name, in: 'path', required: true, schema: { type: 'string' } })),
@@ -154,14 +192,17 @@ export function buildOpenApiDocument(options: OpenApiOptions = {}): Record<strin
       }))
     ];
     const status = String(route.status ?? 200);
-    const successSchema = route.responseKey
-      ? { type: 'object', properties: { [route.responseKey]: {} }, required: [route.responseKey] }
-      : { type: 'object' };
+    const successSchema = route.responseSchema
+      ? toJsonSchema(route.responseSchema)
+      : route.responseKey
+        ? { type: 'object', properties: { [route.responseKey]: {} }, required: [route.responseKey] }
+        : { type: 'object' };
 
     paths[route.path] ??= {};
     paths[route.path][route.method] = {
       summary: route.summary,
-      tags: [route.tag],
+      ...(route.description ? { description: route.description } : {}),
+      tags: route.tags ?? [route.tag],
       ...(parameters.length ? { parameters } : {}),
       ...(route.body
         ? { requestBody: { required: true, content: { 'application/json': { schema: toJsonSchema(route.body) } } } }

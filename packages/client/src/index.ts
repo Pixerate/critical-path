@@ -12,6 +12,8 @@ import type {
   UpdateContainerBody,
   CreateDeliverableBody,
   UpdateDeliverableBody,
+  UpdateTimeEntryBody,
+  CreateBaselineBody,
   CreateIterationBody,
   UpdateIterationBody,
   CreateCommentBody,
@@ -26,6 +28,7 @@ import type {
 } from '@critical-path/core/schemas';
 import type {
   ActivityQuery,
+  CommentQuery,
   Page,
   TaskQuery,
   PublicWebhook,
@@ -46,6 +49,7 @@ import type {
   PresignedUrlOptions,
   PresignedUploadResult,
   TimeEntry,
+  Baseline,
   Workflow,
   Deliverable,
   DeliverableSummary,
@@ -355,11 +359,35 @@ export class CriticalPathClient {
    * `calendars: 'assignee'` schedules each task on its assignee's or team's calendar;
    * `levelResources: true` (assignee mode) also limits each assignee to one task at a time.
    */
-  async calculateCriticalPath(projectId: string, options: CriticalPathQueryOptions = {}): Promise<CriticalPathAnalysis> {
+  /** With `baselineId`, each task also reports how far it moved since that baseline. */
+  async calculateCriticalPath(projectId: string, options: CriticalPathQueryOptions & { baselineId?: string } = {}): Promise<CriticalPathAnalysis> {
     const res = await this.request<{ analysis: CriticalPathAnalysis }>(
       `/projects/${encodeURIComponent(projectId)}/critical-path${criticalPathQuery(options)}`
     );
     return res.analysis;
+  }
+
+  async getBaselines(projectId: string): Promise<Baseline[]> {
+    const res = await this.request<{ baselines: Baseline[] }>(`/projects/${encodeURIComponent(projectId)}/baselines`);
+    return res.baselines;
+  }
+
+  /** Saves the project's current critical path analysis as a named baseline. */
+  async createBaseline(projectId: string, data: CreateBaselineBody): Promise<Baseline> {
+    const res = await this.request<{ baseline: Baseline }>(`/projects/${encodeURIComponent(projectId)}/baselines`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.baseline;
+  }
+
+  async getBaseline(id: string): Promise<Baseline> {
+    const res = await this.request<{ baseline: Baseline }>(`/baselines/${encodeURIComponent(id)}`);
+    return res.baseline;
+  }
+
+  async deleteBaseline(id: string): Promise<boolean> {
+    return this.deleteRequest(`/baselines/${encodeURIComponent(id)}`);
   }
 
   /**
@@ -771,9 +799,19 @@ export class CriticalPathClient {
   }
 
   // Comments
+  /** All of a task's comments (oldest first), following pagination. Prefer `queryComments` for long threads. */
   async getComments(taskId: string): Promise<Comment[]> {
-    const res = await this.request<{ comments: Comment[] }>(`/comments?taskId=${encodeURIComponent(taskId)}`);
-    return res.comments;
+    return this.collectPages((cursor) => this.queryComments({ taskId, cursor, limit: 500 }));
+  }
+
+  /** One page of a task's comments, oldest first. */
+  async queryComments(query: CommentQuery): Promise<Page<Comment>> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    const res = await this.request<{ comments: Comment[]; nextCursor?: string }>(`/comments?${params}`);
+    return { items: res.comments, nextCursor: res.nextCursor };
   }
 
   async getComment(id: string): Promise<Comment> {
@@ -885,6 +923,25 @@ export class CriticalPathClient {
     return res.timeEntry;
   }
 
+  async getTimeEntry(id: string): Promise<TimeEntry> {
+    const res = await this.request<{ timeEntry: TimeEntry }>(`/time-entries/${encodeURIComponent(id)}`);
+    return res.timeEntry;
+  }
+
+  /** Corrects a time entry; the task's hour totals move by the difference. */
+  async updateTimeEntry(id: string, updates: UpdateTimeEntryBody): Promise<TimeEntry> {
+    const res = await this.request<{ timeEntry: TimeEntry }>(`/time-entries/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+    return res.timeEntry;
+  }
+
+  /** Deletes a time entry and takes its hours off the task. */
+  async deleteTimeEntry(id: string): Promise<boolean> {
+    return this.deleteRequest(`/time-entries/${encodeURIComponent(id)}`);
+  }
+
   // Agent Status / Telemetry
   async updateStatus(
     status: string,
@@ -913,12 +970,15 @@ export interface CriticalPathQueryOptions {
   levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
   /** `'remaining'`: in-progress tasks schedule only `estimate - loggedHours`. */
   effort?: 'estimate' | 'remaining';
+  /** Hours assumed for tasks with no estimate (default 1); they are listed in `unestimatedTaskIds`. */
+  defaultEstimateHours?: number;
 }
 
 function criticalPathQuery(
-  options: CriticalPathQueryOptions & { projectIds?: string[]; projectOrder?: string[]; includeHiddenWork?: boolean }
+  options: CriticalPathQueryOptions & { projectIds?: string[]; projectOrder?: string[]; includeHiddenWork?: boolean; baselineId?: string }
 ): string {
   const params = new URLSearchParams();
+  if (options.baselineId) params.set('baselineId', options.baselineId);
   if (options.includeHiddenWork) params.set('includeHiddenWork', 'true');
   if (options.projectIds) params.set('projectIds', options.projectIds.join(','));
   if (options.projectOrder) params.set('projectOrder', options.projectOrder.join(','));
@@ -926,5 +986,6 @@ function criticalPathQuery(
   if (options.levelResources !== undefined) params.set('levelResources', String(options.levelResources));
   if (options.levelingPriority) params.set('levelingPriority', options.levelingPriority);
   if (options.effort) params.set('effort', options.effort);
+  if (options.defaultEstimateHours !== undefined) params.set('defaultEstimateHours', String(options.defaultEstimateHours));
   return params.size ? `?${params}` : '';
 }

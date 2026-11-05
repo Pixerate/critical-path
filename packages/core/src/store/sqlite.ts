@@ -1,11 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { AsyncLocalStorage } from 'node:async_hooks';
 import type { ProjectFilter, StorageAdapter, TaskHourDeltas } from './index.js';
-import { decodeCursor, encodeCursor, pageSize, type ActivityQuery, type Page, type TaskQuery } from './query.js';
+import { decodeCursor, encodeCursor, pageSize, type ActivityQuery, type CommentQuery, type Page, type TaskQuery } from './query.js';
 import type {
   Project,
   Task,
   Iteration,
+  Baseline,
   Team,
   TaskContainer,
   Comment,
@@ -34,6 +35,7 @@ const EXTRA_TABLES = [
   'containers',
   'iterations',
   'comments',
+  'deliverables',
   'time_entries',
   'dependencies',
   'webhooks'
@@ -274,6 +276,14 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
         createdAt TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS baselines (
+        id TEXT PRIMARY KEY,
+        projectId TEXT NOT NULL,
+        data TEXT NOT NULL,
+        createdAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_baselines_project ON baselines (projectId);
+
       CREATE TABLE IF NOT EXISTS comments (
         id TEXT PRIMARY KEY,
         taskId TEXT NOT NULL,
@@ -378,7 +388,8 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks (parentId);
       CREATE INDEX IF NOT EXISTS idx_activities_project_created ON activities (projectId, createdAt, id);
       CREATE INDEX IF NOT EXISTS idx_activities_task_created ON activities (taskId, createdAt, id);
-      CREATE INDEX IF NOT EXISTS idx_comments_task ON comments (taskId);
+      DROP INDEX IF EXISTS idx_comments_task;
+      CREATE INDEX IF NOT EXISTS idx_comments_task_created ON comments (taskId, createdAt, id);
       CREATE INDEX IF NOT EXISTS idx_dependencies_task ON dependencies (taskId);
       CREATE INDEX IF NOT EXISTS idx_dependencies_upstream ON dependencies (dependsOnTaskId);
     `);
@@ -781,8 +792,8 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       newDeliverable.title,
       newDeliverable.description || null,
       newDeliverable.status,
-      newDeliverable.format || null,
-      newDeliverable.specs ? JSON.stringify(newDeliverable.specs) : null,
+      null, // format (removed; legacy column)
+      null, // specs (removed; legacy column)
       newDeliverable.leadId || null,
       newDeliverable.reviewerId || null,
       newDeliverable.dueDate || null,
@@ -792,6 +803,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       newDeliverable.createdAt,
       newDeliverable.updatedAt
     );
+    this.writeExtra('deliverables', newDeliverable);
     return newDeliverable;
   }
 
@@ -815,8 +827,8 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       updated.title,
       updated.description || null,
       updated.status,
-      updated.format || null,
-      updated.specs ? JSON.stringify(updated.specs) : null,
+      null, // format (removed; legacy column)
+      null, // specs (removed; legacy column)
       updated.leadId || null,
       updated.reviewerId || null,
       updated.dueDate || null,
@@ -826,6 +838,7 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
       updated.updatedAt,
       id
     );
+    this.writeExtra('deliverables', updated);
     return updated;
   }
 
@@ -1096,6 +1109,27 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
     return updated;
   }
 
+  // --- Baselines (stored whole as JSON: they are written once and read whole) ---
+  async getBaselines(projectId: string): Promise<Baseline[]> {
+    const rows = this.db.prepare('SELECT * FROM baselines WHERE projectId = ? ORDER BY createdAt, id').all(projectId) as any[];
+    return rows.map((r) => JSON.parse(r.data));
+  }
+
+  async getBaseline(id: string): Promise<Baseline | null> {
+    const row = this.db.prepare('SELECT * FROM baselines WHERE id = ?').get(id) as any;
+    return row ? JSON.parse(row.data) : null;
+  }
+
+  async createBaseline(baseline: Omit<Baseline, 'id' | 'createdAt'>): Promise<Baseline> {
+    const created: Baseline = { ...baseline, id: `base_${crypto.randomUUID()}`, createdAt: new Date().toISOString() };
+    this.db.prepare('INSERT INTO baselines (id, projectId, data, createdAt) VALUES (?, ?, ?, ?)').run(created.id, created.projectId, JSON.stringify(created), created.createdAt);
+    return created;
+  }
+
+  async deleteBaseline(id: string): Promise<boolean> {
+    return Number(this.db.prepare('DELETE FROM baselines WHERE id = ?').run(id).changes) > 0;
+  }
+
   async deleteIteration(id: string): Promise<boolean> {
     const stmt = this.db.prepare('DELETE FROM iterations WHERE id = ?');
     const result = stmt.run(id);
@@ -1124,6 +1158,22 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
     const stmt = this.db.prepare('SELECT * FROM comments WHERE taskId = ? ORDER BY createdAt ASC');
     const rows = stmt.all(taskId) as any[];
     return rows.map((r) => this.mapComment(r));
+  }
+
+  async queryComments(query: CommentQuery): Promise<Page<Comment>> {
+    const where = ['taskId = ?'];
+    const params: string[] = [query.taskId];
+    const after = decodeCursor(query.cursor);
+    if (after) {
+      where.push('(createdAt > ? OR (createdAt = ? AND id > ?))');
+      params.push(after[0], after[0], after[1]);
+    }
+    const size = pageSize(query.limit);
+    const sql = `SELECT * FROM comments WHERE ${where.join(' AND ')} ORDER BY createdAt ASC, id ASC LIMIT ?`;
+    const rows = this.db.prepare(sql).all(...params, size + 1) as any[];
+    const items = rows.slice(0, size).map((r) => this.mapComment(r));
+    const last = items[items.length - 1];
+    return { items, nextCursor: rows.length > size && last ? encodeCursor(last.createdAt, last.id) : undefined };
   }
 
   async getComment(id: string): Promise<Comment | null> {
@@ -1451,6 +1501,29 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
     return Number(this.db.prepare('DELETE FROM dependencies WHERE id = ?').run(id).changes) > 0;
   }
 
+  async getTimeEntry(id: string): Promise<TimeEntry | null> {
+    const r = this.db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id) as any;
+    return r ? dropNulls({ ...this.expandExtra(r), isBillable: r.isBillable !== null ? Boolean(r.isBillable) : undefined }) : null;
+  }
+
+  async updateTimeEntry(id: string, updates: Partial<Omit<TimeEntry, 'id' | 'taskId'>>): Promise<TimeEntry | null> {
+    const existing = await this.getTimeEntry(id);
+    if (!existing) return null;
+    const updated: TimeEntry = { ...existing, ...updates, id, taskId: existing.taskId };
+    this.db
+      .prepare('UPDATE time_entries SET userId = ?, hours = ?, isBillable = ?, description = ?, loggedAt = ? WHERE id = ?')
+      .run(
+        updated.userId,
+        updated.hours,
+        updated.isBillable !== undefined ? (updated.isBillable ? 1 : 0) : null,
+        updated.description || null,
+        updated.loggedAt,
+        id
+      );
+    this.writeExtra('time_entries', updated);
+    return updated;
+  }
+
   async deleteTimeEntry(id: string): Promise<boolean> {
     return Number(this.db.prepare('DELETE FROM time_entries WHERE id = ?').run(id).changes) > 0;
   }
@@ -1625,11 +1698,16 @@ export class SQLiteStore implements StorageAdapter, WebhookOutboxStore {
   }
 
   private mapDeliverable(row: any): Deliverable {
+    const { format, specs, ...rest } = this.expandExtra(row);
+    const customFields = row.customFields ? JSON.parse(row.customFields) : {};
+    // Databases from before 0.58 may hold the removed `format` / `specs` columns: surface them as
+    // custom fields instead of dropping them.
+    if (format && customFields.format === undefined) customFields.format = format;
+    if (specs && customFields.specs === undefined) customFields.specs = JSON.parse(specs);
     return dropNulls({
-      ...row,
-      specs: row.specs ? JSON.parse(row.specs) : undefined,
+      ...rest,
       outputUrls: row.outputUrls ? JSON.parse(row.outputUrls) : [],
-      customFields: row.customFields ? JSON.parse(row.customFields) : {}
+      customFields
     });
   }
 }

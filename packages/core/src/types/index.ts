@@ -154,6 +154,8 @@ export interface Project {
   workflow?: Workflow;
   taskTypes?: TaskTypeDefinition[];
   statusDefinitions?: StatusDefinition[];
+  /** Statuses deliverables may have, with their categories. Default `DEFAULT_DELIVERABLE_STATUSES`. */
+  deliverableStatusDefinitions?: StatusDefinition[];
   priorityDefinitions?: Array<{ key: string; label: string; level?: number }>;
   customFieldDefinitions?: CustomFieldDefinition[];
   schedule?: WorkSchedule;
@@ -183,7 +185,14 @@ export interface TaskDependency {
   id: string;
   taskId: string;
   dependsOnTaskId: string;
-  type: 'blocking' | 'blocked_by' | 'relates_to';
+  /** `'blocking'`: `taskId` cannot start until `dependsOnTaskId` finishes. `'relates_to'`: an informational link. */
+  type: 'blocking' | 'relates_to';
+  /**
+   * Working hours to wait after `dependsOnTaskId` finishes before `taskId` may start (on `taskId`'s
+   * calendar), e.g. 24 for "let the concrete cure for three working days". Negative values are
+   * leads: the task may start that long before the other finishes. Default 0.
+   */
+  lagHours?: number;
   /** Your own data for this record (any JSON object). Stored and returned as-is. */
   customFields?: Record<string, unknown>;
 }
@@ -221,7 +230,12 @@ export interface Task {
   semanticStatus?: SemanticStatus;
   priority: Priority;
   taskType?: string; // e.g. "bug", "feature", "task", "epic"
+  /**
+   * The primary assignee. Critical path analysis, levelling and workload schedule the task on this
+   * person (their calendar and capacity). When `assignees` is set, it must be one of them.
+   */
   assigneeId?: string;
+  /** Everyone working on the task (people, agents, teams), for display and filtering. Scheduling uses `assigneeId`. */
   assignees?: TaskAssignee[];
   reporterId?: string;
   reviewerId?: string;
@@ -233,7 +247,25 @@ export interface Task {
   actualStartDate?: string;
   actualEndDate?: string;
   completedAt?: string;
+  /** When the task is wanted by. Informational: critical path analysis only uses it to order levelling (see `deadline`). */
   dueDate?: string;
+  /**
+   * Latest acceptable finish, enforced by critical path analysis: the task's late finish is capped
+   * here, so slack goes negative (and flows to predecessors) when the forecast misses it. A
+   * date-only value means the end of that working day.
+   */
+  deadline?: string;
+  /**
+   * Earliest the task may start, enforced by critical path analysis (and levelling): "the venue is
+   * free from the 12th", "the permit arrives on Monday". A date-only value means the start of that
+   * day; the task starts at the first working moment at or after it.
+   */
+  earliestStart?: string;
+  /**
+   * A zero-duration checkpoint (release, sign-off, gate). Scheduled with no duration and no
+   * effort whatever its estimates say; usually given a `deadline` and fed by dependencies.
+   */
+  isMilestone?: boolean;
   // Duration & Effort (in hours and/or minutes)
   estimatedHours?: number;
   /**
@@ -268,36 +300,49 @@ export interface Task {
   updatedAt: string;
 }
 
-export type CreateTaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'priority'> & {
+/** Task fields the engine derives (from the status, time entries and status timers); callers cannot set them. */
+export type DerivedTaskField =
+  | 'semanticStatus'
+  | 'loggedHours'
+  | 'actualHours'
+  | 'billableHours'
+  | 'actualDurationMinutes'
+  | 'billableDurationMinutes'
+  | 'actualDurationSeconds'
+  | 'inProgressSince'
+  | 'blockedSince'
+  | 'blockedDurationSeconds';
+
+export type CreateTaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'priority' | DerivedTaskField> & {
   status?: TaskStatus;
   priority?: Priority;
 };
 
-export type DeliverableStatus =
-  | 'draft'
-  | 'planned'
-  | 'in_production'
-  | 'internal_review'
-  | 'client_review'
-  | 'revision_requested'
-  | 'approved'
-  | 'delivered'
-  | 'canceled'
-  | (string & {});
+/**
+ * A key from the project's deliverable statuses (`Project.deliverableStatusDefinitions`, else
+ * `DEFAULT_DELIVERABLE_STATUSES`: `planned`, `in_progress`, `in_review`, `delivered`, `canceled`).
+ */
+export type DeliverableStatus = string;
 
+/** An output the project produces (a document, a build, an asset), and the tasks that produce it. */
 export interface Deliverable {
   id: string;
   projectId: string;
   title: string;
   description?: string;
   status: DeliverableStatus;
-  format?: string; // e.g., '16:9 4K ProRes', 'Figma', 'PDF'
-  specs?: Record<string, unknown>; // Technical specifications (resolution, frame rate, etc.)
-  leadId?: string; // Creative director or lead creator
-  reviewerId?: string; // Approver or client reviewer
+  /** Derived from `status` through the project's deliverable status definitions. */
+  semanticStatus?: SemanticStatus;
+  /** Who owns the deliverable. */
+  leadId?: string;
+  /** Who accepts it. */
+  reviewerId?: string;
   dueDate?: string;
+  /** When it first reached a completed status. */
   deliveredAt?: string;
-  outputUrls?: string[]; // Links to final rendered assets, exports, or storage keys
+  /** Links to what was delivered (files, builds, storage keys). */
+  outputUrls?: string[];
+  /** Your own data, such as a format or technical specs. */
   customFields?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -324,7 +369,8 @@ export interface Iteration {
   projectId: string;
   name: string;
   goal?: string;
-  type?: 'sprint' | 'cycle' | 'milestone' | string;
+  /** What kind of time box this is, e.g. 'sprint' or 'cycle'. For a dated checkpoint, use a milestone task. */
+  type?: 'sprint' | 'cycle' | (string & {});
   startDate?: string;
   endDate?: string;
   status: 'planning' | 'active' | 'completed';
@@ -532,11 +578,33 @@ export interface PluginRequestContext {
   params: Record<string, string>;
 }
 
+/**
+ * OpenAPI metadata for a plugin route. Schemas may be zod schemas (converted like the built-in
+ * request schemas) or JSON Schema objects.
+ */
+export interface PluginRouteDoc {
+  summary?: string;
+  description?: string;
+  /** Defaults to `['Plugins']`. */
+  tags?: string[];
+  /** Query parameters; names ending in `!` are required. */
+  query?: string[];
+  requestSchema?: unknown;
+  /** Schema of the success response body. */
+  responseSchema?: unknown;
+  /** Success status code; defaults to 200. */
+  status?: number;
+  /** Leave the route out of `/openapi.json`. */
+  hidden?: boolean;
+}
+
 export interface PluginRoute {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   /** Path below the router's base, with `:name` parameters, e.g. `/reports/:projectId`. */
   path: string;
   handler: (request: Request, ctx: PluginRequestContext) => Response | Promise<Response>;
+  /** How the route appears in `/openapi.json`. Undocumented routes are listed with a generic summary. */
+  openapi?: PluginRouteDoc;
 }
 
 /**
@@ -608,6 +676,8 @@ export interface CriticalPathConfig {
    * (in-progress tasks schedule only `estimate - loggedHours`).
    */
   criticalPathEffort?: 'estimate' | 'remaining';
+  /** Default `defaultEstimateHours` for critical path analysis: hours assumed for unestimated tasks (default 1). */
+  criticalPathDefaultEstimateHours?: number;
   /** Most tasks `calculatePortfolioCriticalPath` analyses in one call. Default 5000. */
   portfolioTaskLimit?: number;
   initialData?: {
@@ -691,8 +761,21 @@ export interface TaskCriticalPathSchedule {
   levelingDelayHours?: number;
   /** With resource levelling: the task this one last waited for, when its assignee was busy. */
   waitingOn?: string;
+  /** With `baselineId`: how far the task moved since the baseline. */
+  baseline?: TaskBaselineVariance;
   /** The task's `allocation` when below 1 (`durationHours` is then effort / allocation). */
   allocation?: number;
+  /** Set when the task is a milestone. */
+  isMilestone?: true;
+  /**
+   * Set for a summary task (one with subtasks). It is not scheduled itself: its dates, slack and
+   * criticality are roll-ups of the leaf tasks under it, and it is not listed in `criticalTaskIds`.
+   */
+  isSummary?: true;
+  /** The task's `deadline` as an instant: the last working moment on or before it. */
+  deadlineDate?: string;
+  /** Working hours from the forecast finish to the deadline: negative means the deadline is missed. */
+  deadlineVarianceHours?: number;
 }
 
 /** A period in which a person or team pool is booked above its capacity. */
@@ -725,6 +808,73 @@ export interface CriticalPathAnalysis {
   unleveledProjectEndDate?: string;
   /** Assignee mode: periods where an assignee is booked above 100% (empty after levelling). */
   overallocations?: Overallocation[];
+  /** Tasks forecast to finish after their `deadline`. */
+  missedDeadlineTaskIds: string[];
+  /**
+   * Present when dependencies form a cycle: the tasks on it or waiting on it. They are scheduled in
+   * input order so the analysis completes, but their dates are not reliable. The engine refuses
+   * cycles, so this only happens with data written around it or passed straight to `calculateCPM`.
+   */
+  cyclicTaskIds?: string[];
+  /**
+   * Present when unfinished tasks have no estimate and no logged effort: each was scheduled for
+   * `defaultEstimateHours` (default 1), so the dates are less certain than they look.
+   */
+  unestimatedTaskIds?: string[];
+  /** With `baselineId`: the baseline compared against and how the project moved since. */
+  baseline?: BaselineComparison;
+}
+
+/** One task's plan in a baseline. */
+export interface BaselineTask {
+  taskId: string;
+  earlyStart: number;
+  earlyFinish: number;
+  durationHours?: number;
+  earlyStartDate?: string;
+  earlyFinishDate?: string;
+  isMilestone?: true;
+  isSummary?: true;
+}
+
+/**
+ * A frozen copy of a project's critical path analysis (`engine.createBaseline`): the plan to
+ * measure slippage against. Pass its id as `baselineId` to critical path analysis.
+ */
+export interface Baseline {
+  id: string;
+  projectId: string;
+  name: string;
+  /** Who took it. */
+  createdBy?: string;
+  projectStartDate?: string;
+  projectEndDate?: string;
+  totalDurationHours: number;
+  tasks: BaselineTask[];
+  customFields?: Record<string, unknown>;
+  createdAt: string;
+}
+
+/** How a task moved against a baseline, in working hours (positive is later than planned). */
+export interface TaskBaselineVariance {
+  startVarianceHours: number;
+  finishVarianceHours: number;
+}
+
+/** The baseline an analysis was compared with (`baselineId`). */
+export interface BaselineComparison {
+  baselineId: string;
+  name: string;
+  createdAt: string;
+  projectEndDate?: string;
+  /** Working hours the forecast end moved since the baseline; positive is a slip. */
+  endVarianceHours: number;
+  /** Tasks that finish later than planned, worst first (ties by id). */
+  slippedTaskIds: string[];
+  /** Tasks in the analysis that the baseline does not have. */
+  addedTaskIds: string[];
+  /** Baseline tasks that are no longer in the project. */
+  removedTaskIds: string[];
 }
 
 /** Critical path analysis across several projects (`calculatePortfolioCriticalPath`). */
@@ -951,6 +1101,8 @@ export type AuthorizationAction =
   | 'attachment.create'
   | 'attachment.delete'
   | 'time.log'
+  /** Editing or deleting time entries; people with `time.log` may always manage their own. */
+  | 'time.manage'
   | 'plan.manage'
   | 'workspace.manage';
 
@@ -960,7 +1112,7 @@ export interface AuthorizationRequest {
   /** The project the action targets, for project-scoped actions. */
   project?: Project;
   /** The specific record, when relevant (e.g. the comment being edited). */
-  resource?: { type: 'task' | 'comment' | 'attachment'; ownerId?: string };
+  resource?: { type: 'task' | 'comment' | 'attachment' | 'time_entry'; ownerId?: string };
   /** Ids of the teams the actor belongs to (from `team.memberIds`), resolved by the engine. */
   teamIds: string[];
 }

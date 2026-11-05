@@ -2,6 +2,7 @@
 import type { UpdateDeliverableBody } from '@critical-path/core/schemas';
 import type { CriticalPathClient } from '@critical-path/client';
 import type { Deliverable, DeliverableSummary, CreateDeliverableInput } from '@critical-path/core';
+import { applyUpdate } from '@critical-path/core';
 import { LatestRequest } from './latest-request.js';
 
 export class DeliverableState {
@@ -46,7 +47,7 @@ export class DeliverableState {
 
   async updateDeliverable(id: string, updates: UpdateDeliverableBody) {
     const previous = this.data;
-    this.data = this.data.map((d) => (d.id === id ? { ...d, ...updates } : d));
+    this.data = this.data.map((d) => (d.id === id ? applyUpdate(d, updates) : d));
     try {
       const updated = await this.client.updateDeliverable(id, updates);
       this.data = this.data.map((d) => (d.id === id ? updated : d));

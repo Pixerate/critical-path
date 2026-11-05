@@ -95,7 +95,7 @@ outbox.start();            // poll in this process
 
 Each attempt is a separate entry. A worker leases the entries it claims, so other workers skip them, and deletes each one after the attempt (a failed attempt first stores its retry). If a worker dies mid-delivery, the entry is claimed again when its lease expires. Delivery is therefore **at-least-once**: deduplicate on `X-CriticalPath-Delivery`. `FirebaseStore` claims without a transaction, so concurrent workers can occasionally deliver the same attempt twice.
 
-Jobs are enqueued after the mutation is stored, so a crash between the two can still drop an event.
+When the outbox uses the engine's own store and that store supports transactions (`SQLiteStore`), each mutation runs in a transaction that also writes its jobs. A committed change always has its deliveries queued, and a rolled-back change has none. If the jobs cannot be written, the mutation fails. `FirebaseStore`, `InMemoryStore` and stores without `transaction` write jobs right after the change is stored, so a crash between the two can still drop an event. A custom queue can join the transaction too: expose the store it writes to as `queue.store` and write through the `outbox` argument of `enqueue(job, delayMs, outbox)` when one is given.
 
 To use an existing job system instead, supply a `queue` that persists jobs and calls `engine.webhooks.deliver(job)` from a worker:
 

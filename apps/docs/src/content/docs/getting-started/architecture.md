@@ -66,7 +66,7 @@ The engine is the pure TypeScript brain of the framework. It handles:
 - Real-time dependency graph maintenance.
 - Topological sort & cycle detection (preventing deadlocks like A &rarr; B &rarr; A).
 - Critical Path Method (Early Start, Early Finish, Late Start, Late Finish, Total Slack).
-- Automatic unblocking: When a task is marked `completed`, dependent downstream tasks automatically transition from `blocked` to `todo`/`in_progress`.
+- Automatic unblocking: when a task is completed or canceled, `task.unblocked` is published for each downstream task that is now free to start. Dependency blocking is derived from the graph; manual blocks (`isBlocked`) are left alone.
 
 ### 3. Universal Router (`@critical-path/server`)
 A lightweight, zero-dependency router that receives standard Web `Request` objects and outputs standard `Response` objects. Framework adapters wrap this router for Next.js, SvelteKit, and standard serverless endpoints.

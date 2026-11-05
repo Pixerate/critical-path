@@ -1,6 +1,6 @@
 # `@critical-path/core`
 
-> The foundational domain engine, Domain-Driven Design (DDD) aggregate roots, domain event bus, graph cycle detection, and storage adapters for **Critical Path**.
+> The foundational domain engine, domain event bus, graph cycle detection, and storage adapters for **Critical Path**.
 
 > **Upgrading?** Upgrade every `@critical-path/*` package together. Coding agents: follow [UPGRADING.md](https://github.com/Pixerate/critical-path/blob/main/UPGRADING.md); breaking changes are marked **BREAKING** in this package's `CHANGELOG.md`.
 
@@ -9,9 +9,9 @@
 
 ## 📦 Features
 
-- **Domain-Driven Design (DDD) Engine**: Rich aggregates (`TaskEntity`, `ProjectEntity`) encapsulating lifecycle invariants, state transitions, time tracking, and uncommitted domain events.
+- **One engine, one set of rules**: `CriticalPathEngine` enforces every invariant (workflow statuses and transitions, derived fields, references, permissions) for direct callers, the HTTP API, the client and MCP alike.
 - **Typed Domain Event Bus**: In-memory pub/sub `DomainEventBus` enabling reactive subscriptions to granular domain events (`task.created`, `task.status_changed`, `time.logged`, `dependency.added`, etc.).
-- **DAG Graph Cycle Invariant**: Built-in topological validation (`detectDependencyCycle`, `CircularDependencyError`) to ensure strict acyclic task dependency graphs.
+- **DAG Graph Cycle Invariant**: Built-in topological validation (`detectDependencyCycle`, `CircularDependencyError`) to ensure strict acyclic task dependency graphs. Dependencies are `blocking` or `relates_to` (informational, never part of the schedule or cycle check); `precedenceOf` reads a dependency's direction.
 - **Custom Field Value Object Validation**: Strict type-checking (`validateCustomFieldValues`, `CustomFieldValidationError`) against configured project field schemas.
 - **Interface Segregated Repositories**: Focused repository contracts (`ProjectRepository`, `TaskRepository`, `WorkflowRepository`, etc.) composed into `StorageAdapter`.
 - **Plugin Lifecycle Architecture**: Extensible hooks (`beforeTaskCreate`, `afterTaskUpdate`, `beforeTaskDelete`, etc.).
@@ -31,9 +31,9 @@
   - Symmetrical transition helpers (`getAllowedNextStatuses`, `getAllowedPreviousStatuses`) and engine methods for moving tasks backwards and forwards through customized workflow states.
 - **Universal Semantic Status & Implied Status Framework**:
   - Clean 3-tier status architecture: Universal Semantic Statuses (`not_started`, `in_progress`, `completed`, `canceled`), customizable workflow-defined statuses mapped by `category`, and automatic system-derived implied statuses (`isReady`, `isBlocked`, `blockingTaskIds`, `isOverdue`, `isUpcoming`, `isUnplanned`, `isUnassigned`, `isStalled`, `isOverEstimate`, `isPaceWarning`).
-- **Creative Workflows & First-Class Deliverables**:
-  - `DeliverableEntity` aggregate with automatic delivery timestamps (`deliveredAt`) and URL registry (`outputUrls`).
-  - `DEFAULT_CREATIVE_WORKFLOW` template tailored for creative agencies and content production pipelines.
+- **Deliverables**:
+  - Outputs a project produces, linked to the tasks that produce them, with a configurable status set mapped to semantic categories (`deliverableStatusDefinitions`; default `DEFAULT_DELIVERABLE_STATUSES`), an automatic `deliveredAt`, and `outputUrls`.
+  - Presets for creative production: `CREATIVE_DELIVERABLE_STATUSES` and the `DEFAULT_CREATIVE_WORKFLOW` task workflow.
   - Rollup calculations via `getDeliverableSummary()` delivering progress percentages, completed tasks, and total estimated/logged hours across assigned tasks.
 - **Ladder of Abstraction & Critical Path Method (CPM)**:
   - Multi-scale timeline synthesis: Macro bird's-eye phase rollups (`getTimelineLadder({ level: 'macro' })`), Standard Gantt view with topological CPM forward/backward passes and total float/slack, and Concrete grounding (attachments, deliverables, checklist items, daily effort histograms, and reality deltas).
@@ -90,28 +90,20 @@ const engine = new CriticalPathEngine({
 });
 ```
 
-### 2. Rich Entities & Invariant Enforcement
+### 2. Invariants Live in the Engine
 
 ```ts
-import { TaskEntity, DEFAULT_SOFTWARE_WORKFLOW } from '@critical-path/core';
+import { CriticalPathEngine } from '@critical-path/core';
 
-// Create a rich Task Aggregate Root
-const task = TaskEntity.create({
-  projectId: 'proj_123',
-  title: 'Implement Payment Gateway',
-  status: 'todo',
-  priority: 'high'
-});
+const engine = new CriticalPathEngine();
+const project = await engine.createProject({ name: 'Payments' });
+const task = await engine.createTask({ projectId: project.id, title: 'Implement Payment Gateway', priority: 'high' });
 
-// Perform valid state transitions with workflow enforcement
-task.transitionTo('in_progress', DEFAULT_SOFTWARE_WORKFLOW);
+// Workflow transitions are enforced; semanticStatus and timestamps are derived
+await engine.updateTask(task.id, { status: 'in_progress' });
 
-// Log time on aggregate
-task.logTime({ hours: 3.5, isBillable: true });
-
-// Read and dispatch uncommitted events
-const events = task.getUncommittedEvents();
-task.clearEvents();
+// Hours come from time entries
+await engine.logTime({ taskId: task.id, hours: 3.5, isBillable: true });
 ```
 
 ### 3. DAG Dependency Cycle Prevention
@@ -177,9 +169,10 @@ Limits apply to direct uploads (checked against the decoded size), presigned upl
 const page = await engine.queryTasks({ projectId, status: ['todo', 'in_progress'], assigneeId: 'ana', limit: 50 });
 const next = await engine.queryTasks({ projectId, limit: 50, cursor: page.nextCursor });
 const feed = await engine.queryActivities({ projectId, limit: 20 }); // newest first
+const thread = await engine.queryComments({ taskId, limit: 50 }); // oldest first
 ```
 
-Tasks page oldest first and activities newest first, using keyset cursors (`createdAt`, then `id`). `SQLiteStore` filters and pages in SQL with indexes. `FirebaseStore` pushes down the project filter and applies the rest in memory. Without `projectId`, results are limited to projects the actor can read.
+Tasks and comments page oldest first and activities newest first, using keyset cursors (`createdAt`, then `id`). `SQLiteStore` filters and pages in SQL with indexes. `FirebaseStore` pushes down the project filter and applies the rest in memory. Without `projectId`, results are limited to projects the actor can read.
 
 #### Authorization & Multi-Tenancy
 
@@ -208,7 +201,7 @@ const { webhook, secret } = await engine.createWebhook({
 // Receivers: verifyWebhookSignature({ secret, body, timestamp, signature })
 ```
 
-Every domain event can be delivered. Deliveries carry `X-CriticalPath-Signature` (HMAC-SHA256 over `"<timestamp>.<body>"`), time out after 10s, and retry with exponential backoff (`webhookDelivery` options). The default queue is in-process. For durable delivery, pass `new OutboxWebhookQueue(store)` as `webhookDelivery.queue` and call `outbox.start()` (or `processDue()` from a cron job), or bring your own queue that calls `engine.webhooks.deliver(job)`. Targets resolving to private addresses are refused before every attempt, and redirects are not followed. Secrets are only returned on creation.
+Every domain event can be delivered. Deliveries carry `X-CriticalPath-Signature` (HMAC-SHA256 over `"<timestamp>.<body>"`), time out after 10s, and retry with exponential backoff (`webhookDelivery` options). The default queue is in-process. For durable delivery, pass `new OutboxWebhookQueue(store)` as `webhookDelivery.queue` and call `outbox.start()` (or `processDue()` from a cron job). On `SQLiteStore`, jobs are written in the same transaction as the mutation that produced them. You can also bring your own queue that calls `engine.webhooks.deliver(job)`. Targets resolving to private addresses are refused before every attempt, and redirects are not followed. Secrets are only returned on creation.
 
 #### Attributing Mutations to a User (`withActor`)
 
@@ -225,28 +218,30 @@ Other domain errors are exported for callers and route handlers to map: `Validat
 ### 4. Tracking Creative Deliverables & Rollup Metrics
 
 ```ts
-import { CriticalPathEngine, DEFAULT_CREATIVE_WORKFLOW } from '@critical-path/core';
+import { CriticalPathEngine, CREATIVE_DELIVERABLE_STATUSES } from '@critical-path/core';
 
 const engine = new CriticalPathEngine();
+// Creative statuses for this project's deliverables (the default set is planned / in_progress / in_review / delivered / canceled)
+await engine.updateProject('proj_1', { deliverableStatusDefinitions: CREATIVE_DELIVERABLE_STATUSES });
 
-// 1. Create deliverable
+// 1. Create deliverable; domain-specific details go in customFields
 const deliverable = await engine.createDeliverable({
   projectId: 'proj_1',
   title: 'Brand Hero Video 30s',
-  format: 'ProRes 422HQ',
-  specs: { resolution: '3840x2160', fps: 24 }
+  customFields: { format: 'ProRes 422HQ', resolution: '3840x2160', fps: 24 }
 });
 
 // 2. Attach tasks to deliverable
-await engine.createTask({
+const storyboard = await engine.createTask({
   projectId: 'proj_1',
   deliverableId: deliverable.id,
   title: 'Storyboard & Animatic',
   status: 'approved',
   estimatedHours: 12,
-  loggedHours: 12,
   progress: 100
 });
+// Logged hours come from time entries
+await engine.logTime({ taskId: storyboard.id, hours: 12 });
 
 // 3. Rollup metrics
 const summary = await engine.getDeliverableSummary(deliverable.id);
@@ -364,6 +359,8 @@ console.log(leveled.unleveledProjectEndDate, '->', leveled.projectEndDate);
 
 With `calendars: 'assignee'` (or `criticalPathCalendars: 'assignee'` on the engine), each task uses its assignee's schedule, then its team's, then the project calendar. Passes run on dates, slack is measured in each task's calendar, and each calendar is evaluated in its own `timezone` (IANA name; default UTC), including daylight-saving changes. `levelResources: true` additionally delays tasks so nobody works on two at once (priority rule `levelingPriority`, default least slack), reporting `levelingDelayHours` and `waitingOn` per task. Tasks with `allocation` below 1 take that share of their assignee (a 16h task at 0.5 spans 32 working hours); levelling fits them within 100% per person, and `overallocations` lists who is booked above 100% and when. Teams act as pools of `headcount` people (default: member count) shared by team-only tasks and members' own tasks. Finished tasks take no time. `calculatePortfolioCriticalPath({ projectIds })` levels several projects together, sharing people and teams across them; `includeHiddenWork` also counts unreadable projects' work as `'hidden'`. `effort: 'remaining'` schedules only what is left on in-progress tasks.
 
+Save the plan with `engine.createBaseline(projectId, { name })` and pass `baselineId` to later analyses to see how far each task and the project end moved. Tasks with subtasks are summary tasks, reported as roll-ups of their leaves (`isSummary`); dependencies and deadlines on them apply to every leaf. Unestimated tasks use `defaultEstimateHours` (default 1) and are listed in `unestimatedTaskIds`. Tasks with `isMilestone: true` are zero-duration checkpoints (their estimates are ignored). A `deadline` on any task caps its late finish: a forecast that misses it shows as negative slack along the path driving it, with `deadlineDate` and `deadlineVarianceHours` per task and `missedDeadlineTaskIds` on the analysis. A date-only deadline means the end of that working day. `earliestStart` (start no earlier than) and dependency `lagHours` (wait after the predecessor; negative for a lead) constrain the forward pass. Project-calendar mode needs a start date to apply these date constraints.
+
 ### 9. Fractional Lexical Indexing (Kanban Reordering)
 
 ```ts
@@ -416,4 +413,4 @@ export const auditPlugin: CriticalPathPlugin = {
 };
 ```
 
-Plugins can also contribute `init(engine)` (awaited via `engine.ready`), `customFieldTypes` (validated custom field types for project `customFieldDefinitions`), and HTTP `routes` / `middleware` served by `@critical-path/server`. Before-hook output is validated like caller input, and after-hook errors are logged instead of failing the write.
+Plugins can also contribute `init(engine)` (awaited via `engine.ready`), `customFieldTypes` (validated custom field types for project `customFieldDefinitions`), and HTTP `routes` / `middleware` served by `@critical-path/server` (routes appear in `/openapi.json`, described by their optional `openapi` metadata). Before-hook output is validated like caller input, and after-hook errors are logged instead of failing the write.

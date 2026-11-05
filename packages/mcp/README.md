@@ -177,17 +177,22 @@ handle.unregister();
 | `create_project` | core | A new, empty project | `{ name, description?, key? }` |
 | `list_tasks` | core | Finding tasks; returns `{ tasks, nextCursor }` | `{ projectId?, status?, priority?, assigneeId?, iterationId?, deliverableId?, containerId?, parentId? ('none' = top-level), limit?, cursor? }` |
 | `get_task` | core | One task's full record; with `includeDependencies`, what it waits for (`dependsOn`) and what waits for it (`dependents`) | `{ id, includeDependencies? }` |
-| `create_task` | core | Adding work (auto-scoped in WebMCP) | `{ projectId?, title, description?, priority?, status?, estimatedHours?, allocation? }` |
-| `update_task` | core | Changing status, priority, assignee, estimates, logged hours | `{ id, title?, status?, priority?, assigneeId?, allocation?, loggedHours? }` |
+| `create_task` | core | Adding work (auto-scoped in WebMCP) | `{ projectId?, title, description?, priority?, status?, estimatedHours?, allocation?, deadline?, isMilestone? }` |
+| `update_task` | core | Changing status, priority, assignee, estimates, deadline | `{ id, title?, status?, priority?, assigneeId?, allocation?, deadline?, isMilestone? }` |
+| `log_time` | core | Recording hours worked (the only way to add logged hours) | `{ taskId, hours, description?, isBillable?, loggedAt? }` |
+| `update_time_entry` | core | Correcting logged time (the task's hours move by the difference) | `{ id, hours?, description?, isBillable?, loggedAt? }` |
+| `delete_time_entry` | core | Removing time logged by mistake | `{ id }` |
 | `delete_task` | core | Permanent deletion (`destructiveHint`) | `{ id }` |
 | `add_dependency` | core | Making a task wait for another, so the critical path orders them; idempotent, refuses loops | `{ taskId, dependsOnTaskId, type? ('blocking' \| 'relates_to') }` |
 | `remove_dependency` | core | Removing that link, by the same two task ids; returns `{ removed, dependencyIds }` | `{ taskId, dependsOnTaskId, type? }` |
-| `list_deliverables` | collaboration | A project's milestones; returns `{ deliverables }` | `{ projectId? }` |
-| `create_deliverable` | collaboration | A dated milestone grouping tasks | `{ projectId?, title, dueDate?, taskIds? }` |
-| `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `{ taskId }` |
+| `list_deliverables` | collaboration | A project's deliverables (outputs that group tasks); returns `{ deliverables }` | `{ projectId? }` |
+| `create_deliverable` | collaboration | An output that several tasks produce | `{ projectId?, title, dueDate?, taskIds? }` |
+| `list_comments` | collaboration | A task's discussion, oldest first; returns `{ comments, nextCursor }` | `{ taskId, limit?, cursor? }` |
 | `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `{ taskId, content }` |
-| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack (`calendars: 'assignee'` uses each assignee's or team's calendar; `levelResources` limits each assignee to one task at a time) | `{ projectId?, calendars?, levelResources?, levelingPriority?, effort? }` |
+| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack (`calendars: 'assignee'` uses each assignee's or team's calendar; `levelResources` limits each assignee to one task at a time) | `{ projectId?, calendars?, levelResources?, levelingPriority?, effort?, defaultEstimateHours?, baselineId? }` |
 | `calculate_portfolio_critical_path` | scheduling | Several projects (default: all readable), sharing people and teams when levelling | `{ projectIds?, projectOrder?, includeHiddenWork?, calendars?, levelResources?, levelingPriority?, effort? }` |
+| `create_baseline` | scheduling | Saving the agreed plan to track slippage against | `{ projectId?, name, calendars?, levelResources? }` |
+| `list_baselines` | scheduling | Finding a baseline to compare with (`baselineId` on `calculate_critical_path`) | `{ projectId? }` |
 | `get_workload_distribution` | scheduling | Hours, capacity and utilization per person, team or category over time | `{ projectId?, startDate?, endDate?, interval?, groupBy?, metric? }` |
 | `get_timeline_ladder` | analytics | Project status: phase health (macro), timeline (standard), evidence (concrete) | `{ projectId?, level?, containerId?, iterationId? }` |
 | `get_task_ladder` | analytics | One task's phase, schedule position and evidence | `{ taskId }` |

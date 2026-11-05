@@ -90,7 +90,25 @@ routes: [
 ]
 ```
 
-`engine` is the caller's `withActor` view, so authorization and tenancy apply. Errors thrown from handlers map to HTTP statuses just like built-in routes (`ForbiddenError` → 403, `ValidationError` → 400, ...). Plugin routes are not included in `/openapi.json`.
+`engine` is the caller's `withActor` view, so authorization and tenancy apply. Errors thrown from handlers map to HTTP statuses just like built-in routes (`ForbiddenError` → 403, `ValidationError` → 400, ...).
+
+Plugin routes appear in `/openapi.json` under the `Plugins` tag. Describe them with `openapi` (schemas may be zod schemas or JSON Schema), or set `hidden: true` to leave a route out:
+
+```typescript
+{
+  method: 'POST',
+  path: '/reports/:projectId/summary',
+  handler,
+  openapi: {
+    summary: 'Summarise a project',
+    tags: ['Reports'],
+    query: ['format'], // a trailing ! marks a parameter required
+    requestSchema: z.object({ since: z.string() }),
+    responseSchema: z.object({ taskCount: z.number() }),
+    status: 200
+  }
+}
+```
 
 ---
 

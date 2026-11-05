@@ -311,7 +311,7 @@ export class CriticalPathRouter {
 
     // OpenAPI contract (behind the same auth as every other route)
     if (segments[0] === 'openapi.json' && segments.length === 1 && method === 'GET') {
-      return this.jsonResponse(buildOpenApiDocument({ serverUrl: this.openApiServerUrl(url, subpath) }));
+      return this.jsonResponse(buildOpenApiDocument({ serverUrl: this.openApiServerUrl(url, subpath), pluginRoutes: this.engine.plugins.getRoutes() }));
     }
 
     // Webhooks API
@@ -395,8 +395,18 @@ export class CriticalPathRouter {
         }
       } else if (subResource === 'critical-path') {
         if (method === 'GET') {
-          const analysis = await engine.calculateCriticalPath(projectId, criticalPathQuery(url));
+          const baselineId = url.searchParams.get('baselineId') || undefined;
+          const analysis = await engine.calculateCriticalPath(projectId, { ...criticalPathQuery(url), baselineId });
           return this.jsonResponse({ analysis });
+        }
+      } else if (subResource === 'baselines' && segments.length === 3) {
+        if (method === 'GET') {
+          return this.jsonResponse({ baselines: await engine.getBaselines(projectId) });
+        }
+        if (method === 'POST') {
+          const body = await this.readBody(request, schemas.CreateBaselineSchema);
+          const baseline = await engine.createBaseline(projectId, body);
+          return this.jsonResponse({ baseline }, 201);
         }
       } else if (subResource === 'ladder' || subResource === 'timeline-ladder') {
         if (method === 'GET') {
@@ -417,8 +427,8 @@ export class CriticalPathRouter {
           return this.jsonResponse({ project });
         }
         if (method === 'PATCH' || method === 'PUT') {
-          const updates = await this.readBody(request, schemas.UpdateProjectSchema);
-          const project = await engine.updateProject(projectId, updates);
+          const { statusMapping, ...updates } = await this.readBody(request, schemas.UpdateProjectSchema);
+          const project = await engine.updateProject(projectId, updates, { statusMapping });
           if (!project) return this.jsonResponse({ error: 'Project not found' }, 404);
           return this.jsonResponse({ project });
         }
@@ -448,8 +458,9 @@ export class CriticalPathRouter {
         }
       } else if (subResource === 'comments') {
         if (method === 'GET') {
-          const comments = await engine.getComments(taskId);
-          return this.jsonResponse({ comments });
+          const query = schemas.parsePayload(schemas.CommentListQuerySchema, Object.fromEntries(url.searchParams));
+          const page = await engine.queryComments({ ...query, taskId });
+          return this.jsonResponse({ comments: page.items, nextCursor: page.nextCursor });
         }
         if (method === 'POST') {
           const body = await this.readBody(request, schemas.CreateCommentSchema, { taskId });
@@ -487,6 +498,7 @@ export class CriticalPathRouter {
             taskId,
             dependsOnTaskId: body.dependsOnTaskId,
             type: body.type || 'blocking',
+            ...(body.lagHours !== undefined ? { lagHours: body.lagHours } : {}),
             ...(body.customFields ? { customFields: body.customFields } : {})
           });
           return this.jsonResponse({ dependency: dep }, 201);
@@ -720,10 +732,10 @@ export class CriticalPathRouter {
         }
       } else if (!commentId) {
         if (method === 'GET') {
-          const taskId = url.searchParams.get('taskId');
+          const { taskId, ...query } = schemas.parsePayload(schemas.CommentListQuerySchema, Object.fromEntries(url.searchParams));
           if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
-          const comments = await engine.getComments(taskId);
-          return this.jsonResponse({ comments });
+          const page = await engine.queryComments({ ...query, taskId });
+          return this.jsonResponse({ comments: page.items, nextCursor: page.nextCursor });
         }
         if (method === 'POST') {
           const body = await this.readBody(request, schemas.CreateCommentSchema);
@@ -793,7 +805,35 @@ export class CriticalPathRouter {
     }
 
     // Time Tracking API
-    if (segments[0] === 'time-entries') {
+    if (segments[0] === 'baselines' && segments.length === 2) {
+      if (method === 'GET') {
+        const baseline = await engine.getBaseline(segments[1]);
+        return baseline ? this.jsonResponse({ baseline }) : this.jsonResponse({ error: 'Baseline not found' }, 404);
+      }
+      if (method === 'DELETE') {
+        const deleted = await engine.deleteBaseline(segments[1]);
+        return deleted ? this.jsonResponse({ success: true }) : this.jsonResponse({ error: 'Baseline not found' }, 404);
+      }
+    }
+
+    if (segments[0] === 'time-entries' && segments.length === 2) {
+      const entryId = segments[1];
+      if (method === 'GET') {
+        const entry = await engine.getTimeEntry(entryId);
+        return entry ? this.jsonResponse({ timeEntry: entry }) : this.jsonResponse({ error: 'Time entry not found' }, 404);
+      }
+      if (method === 'PATCH') {
+        const updates = await this.readBody(request, schemas.UpdateTimeEntrySchema);
+        const entry = await engine.updateTimeEntry(entryId, updates);
+        return entry ? this.jsonResponse({ timeEntry: entry }) : this.jsonResponse({ error: 'Time entry not found' }, 404);
+      }
+      if (method === 'DELETE') {
+        const deleted = await engine.deleteTimeEntry(entryId);
+        return deleted ? this.jsonResponse({ success: true }) : this.jsonResponse({ error: 'Time entry not found' }, 404);
+      }
+    }
+
+    if (segments[0] === 'time-entries' && segments.length === 1) {
       if (method === 'GET') {
         const taskId = url.searchParams.get('taskId');
         if (!taskId) return this.jsonResponse({ error: 'taskId parameter required' }, 400);
@@ -917,6 +957,8 @@ export class CriticalPathRouter {
         return this.jsonResponse({ error: e.message, fieldKey: e.fieldKey }, 400);
       case 'CircularDependencyError':
         return this.jsonResponse({ error: e.message, cyclePath: e.cyclePath }, 409);
+      case 'ConflictError':
+        return this.jsonResponse({ error: e.message }, 409);
       case 'NotFoundError':
         return this.jsonResponse({ error: e.message }, 404);
       case 'PayloadTooLargeError':
@@ -963,5 +1005,10 @@ function criticalPathQuery(url: URL) {
   }
   const levelingPriority = (url.searchParams.get('levelingPriority') || undefined) as LevelingPriority | undefined;
   const effort = (url.searchParams.get('effort') || undefined) as 'estimate' | 'remaining' | undefined;
-  return { calendars, ...(level !== null ? { levelResources: level === 'true' } : {}), levelingPriority, effort };
+  const defaultEstimate = url.searchParams.get('defaultEstimateHours');
+  const defaultEstimateHours = defaultEstimate !== null ? Number(defaultEstimate) : undefined;
+  if (defaultEstimate !== null && (defaultEstimate.trim() === '' || !(Number.isFinite(defaultEstimateHours) && defaultEstimateHours! >= 0))) {
+    throw new ValidationError('defaultEstimateHours must be a number of hours, 0 or more.');
+  }
+  return { calendars, ...(level !== null ? { levelResources: level === 'true' } : {}), levelingPriority, effort, defaultEstimateHours };
 }

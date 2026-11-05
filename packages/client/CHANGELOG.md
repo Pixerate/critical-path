@@ -1,5 +1,118 @@
 # @critical-path/client
 
+## 0.29.1
+
+### Patch Changes
+
+- Updated dependencies [4cca8ea]
+  - @critical-path/core@0.61.0
+
+## 0.29.0
+
+### Minor Changes
+
+- bca1fda: Paginate task comments (#149).
+  
+  - `engine.queryComments({ taskId, limit, cursor })` returns `Page<Comment>`, oldest first, with keyset cursors like `queryTasks`. `SQLiteStore` pages in SQL on a new `(taskId, createdAt, id)` index.
+  - `GET /comments?taskId=` and `GET /tasks/:taskId/comments` accept `limit` (default 100, max 500) and `cursor`, and return `nextCursor`.
+  - Client: `getComments` follows every page; new `queryComments` returns one page.
+  - MCP: `list_comments` takes `limit` and `cursor` and returns `{ comments, nextCursor }`.
+  - **BREAKING (custom adapters):** `CommentRepository` includes `queryComments(query)`.
+  - **BREAKING (HTTP API):** the comment list routes return at most 100 comments unless `limit` is set; follow `nextCursor` for the rest.
+
+### Patch Changes
+
+- Updated dependencies [bca1fda]
+- Updated dependencies [c29f569]
+  - @critical-path/core@0.60.0
+
+## 0.28.0
+
+### Minor Changes
+
+- 049ff34: Schedule baselines, to track milestone and project slippage over time.
+  
+  - `engine.createBaseline(projectId, { name, ...analysis options })` freezes the current critical path analysis (`plan.manage`); `getBaselines`, `getBaseline`, `deleteBaseline` manage them, and they are deleted with their project. `baseline.created` / `baseline.deleted` events.
+  - `calculateCriticalPath(projectId, { baselineId })` adds `baseline: { startVarianceHours, finishVarianceHours }` to each task and a `baseline` comparison to the analysis (`endVarianceHours`, `slippedTaskIds`, `addedTaskIds`, `removedTaskIds`), in working hours. `compareToBaseline` and `toBaselineTasks` are exported for direct use.
+  - Routes: `GET | POST /projects/:projectId/baselines`, `GET | DELETE /baselines/:baselineId`, `?baselineId=` on `GET /projects/:projectId/critical-path`; matching client methods. MCP: `create_baseline`, `list_baselines`, and `baselineId` on `calculate_critical_path`; the `report-status` and `analyze-schedule` skills use them.
+  - **BREAKING (custom adapters):** `StorageAdapter` includes `BaselineRepository` (`getBaselines`, `getBaseline`, `createBaseline`, `deleteBaseline`).
+  - MCP instructions and tool-selection eval cases now cover `log_time`, `update_time_entry`, `delete_time_entry` and milestone tasks.
+
+### Patch Changes
+
+- Updated dependencies [049ff34]
+  - @critical-path/core@0.59.0
+
+## 0.27.2
+
+### Patch Changes
+
+- Updated dependencies [0ac16b5]
+  - @critical-path/core@0.58.0
+
+## 0.27.1
+
+### Patch Changes
+
+- Updated dependencies [224ad51]
+  - @critical-path/core@0.57.0
+
+## 0.27.0
+
+### Minor Changes
+
+- 42ecdb9: Clearing fields over HTTP, validated dates, and correctable time entries.
+  
+  - Update bodies accept `null` to remove an optional field (tasks, projects, deliverables, containers, iterations and time entries); parsing turns it into `undefined`, which every store treats as removal. Required fields (titles, names, task `status` and `priority`) still reject it. New `applyUpdate(record, updates)` applies payloads the same way for optimistic UI state; the React and Svelte task and deliverable state use it.
+  - **BREAKING:** every date field in request bodies must be an ISO date or date-time (`400` otherwise). Free-text dates used to be stored and then broke levelling, metrics and the ladder.
+  - Time entries can be corrected and deleted: `engine.getTimeEntry` / `updateTimeEntry` / `deleteTimeEntry`, `GET | PATCH | DELETE /time-entries/:id`, and the matching client methods. The task's hour totals move by the difference, and `time.updated` / `time.deleted` events are published. A new `time.manage` permission (project managers and admins) covers other people's entries; anyone with `time.log` can manage their own.
+  - `logTime` always requires the task to exist (it used to store orphan entries when no policy was enforced), and logs inside a transaction where the store supports one.
+  - **BREAKING (custom adapters):** `TimeEntryRepository` gains `getTimeEntry(id)` and `updateTimeEntry(id, updates)`.
+  - `FirebaseStore` updates every document inside `runTransaction` when the db supports it and implements `incrementTaskHours`, so concurrent updates and time logs are no longer lost. Pass Firestore's `FieldValue` as the new `fieldValue` option to add hour totals with `FieldValue.increment` (atomic, no contention) instead of transactions.
+  - MCP: new `update_time_entry` and `delete_time_entry` tools.
+
+### Patch Changes
+
+- Updated dependencies [42ecdb9]
+  - @critical-path/core@0.56.0
+
+## 0.26.0
+
+### Minor Changes
+
+- 5dbf25b: Effort and progress roll-ups agree, count subtasks once and leave canceled work out.
+  
+  - New `getTaskEstimateHours(task)` is the one place that reads an estimate (0 for milestones; an explicit 0 counts). Critical path analysis, workload, the ladder, metrics/EVM and deliverable summaries all use it, along with `getSummaryTaskIds` / `getLeafTasks`.
+  - **BREAKING:** a task with subtasks is a summary task. Critical path analysis schedules only leaf tasks: dependencies and deadlines on a summary apply to every leaf under it, and the summary is reported as a roll-up (`isSummary: true`; not in `criticalTaskIds`). Workload, the ladder and deliverable summaries count effort from leaves only, so an epic's estimate no longer doubles its subtasks'.
+  - **BREAKING:** canceled tasks leave estimate totals and progress denominators in the ladder and deliverable summaries (their logged hours still count), so a project can reach 100% and `completed`. Canceled tasks have zero planned and earned value in EVM. The ladder and deliverable summaries use inferred progress (`inferTaskProgress`) like task metrics.
+  - Unestimated tasks are listed in `unestimatedTaskIds`, and the hours assumed for them are configurable: `defaultEstimateHours` per call (`?defaultEstimateHours=` over HTTP, client and MCP options) or `criticalPathDefaultEstimateHours` on the engine. Default 1, as before.
+
+### Patch Changes
+
+- Updated dependencies [5dbf25b]
+  - @critical-path/core@0.55.0
+
+## 0.25.4
+
+### Patch Changes
+
+- Updated dependencies [1021eb5]
+  - @critical-path/core@0.54.0
+
+## 0.25.3
+
+### Patch Changes
+
+- Updated dependencies [6c3359f]
+  - @critical-path/core@0.53.0
+
+## 0.25.2
+
+### Patch Changes
+
+- Updated dependencies [da622c9]
+  - @critical-path/core@0.52.0
+
 ## 0.25.1
 
 ### Patch Changes

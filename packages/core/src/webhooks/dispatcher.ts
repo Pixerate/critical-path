@@ -1,6 +1,7 @@
 import type { Webhook } from '../types/index.js';
 import type { DomainEvent } from '../domain/events.js';
 import { signWebhookPayload } from './signature.js';
+import type { WebhookOutboxStore } from './outbox.js';
 import { defaultHostResolver, isIpLiteral, isPrivateAddress, isPrivateHostname, type HostResolver } from './address.js';
 
 /** One attempt to deliver one event to one webhook. Serializable, so durable queues can store it. */
@@ -23,7 +24,16 @@ export interface WebhookDeliveryJob {
  * `engine.webhooks.deliver(job)` from a worker.
  */
 export interface WebhookDeliveryQueue {
-  enqueue(job: WebhookDeliveryJob, delayMs: number): void | Promise<void>;
+  /**
+   * Stores or schedules a job. `outbox` is given when the job belongs to a mutation that is still
+   * in a store transaction: write the job through it so it commits or rolls back with the mutation.
+   */
+  enqueue(job: WebhookDeliveryJob, delayMs: number, outbox?: WebhookOutboxStore): void | Promise<void>;
+  /**
+   * Where jobs are persisted. When this is the engine's own store and the store supports
+   * `transaction`, the engine enqueues each mutation's jobs inside the mutation's transaction.
+   */
+  readonly store?: WebhookOutboxStore;
   /** Called once by the dispatcher with the function that runs a job. */
   attach?(deliver: (job: WebhookDeliveryJob) => Promise<void>): void;
 }
@@ -144,7 +154,11 @@ export class WebhookDispatcher {
     return this.queue instanceof InProcessWebhookQueue ? this.queue.idle() : Promise.resolve();
   }
 
-  async handle(event: DomainEvent): Promise<void> {
+  /**
+   * Enqueues a delivery per subscribed webhook. With `outbox`, jobs are written through that
+   * store (the open transaction of the mutation that published the event).
+   */
+  async handle(event: DomainEvent, outbox?: WebhookOutboxStore): Promise<void> {
     this.cache ??= this.source.listWebhooks().catch((err) => {
       this.cache = undefined;
       throw err;
@@ -168,7 +182,8 @@ export class WebhookDispatcher {
     for (const webhook of targets) {
       await this.queue.enqueue(
         { id: `${event.id}:${webhook.id}`, webhookId: webhook.id, url: webhook.url, secret: webhook.secret, event: event.name, body, attempt: 1 },
-        0
+        0,
+        outbox
       );
     }
   }

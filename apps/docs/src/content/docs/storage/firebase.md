@@ -19,7 +19,7 @@ Initialize Firestore and instantiate `FirebaseStore`:
 
 ```typescript
 import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { CriticalPathEngine, FirebaseStore } from '@critical-path/core';
 
 // Initialize Firebase App with default credentials (or service account)
@@ -27,10 +27,8 @@ initializeApp();
 
 const db = getFirestore();
 
-const store = new FirebaseStore({
-  db,
-  collectionPrefix: 'cp_', // Optional prefix for collections
-});
+// fieldValue lets hour totals use Firestore's atomic increments
+const store = new FirebaseStore({ db, fieldValue: FieldValue });
 
 const engine = new CriticalPathEngine({ store });
 ```
@@ -46,6 +44,8 @@ projects  workflows  tasks  teams  containers  deliverables  iterations
 comments  attachments  activities  time_entries  dependencies  webhooks
 webhook_outbox
 ```
+
+Updates read and write each document inside `db.runTransaction`, so concurrent changes to one record (two `PATCH` requests, or a `PATCH` racing time being logged) retry instead of overwriting each other. Hour totals use `FieldValue.increment` when you pass `fieldValue` (recommended: it never contends), and the same transactions otherwise. A `db` without `runTransaction` (such as a hand-written mock) falls back to plain reads and writes.
 
 Queries push equality filters such as `projectId` and `tenantId` down to Firestore, which uses its automatic single-field indexes. Further task and activity filters, sorting and pagination run in memory, so very large projects are better served by SQLite or a custom adapter.
 

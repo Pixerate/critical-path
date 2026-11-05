@@ -39,9 +39,11 @@ import type {
   TaskProgressHistory,
   WorkloadDistribution,
   WorkloadDistributionOptions,
-  StatusDefinition
+  StatusDefinition,
+  SemanticStatus,
+  Baseline
 } from '../types/index.js';
-import { StorageAdapter, InMemoryStore, type ActivityQuery, type Page, type TaskQuery } from '../store/index.js';
+import { StorageAdapter, InMemoryStore, type ActivityQuery, type CommentQuery, type Page, type TaskQuery, type TaskHourDeltas } from '../store/index.js';
 import { PluginRegistry } from '../plugins/index.js';
 import { deriveTaskLifecycleState, resolveStatusDefinition } from '../utils/status.js';
 import {
@@ -51,6 +53,7 @@ import {
   getAllowedTransitions,
   WorkflowValidationError,
   DEFAULT_SOFTWARE_WORKFLOW,
+  DEFAULT_DELIVERABLE_STATUSES,
   resolveBuiltInWorkflow
 } from '../utils/workflow.js';
 import { extractMentions } from '../utils/mentions.js';
@@ -88,6 +91,10 @@ import {
   DeliverableDeletedEvent,
   TaskDependencyAddedEvent,
   TimeLoggedEvent,
+  TimeEntryUpdatedEvent,
+  BaselineCreatedEvent,
+  BaselineDeletedEvent,
+  TimeEntryDeletedEvent,
   CommentAddedEvent,
   CommentUpdatedEvent,
   CommentDeletedEvent,
@@ -96,15 +103,17 @@ import {
   AttachmentCreatedEvent,
   AttachmentDeletedEvent
 } from '../domain/events.js';
-import { validateAttachmentUrl, AttachmentValidationError } from '../domain/entities.js';
+import { validateAttachmentUrl, AttachmentValidationError } from '../domain/attachments.js';
 import { validateCustomFieldValues, validateCustomFieldDefinitions } from '../domain/custom-fields.js';
-import { detectDependencyCycle, CircularDependencyError } from '../domain/graph.js';
-import { ValidationError, NotFoundError, ForbiddenError } from '../domain/errors.js';
+import { detectDependencyCycle, CircularDependencyError, precedenceOf } from '../domain/graph.js';
+import { ValidationError, NotFoundError, ForbiddenError, ConflictError } from '../domain/errors.js';
 import { WebhookDispatcher, assertWebhookUrl } from '../webhooks/dispatcher.js';
 import { buildStorageKey, normalizeUploadData } from '../storage/file-storage.js';
 import { generateWebhookSecret } from '../webhooks/signature.js';
+import type { WebhookOutboxStore } from '../webhooks/outbox.js';
 import type { DomainEvent } from '../domain/events.js';
 import { calculateCPM, calculatePortfolioCPM, type CPMOptions } from '../domain/cpm.js';
+import { compareToBaseline, toBaselineTasks } from '../domain/baseline.js';
 
 /** Options for `calculatePortfolioCriticalPath`. */
 export interface PortfolioCriticalPathOptions extends CPMOptions {
@@ -127,9 +136,61 @@ import {
   type MetricOptions
 } from '../domain/metrics.js';
 import { calculateWorkloadDistribution } from '../domain/workload.js';
+import { getTaskEstimateHours, getSummaryTaskIds } from '../domain/effort.js';
+import { inferTaskProgress } from '../domain/metrics.js';
+
+/** The statuses a project's deliverables may have. */
+const deliverableStatusesOf = (project: Pick<Project, 'deliverableStatusDefinitions'> | null) =>
+  project?.deliverableStatusDefinitions?.length ? project.deliverableStatusDefinitions : DEFAULT_DELIVERABLE_STATUSES;
+
+/** What a time entry adds to its task's hour totals (`sign` -1 to take it off). */
+function hourDeltas(entry: Pick<TimeEntry, 'hours' | 'isBillable'>, sign = 1): TaskHourDeltas {
+  const hours = sign * entry.hours;
+  return { loggedHours: hours, actualHours: hours, billableHours: entry.isBillable !== false ? hours : 0 };
+}
+
+const addDeltas = (a: TaskHourDeltas, b: TaskHourDeltas): TaskHourDeltas => ({
+  loggedHours: (a.loggedHours ?? 0) + (b.loggedHours ?? 0),
+  actualHours: (a.actualHours ?? 0) + (b.actualHours ?? 0),
+  billableHours: (a.billableHours ?? 0) + (b.billableHours ?? 0)
+});
 
 /** Every caller-settable task field, derived from the create schema so new fields are never dropped. */
 const CREATE_TASK_FIELDS = Object.keys(CreateTaskSchema.shape) as (keyof CreateTaskInput & keyof Task)[];
+
+/**
+ * Public mutations that publish events and do not already run in a transaction. With an atomic
+ * outbox they are wrapped so their writes and webhook jobs commit together.
+ */
+const TRANSACTIONAL_MUTATIONS = [
+  'createWorkflow',
+  'updateWorkflow',
+  'deleteWorkflow',
+  'createProject',
+  'createTask',
+  'updateTask',
+  'addDependency',
+  'removeDependency',
+  'addComment',
+  'updateComment',
+  'deleteComment',
+  'addCommentReaction',
+  'removeCommentReaction',
+  'createAttachment',
+  'deleteAttachment',
+  'createTeam',
+  'updateTeam',
+  'deleteTeam',
+  'createContainer',
+  'updateContainer',
+  'createDeliverable',
+  'updateDeliverable',
+  'createIteration',
+  'updateIteration',
+  'reportAgentStatus',
+  'createBaseline',
+  'deleteBaseline'
+] as const satisfies ReadonlyArray<keyof CriticalPathEngine>;
 
 export class CriticalPathEngine {
   public readonly config: CriticalPathConfig;
@@ -165,7 +226,9 @@ export class CriticalPathEngine {
       },
       config.webhookDelivery
     );
-    this.events.subscribe('*', (event) => this.webhooks.handle(event));
+    // Events whose jobs were already written inside their mutation's transaction are skipped.
+    this.events.subscribe('*', (event) => (this.outboxedEvents.has(event) ? undefined : this.webhooks.handle(event)));
+    if (this.atomicOutbox) this.runMutationsInTransactions();
     this.events.subscribe('*', (event) => {
       if (event.name.startsWith('team.')) this.teamMembership.clear();
     });
@@ -217,6 +280,32 @@ export class CriticalPathEngine {
     return !!this.actor && !this.authorizationBypassed && (!!this.config.authorize || !!this.actor.tenantId);
   }
 
+  /** Events whose webhook jobs were enqueued inside the transaction that published them. */
+  private readonly outboxedEvents = new WeakSet<object>();
+
+  /**
+   * True when webhook jobs persist in this engine's own transactional store (an
+   * `OutboxWebhookQueue` over it), so they can commit atomically with each mutation.
+   */
+  private get atomicOutbox(): boolean {
+    const outbox = this.config.webhookDelivery?.queue?.store;
+    return !!outbox && outbox === (this.store as unknown) && !!this.store.transaction;
+  }
+
+  /**
+   * Wraps every event-publishing mutation in `inTransaction`, so its writes and its outbox jobs
+   * commit together. Views made with `withActor` inherit the wrapped methods.
+   */
+  private runMutationsInTransactions(): void {
+    const self = this as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+    for (const name of TRANSACTIONAL_MUTATIONS) {
+      const method = self[name];
+      self[name] = function (this: CriticalPathEngine, ...args: unknown[]) {
+        return this.inTransaction((engine) => method.apply(engine, args));
+      };
+    }
+  }
+
   /** Tenants of events published inside a transaction, resolved before the data changed. */
   private readonly eventTenants = new WeakMap<object, string | undefined>();
 
@@ -257,6 +346,11 @@ export class CriticalPathEngine {
           if (property === 'publish') {
             return async (event: DomainEvent) => {
               this.eventTenants.set(event, await view.resolveEventTenant(event));
+              if (this.atomicOutbox) {
+                // A failed write rolls the mutation back with it.
+                await this.webhooks.handle(event, tx as StorageAdapter & WebhookOutboxStore);
+                this.outboxedEvents.add(event);
+              }
               effects.push(() => bus.publish(event));
             };
           }
@@ -300,7 +394,7 @@ export class CriticalPathEngine {
   private async isAllowed(
     action: AuthorizationAction,
     project?: Project,
-    resource?: { type: 'task' | 'comment' | 'attachment'; ownerId?: string }
+    resource?: { type: 'task' | 'comment' | 'attachment' | 'time_entry'; ownerId?: string }
   ): Promise<boolean> {
     if (!this.enforcing) return true;
     if (project && !this.inActorTenant(project)) return false;
@@ -349,7 +443,7 @@ export class CriticalPathEngine {
   private async requireProjectAccess(
     action: AuthorizationAction,
     projectId: string | undefined,
-    resource?: { type: 'task' | 'comment' | 'attachment'; ownerId?: string }
+    resource?: { type: 'task' | 'comment' | 'attachment' | 'time_entry'; ownerId?: string }
   ): Promise<void> {
     if (!this.enforcing) return;
     const project = await this.readableProject(projectId);
@@ -412,13 +506,13 @@ export class CriticalPathEngine {
     return project;
   }
 
-  /** A workflow a project may use: it must exist and belong to the project's tenant. */
+  /** A workflow a project may use: stored in the project's tenant, or a built-in. */
   private async assertUsableWorkflow(workflowId: string | undefined, tenantId: string | undefined): Promise<void> {
     if (!workflowId) return;
     const workflow = await this.store.getWorkflow(workflowId);
-    if (!workflow || (workflow.tenantId ?? undefined) !== (tenantId ?? undefined)) {
-      throw new ValidationError(`Workflow "${workflowId}" was not found.`);
-    }
+    if (workflow && (workflow.tenantId ?? undefined) === (tenantId ?? undefined)) return;
+    if (resolveBuiltInWorkflow(workflowId)) return;
+    throw new ValidationError(`Workflow "${workflowId}" was not found.`);
   }
 
   private withoutTenant<T extends { tenantId?: string }>(updates: T): T {
@@ -508,11 +602,27 @@ export class CriticalPathEngine {
     return created;
   }
 
+  /**
+   * Updates a workflow. Removing a status that tasks in a project using this workflow are still in
+   * is refused (`ConflictError`): move those tasks first, or switch the project with `statusMapping`.
+   */
   async updateWorkflow(id: string, updates: Partial<Workflow>): Promise<Workflow | null> {
     const existing = await this.getWorkflow(id);
     if (!existing) return null;
     await this.requireWorkspaceAccess('workspace.manage');
     updates = this.withoutTenant(updates);
+    if (updates.statuses) {
+      const kept = new Set(updates.statuses.map((status) => status.key));
+      const removed = existing.statuses.map((status) => status.key).filter((key) => !kept.has(key));
+      if (removed.length) {
+        for (const project of await this.projectsUsingWorkflow(existing)) {
+          const stranded = [...new Set((await this.store.getTasks(project.id)).map((t) => t.status))].filter((key) => removed.includes(key));
+          if (stranded.length) {
+            throw new ConflictError(`Tasks in project "${project.id}" are still in ${stranded.map((k) => `"${k}"`).join(', ')}, which this update removes. Move them to another status first.`);
+          }
+        }
+      }
+    }
 
     const updated = await this.store.updateWorkflow(id, updates);
     if (updated) {
@@ -536,10 +646,15 @@ export class CriticalPathEngine {
     return updated;
   }
 
+  /** Deletes a workflow. Refused (`ConflictError`) while any project uses it, even as its default. */
   async deleteWorkflow(id: string): Promise<boolean> {
     const existing = await this.getWorkflow(id);
     if (!existing) return false;
     await this.requireWorkspaceAccess('workspace.manage');
+    const users = await this.projectsUsingWorkflow(existing);
+    if (users.length) {
+      throw new ConflictError(`Workflow "${id}" is used by ${users.length} project(s) (${users.map((p) => p.id).join(', ')}). Switch them to another workflow first.`);
+    }
 
     const deleted = await this.store.deleteWorkflow(id);
     if (deleted) {
@@ -564,7 +679,11 @@ export class CriticalPathEngine {
   }
 
   async resolveProjectWorkflow(projectId: string): Promise<Workflow | null> {
-    const project = await this.store.getProject(projectId);
+    return this.workflowFor(await this.store.getProject(projectId));
+  }
+
+  /** The workflow a project (or a project as it would be after an update) uses. */
+  private async workflowFor(project: Pick<Project, 'workflow' | 'workflowId' | 'tenantId'> | null): Promise<Workflow> {
     if (project?.workflow) return project.workflow;
     if (project?.workflowId) {
       const wf = await this.store.getWorkflow(project.workflowId);
@@ -572,14 +691,55 @@ export class CriticalPathEngine {
       const builtIn = resolveBuiltInWorkflow(project.workflowId);
       if (builtIn) return builtIn;
     }
+    return (await this.defaultWorkflowFor(project?.tenantId)) ?? DEFAULT_SOFTWARE_WORKFLOW;
+  }
 
+  /** The tenant's stored default workflow: the one marked `isDefault`, else the first. */
+  private async defaultWorkflowFor(tenantId: string | undefined): Promise<Workflow | undefined> {
     // Only fall back to workflows from the project's own tenant.
-    const workflows = (await this.store.getWorkflows()).filter((w) => w.tenantId === project?.tenantId);
-    const defaultWf = workflows.find((w) => w.isDefault);
-    if (defaultWf) return defaultWf;
-    if (workflows.length > 0) return workflows[0];
+    const workflows = (await this.store.getWorkflows()).filter((w) => w.tenantId === tenantId);
+    return workflows.find((w) => w.isDefault) ?? workflows[0];
+  }
 
-    return DEFAULT_SOFTWARE_WORKFLOW;
+  /** The statuses tasks in a project may have: its own definitions, else its workflow's. */
+  private async statusDefinitionsFor(project: Pick<Project, 'statusDefinitions' | 'workflow' | 'workflowId' | 'tenantId'> | null): Promise<StatusDefinition[]> {
+    return project?.statusDefinitions?.length ? project.statusDefinitions : (await this.workflowFor(project)).statuses;
+  }
+
+  /** Projects whose tasks follow `workflow`, explicitly or as their tenant's default. */
+  private async projectsUsingWorkflow(workflow: Workflow): Promise<Project[]> {
+    const projects = await this.store.getProjects(workflow.tenantId ? { tenantId: workflow.tenantId } : undefined);
+    const using: Project[] = [];
+    for (const project of projects) {
+      if ((project.tenantId ?? undefined) === (workflow.tenantId ?? undefined) && (await this.workflowFor(project)).id === workflow.id) using.push(project);
+    }
+    return using;
+  }
+
+  /**
+   * `assigneeId` is the task's primary assignee: critical path analysis, levelling and workload use
+   * it. `assignees` is the full list (people, agents, teams); when it is set, the primary must be on it.
+   */
+  private assertPrimaryAssignee(task: Pick<Task, 'assigneeId' | 'assignees'>): void {
+    if (task.assigneeId && task.assignees?.length && !task.assignees.some((a) => a.id === task.assigneeId)) {
+      throw new ValidationError(`assigneeId "${task.assigneeId}" must be one of the task's assignees.`);
+    }
+  }
+
+  /** The category of a deliverable status, or a `ValidationError` when the project has no such status. */
+  private deliverableCategory(status: string, statuses: StatusDefinition[]): SemanticStatus {
+    const definition = statuses.find((s) => s.key === status);
+    if (!definition) {
+      throw new ValidationError(`Deliverable status "${status}" is not one of this project's (${statuses.map((s) => s.key).join(', ')}).`);
+    }
+    return definition.category;
+  }
+
+  /** Throws unless `status` is one of the project's statuses. */
+  private assertKnownStatus(status: string, definitions: StatusDefinition[]): void {
+    if (definitions.length && !definitions.some((d) => d.key === status)) {
+      throw new ValidationError(`Status "${status}" is not in this project's workflow (${definitions.map((d) => d.key).join(', ')}).`);
+    }
   }
 
   async getAllowedTaskTransitions(taskId: string): Promise<string[]> {
@@ -622,6 +782,12 @@ export class CriticalPathEngine {
     // Views always use the actor's tenant (possibly none); only trusted base-engine calls may set it.
     const input = { ...project, tenantId: this.actor ? this.actor.tenantId : project.tenantId };
     await this.assertUsableWorkflow(input.workflowId, input.tenantId);
+    // Pin the workflow the project starts with, so adding a new default workflow later does not
+    // silently change it.
+    if (!input.workflowId && !input.workflow) {
+      const workflow = await this.defaultWorkflowFor(input.tenantId);
+      if (workflow) input.workflowId = workflow.id;
+    }
     // The creator administers the project they create.
     if (this.actor && this.actor.userId !== 'anonymous' && !input.members?.some((m) => m.userId === this.actor!.userId)) {
       input.members = [...(input.members ?? []), { userId: this.actor.userId, role: 'admin' }];
@@ -648,7 +814,17 @@ export class CriticalPathEngine {
     return created;
   }
 
-  async updateProject(id: string, updates: Partial<Project>): Promise<Project | null> {
+  /**
+   * Updates a project. When the update changes which statuses the project has (`workflowId`,
+   * `workflow` or `statusDefinitions`), every task in a status the project no longer has must be
+   * moved: pass `statusMapping` (old status key -> new status key). Without a mapping for each such
+   * status the update is refused with a `ConflictError`, so no task is left in an unreachable status.
+   */
+  async updateProject(id: string, updates: Partial<Project>, options: { statusMapping?: Record<string, string> } = {}): Promise<Project | null> {
+    return this.inTransaction((engine) => engine.updateProjectNow(id, updates, options));
+  }
+
+  private async updateProjectNow(id: string, updates: Partial<Project>, options: { statusMapping?: Record<string, string> }): Promise<Project | null> {
     const existing = await this.getProject(id);
     if (!existing) return null;
     await this.requireProjectAccess('project.update', id);
@@ -669,7 +845,27 @@ export class CriticalPathEngine {
       await this.assertUsableWorkflow(updates.workflowId, existing.tenantId);
     }
 
+    // Tasks whose status the project will no longer have, and where they go
+    const moves: Array<{ taskId: string; status: string }> = [];
+    if ('workflowId' in updates || 'workflow' in updates || 'statusDefinitions' in updates) {
+      const next = new Set((await this.statusDefinitionsFor({ ...existing, ...updates })).map((d) => d.key));
+      const mapping = options.statusMapping ?? {};
+      const stranded = (await this.store.getTasks(id)).filter((task) => !next.has(task.status));
+      const unmapped = [...new Set(stranded.map((task) => task.status))].filter((key) => !next.has(mapping[key]));
+      if (unmapped.length) {
+        throw new ConflictError(
+          `Tasks are in ${unmapped.map((k) => `"${k}"`).join(', ')}, which the project will no longer have. ` +
+            `Pass statusMapping with a new status for each (available: ${[...next].join(', ')}).`
+        );
+      }
+      moves.push(...stranded.map((task) => ({ taskId: task.id, status: mapping[task.status] })));
+    }
+
     const updated = await this.store.updateProject(id, updates);
+    // The old status is not in the new workflow, so there is no transition to check
+    for (const move of moves) {
+      await this.elevated().updateTask(move.taskId, { status: move.status }, { ...(this.actor ? { actor: this.actor } : {}), ignoreTransitions: true });
+    }
     if (updated) {
       const now = new Date().toISOString();
       const event: ProjectUpdatedEvent = {
@@ -718,6 +914,7 @@ export class CriticalPathEngine {
 
     for (const container of await this.store.getContainers(id)) await this.store.deleteContainer(container.id);
     for (const iteration of await this.store.getIterations(id)) await this.store.deleteIteration(iteration.id);
+    for (const baseline of await this.store.getBaselines(id)) await this.store.deleteBaseline(baseline.id);
     for (const deliverable of await this.store.getDeliverables(id)) await cascade.deleteDeliverable(deliverable.id);
     for (const attachment of await this.store.getAttachments({ projectId: id })) await cascade.deleteAttachment(attachment.id);
 
@@ -810,13 +1007,16 @@ export class CriticalPathEngine {
     // Validate custom fields on the final (post-plugin) input, including required fields when none are given
     validateCustomFieldValues(project?.customFieldDefinitions, input.customFields, this.plugins.getCustomFieldTypes());
     await this.assertValidParent(input.parentId, projectId);
+    this.assertPrimaryAssignee(input);
 
     const defaultStatus = workflow?.defaultStatusKey || 'todo';
     const initialStatus = processedInput.status || taskInput.status || defaultStatus;
+    const statusDefinitions = await this.statusDefinitionsFor(project);
+    this.assertKnownStatus(initialStatus, statusDefinitions);
     const now = new Date().toISOString();
 
     // Derive initial lifecycle timestamps and semantic status
-    const statusDef = resolveStatusDefinition(initialStatus, project?.statusDefinitions || workflow?.statuses);
+    const statusDef = resolveStatusDefinition(initialStatus, statusDefinitions);
     const inProgress = statusDef.category === 'in_progress';
     const completed = statusDef.category === 'completed';
     const isBlocked = input.isBlocked ?? false;
@@ -826,15 +1026,16 @@ export class CriticalPathEngine {
       projectId,
       title: processedInput.title || taskInput.title,
       status: initialStatus,
-      semanticStatus: input.semanticStatus ?? statusDef.category,
+      // Always derived from the status, so every module agrees on it
+      semanticStatus: statusDef.category,
       priority: processedInput.priority || taskInput.priority || 'medium',
       taskType: processedInput.taskType || taskInput.taskType || 'task',
       actualStartDate: input.actualStartDate ?? (inProgress ? now : undefined),
       actualEndDate: input.actualEndDate ?? (completed || statusDef.category === 'canceled' ? now : undefined),
       completedAt: input.completedAt ?? (completed ? now : undefined),
-      loggedHours: input.loggedHours ?? 0,
-      inProgressSince: input.inProgressSince ?? (inProgress ? now : undefined),
-      blockedSince: input.blockedSince ?? (isBlocked && inProgress ? now : undefined),
+      loggedHours: 0,
+      inProgressSince: inProgress ? now : undefined,
+      blockedSince: isBlocked && inProgress ? now : undefined,
       progress: input.progress ?? (completed ? 100 : 0),
       isBlocked,
       blockedReason: input.blockedReason ?? null,
@@ -874,6 +1075,8 @@ export class CriticalPathEngine {
       actorName?: string;
       actorType?: string;
       actor?: { userId: string; username?: string; actorType?: string };
+      /** Skip the workflow transition check (used to remap statuses when a project changes workflow). */
+      ignoreTransitions?: boolean;
     }
   ): Promise<Task | null> {
     const existing = await this.getTask(id);
@@ -901,9 +1104,14 @@ export class CriticalPathEngine {
       createdAt: _createdAt,
       ...processedUpdates
     } = await this.plugins.runBeforeTaskUpdate(id, taskUpdates) as Partial<Task>;
+    // Derived from the status below; never taken from callers or hooks
+    delete processedUpdates.semanticStatus;
 
     // Validate workflow transition invariant
     if (processedUpdates.status && processedUpdates.status !== existing.status) {
+      this.assertKnownStatus(processedUpdates.status, await this.statusDefinitionsFor(project));
+    }
+    if (processedUpdates.status && processedUpdates.status !== existing.status && !options?.ignoreTransitions) {
       const isValid = validateTransition(workflow || undefined, existing.status, processedUpdates.status);
       if (!isValid) {
         throw new WorkflowValidationError(existing.status, processedUpdates.status, workflow?.id);
@@ -917,6 +1125,9 @@ export class CriticalPathEngine {
         { ...existing.customFields, ...processedUpdates.customFields },
         this.plugins.getCustomFieldTypes()
       );
+    }
+    if ('assigneeId' in processedUpdates || 'assignees' in processedUpdates) {
+      this.assertPrimaryAssignee({ ...existing, ...processedUpdates });
     }
     if (processedUpdates.parentId && processedUpdates.parentId !== existing.parentId) {
       await this.assertValidParent(processedUpdates.parentId, existing.projectId, id);
@@ -937,7 +1148,7 @@ export class CriticalPathEngine {
 
     // Auto-update execution/completion timestamps if status changes
     if (processedUpdates.status && processedUpdates.status !== existing.status && newStatusDef) {
-      processedUpdates.semanticStatus = processedUpdates.semanticStatus ?? newStatusDef.category;
+      processedUpdates.semanticStatus = newStatusDef.category;
 
       // 1. Leaving in_progress: finalize active session duration and blocked duration
       if (existingStatusDef.category === 'in_progress' && newStatusDef.category !== 'in_progress') {
@@ -949,9 +1160,6 @@ export class CriticalPathEngine {
             const sessionSeconds = Math.max(0, (endMs - startMs) / 1000);
             processedUpdates.actualDurationSeconds =
               (processedUpdates.actualDurationSeconds ?? existing.actualDurationSeconds ?? 0) + sessionSeconds;
-            if (processedUpdates.actualHours === undefined) {
-              processedUpdates.actualHours = Math.round((processedUpdates.actualDurationSeconds / 3600) * 100) / 100;
-            }
             if (processedUpdates.actualDurationMinutes === undefined) {
               processedUpdates.actualDurationMinutes = Math.round(processedUpdates.actualDurationSeconds / 60);
             }
@@ -1065,17 +1273,10 @@ export class CriticalPathEngine {
       processedUpdates.blockedSince = null;
     }
 
-    // Mutual sync for manual duration/effort edits
-    if (processedUpdates.actualDurationSeconds !== undefined && processedUpdates.actualHours === undefined) {
-      processedUpdates.actualHours = Math.round((processedUpdates.actualDurationSeconds / 3600) * 100) / 100;
-      if (processedUpdates.actualDurationMinutes === undefined) {
-        processedUpdates.actualDurationMinutes = Math.round(processedUpdates.actualDurationSeconds / 60);
-      }
-    } else if (processedUpdates.actualHours !== undefined && processedUpdates.actualDurationSeconds === undefined) {
-      processedUpdates.actualDurationSeconds = Math.round(processedUpdates.actualHours * 3600);
-      if (processedUpdates.actualDurationMinutes === undefined) {
-        processedUpdates.actualDurationMinutes = Math.round(processedUpdates.actualHours * 60);
-      }
+    // Elapsed time (actualDuration*) and effort (actualHours, loggedHours) are separate quantities:
+    // keep the elapsed minutes in step with the seconds, and never derive effort from the clock.
+    if (processedUpdates.actualDurationSeconds !== undefined && processedUpdates.actualDurationMinutes === undefined) {
+      processedUpdates.actualDurationMinutes = Math.round(processedUpdates.actualDurationSeconds / 60);
     }
 
     const updated = await this.store.updateTask(id, processedUpdates);
@@ -1197,9 +1398,12 @@ export class CriticalPathEngine {
   }
 
   /**
-   * After a task completes or is canceled, unblocks downstream tasks whose upstream tasks are all
-   * completed or canceled. Runs on an elevated view, so upstream tasks the caller cannot read still
-   * count, and resolves each task's status against its own project's definitions.
+   * After a task completes or is canceled, publishes `task.unblocked` for each downstream task whose
+   * upstream tasks are now all completed or canceled, so it is free to start. Dependency blocking is
+   * derived (see `getTaskLifecycleState`), so nothing is written to the task: a manual block
+   * (`isBlocked`, `blockedReason`) stays until someone clears it. Runs on an elevated view, so
+   * upstream tasks the caller cannot read still count, and resolves each task's status against its
+   * own project's definitions.
    */
   private async checkAndUnblockDownstreamTasks(completedTask: Task): Promise<void> {
     try {
@@ -1216,40 +1420,28 @@ export class CriticalPathEngine {
         }
         return resolveStatusDefinition(task.status, statusDefsByProject.get(task.projectId)).category;
       };
+      const isFinished = async (task: Task) => {
+        const category = await categoryOf(task);
+        return category === 'completed' || category === 'canceled';
+      };
 
       for (const downstream of graph.downstreamTasks) {
-        const category = await categoryOf(downstream);
-        if (category === 'completed' || category === 'canceled') continue;
-        // Nothing to unblock; don't publish task.unblocked for tasks that were never blocked.
-        if (!downstream.isBlocked && !downstream.blockedReason && !downstream.blockedSince) continue;
-
+        if (await isFinished(downstream)) continue;
         const downstreamGraph = await engine.getTaskDependencyGraph(downstream.id);
         let allSatisfied = true;
         for (const up of downstreamGraph.upstreamTasks) {
-          const upCategory = await categoryOf(up);
-          if (upCategory !== 'completed' && upCategory !== 'canceled') {
+          if (!(await isFinished(up))) {
             allSatisfied = false;
             break;
           }
         }
         if (!allSatisfied) continue;
 
-        const updates: Partial<Task> = { isBlocked: false, blockedReason: null };
-        if (downstream.blockedSince) {
-          const startMs = new Date(downstream.blockedSince).getTime();
-          const endMs = Date.now();
-          if (!isNaN(startMs) && endMs >= startMs) {
-            updates.blockedDurationSeconds = (downstream.blockedDurationSeconds ?? 0) + (endMs - startMs) / 1000;
-          }
-          updates.blockedSince = null;
-        }
-        const updatedDownstream = (await this.store.updateTask(downstream.id, updates)) ?? downstream;
-
         await this.publishEvent<TaskUnblockedEvent>({
           name: 'task.unblocked',
           aggregateId: downstream.id,
           aggregateType: 'Task',
-          payload: { task: updatedDownstream, upstreamTaskId: completedTask.id }
+          payload: { task: downstream, upstreamTaskId: completedTask.id }
         });
         await this.store.logActivity({
           projectId: downstream.projectId,
@@ -1411,21 +1603,29 @@ export class CriticalPathEngine {
   }
 
   // --- Task Dependencies & Graph ---
-  /** Adds a dependency. Adding one that already exists (same tasks and type) returns the existing one. */
+  /** Adds a dependency. Adding one that already exists (same tasks, type and lag) returns the existing one. */
   async addDependency(dep: Omit<TaskDependency, 'id'>): Promise<TaskDependency> {
+    if (dep.type !== 'blocking' && dep.type !== 'relates_to') {
+      throw new ValidationError(`Dependency type must be 'blocking' or 'relates_to', got "${String(dep.type)}".`);
+    }
     const [task, upstream] = await Promise.all([this.getTask(dep.taskId), this.getTask(dep.dependsOnTaskId)]);
     if (!task) throw new NotFoundError(`Task "${dep.taskId}" not found.`);
     if (!upstream) throw new NotFoundError(`Task "${dep.dependsOnTaskId}" not found.`);
     await this.requireProjectAccess('task.update', task.projectId);
     const duplicate = (await this.store.getDependencies(dep.taskId)).find(
-      (d) => d.taskId === dep.taskId && d.dependsOnTaskId === dep.dependsOnTaskId && d.type === dep.type
+      (d) => d.taskId === dep.taskId && d.dependsOnTaskId === dep.dependsOnTaskId && d.type === dep.type && (d.lagHours ?? 0) === (dep.lagHours ?? 0)
     );
+    if (dep.lagHours !== undefined && !Number.isFinite(dep.lagHours)) {
+      throw new ValidationError('lagHours must be a number of working hours.');
+    }
     if (duplicate) return duplicate;
-    // Enforce Directed Acyclic Graph (DAG) Invariant
-    const reachableDeps = await this.collectUpstreamDependencies(dep.dependsOnTaskId);
-    const cycleCheck = detectDependencyCycle(reachableDeps, dep);
-    if (cycleCheck.hasCycle) {
-      throw new CircularDependencyError(dep.taskId, dep.dependsOnTaskId, cycleCheck.cyclePath);
+    // Enforce the Directed Acyclic Graph (DAG) invariant. Informational links never form cycles.
+    if (dep.type === 'blocking') {
+      const reachableDeps = await this.collectUpstreamDependencies(dep.dependsOnTaskId);
+      const cycleCheck = detectDependencyCycle(reachableDeps, dep);
+      if (cycleCheck.hasCycle) {
+        throw new CircularDependencyError(dep.taskId, dep.dependsOnTaskId, cycleCheck.cyclePath);
+      }
     }
 
     const created = await this.store.addDependency(dep);
@@ -1461,11 +1661,13 @@ export class CriticalPathEngine {
 
       for (const deps of results) {
         for (const d of deps) {
-          // getDependencies returns edges in both directions; follow only outgoing ones.
-          if (!visited.has(d.taskId)) continue;
+          // getDependencies returns edges touching the task in both directions; follow the ones
+          // where a visited task waits for another.
+          const edge = precedenceOf(d);
+          if (!edge || !visited.has(edge.after)) continue;
           edges.set(d.id, d);
-          if (!visited.has(d.dependsOnTaskId) && !next.includes(d.dependsOnTaskId)) {
-            next.push(d.dependsOnTaskId);
+          if (!visited.has(edge.before) && !next.includes(edge.before)) {
+            next.push(edge.before);
           }
         }
       }
@@ -1483,11 +1685,13 @@ export class CriticalPathEngine {
     const upstreamTaskIds = new Set<string>();
     const downstreamTaskIds = new Set<string>();
 
+    // Upstream and downstream follow scheduling edges only; `relates_to` links stay in `dependencies`.
     for (const dep of dependencies) {
-      if (dep.taskId === taskId) {
-        upstreamTaskIds.add(dep.dependsOnTaskId);
-      } else if (dep.dependsOnTaskId === taskId) {
-        downstreamTaskIds.add(dep.taskId);
+      const edge = precedenceOf(dep);
+      if (edge?.after === taskId) {
+        upstreamTaskIds.add(edge.before);
+      } else if (edge?.before === taskId) {
+        downstreamTaskIds.add(edge.after);
       }
     }
 
@@ -1529,45 +1733,33 @@ export class CriticalPathEngine {
   }
 
   // --- Time Tracking ---
+  /**
+   * Records time worked on a task and adds it to the task's `loggedHours`, `actualHours` and (when
+   * billable) `billableHours`. The task must exist.
+   */
   async logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt' | 'userId'> & { userId?: string; loggedAt?: string }): Promise<TimeEntry> {
     if (!Number.isFinite(entry.hours) || entry.hours <= 0) {
       throw new ValidationError('Logged hours must be a positive number.');
     }
-
     const task = await this.getTask(entry.taskId);
-    if (this.enforcing) {
-      if (!task) throw new NotFoundError(`Task "${entry.taskId}" not found.`);
-      await this.requireProjectAccess('time.log', task.projectId);
-    }
-    if (task) {
-      const deltas = { loggedHours: entry.hours, actualHours: entry.hours, ...(entry.isBillable !== false ? { billableHours: entry.hours } : {}) };
-      if (this.store.incrementTaskHours) {
-        await this.store.incrementTaskHours(task.id, deltas);
-      } else {
-        // Read-modify-write: adapters without incrementTaskHours can lose concurrent logs.
-        await this.store.updateTask(task.id, {
-          loggedHours: (task.loggedHours || 0) + entry.hours,
-          actualHours: (task.actualHours || 0) + entry.hours,
-          billableHours: deltas.billableHours !== undefined ? (task.billableHours || 0) + entry.hours : task.billableHours
-        });
-      }
-    }
+    if (!task) throw new NotFoundError(`Task "${entry.taskId}" not found.`);
+    await this.requireProjectAccess('time.log', task.projectId);
 
-    const fullEntry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string } = {
-      ...entry,
-      userId: this.actor?.userId || entry.userId || task?.assigneeId || 'system',
-      loggedAt: entry.loggedAt
-    };
-
-    const created = await this.store.logTime(fullEntry);
-    const now = new Date().toISOString();
+    const created = await this.inTransaction(async (engine) => {
+      await engine.adjustTaskHours(task, hourDeltas(entry));
+      return engine.store.logTime({
+        ...entry,
+        userId: this.actor?.userId || entry.userId || task.assigneeId || 'system',
+        loggedAt: entry.loggedAt
+      });
+    });
 
     const event: TimeLoggedEvent = {
       id: `evt_${crypto.randomUUID()}`,
       name: 'time.logged',
       aggregateId: entry.taskId,
       aggregateType: 'Task',
-      occurredAt: now,
+      occurredAt: new Date().toISOString(),
       payload: { taskId: entry.taskId, timeEntry: created }
     };
     await this.events.publish(event);
@@ -1575,10 +1767,96 @@ export class CriticalPathEngine {
     return created;
   }
 
+  async getTimeEntry(id: string): Promise<TimeEntry | null> {
+    const entry = await this.store.getTimeEntry(id);
+    if (!entry) return null;
+    return (await this.getTask(entry.taskId)) ? entry : null;
+  }
+
+  /**
+   * Corrects a time entry (hours, billable flag, description, date or custom fields) and moves the
+   * task's hour totals by the difference. Needs `time.manage`, or `time.log` for your own entries.
+   */
+  async updateTimeEntry(
+    id: string,
+    updates: Partial<Pick<TimeEntry, 'hours' | 'isBillable' | 'description' | 'loggedAt' | 'customFields'>>
+  ): Promise<TimeEntry | null> {
+    const existing = await this.getTimeEntry(id);
+    if (!existing) return null;
+    const task = (await this.getTask(existing.taskId))!;
+    await this.requireProjectAccess('time.manage', task.projectId, { type: 'time_entry', ownerId: existing.userId });
+    if (updates.hours !== undefined && (!Number.isFinite(updates.hours) || updates.hours <= 0)) {
+      throw new ValidationError('Logged hours must be a positive number.');
+    }
+    const { hours, isBillable, description, loggedAt, customFields } = updates;
+    const changes = Object.fromEntries(
+      Object.entries({ hours, isBillable, description, loggedAt, customFields }).filter(([key]) => key in updates)
+    ) as Partial<TimeEntry>;
+    const next = { ...existing, ...changes };
+
+    const updated = await this.inTransaction(async (engine) => {
+      await engine.adjustTaskHours(task, addDeltas(hourDeltas(next), hourDeltas(existing, -1)));
+      return engine.store.updateTimeEntry(id, changes);
+    });
+    if (updated) {
+      await this.publishEvent<TimeEntryUpdatedEvent>({
+        name: 'time.updated',
+        aggregateId: existing.taskId,
+        aggregateType: 'Task',
+        payload: { taskId: existing.taskId, timeEntry: updated, previous: existing }
+      });
+    }
+    return updated;
+  }
+
+  /** Deletes a time entry and takes its hours off the task's totals. Same permissions as `updateTimeEntry`. */
+  async deleteTimeEntry(id: string): Promise<boolean> {
+    const existing = await this.getTimeEntry(id);
+    if (!existing) return false;
+    const task = (await this.getTask(existing.taskId))!;
+    await this.requireProjectAccess('time.manage', task.projectId, { type: 'time_entry', ownerId: existing.userId });
+
+    const deleted = await this.inTransaction(async (engine) => {
+      const removed = await engine.store.deleteTimeEntry(id);
+      if (removed) await engine.adjustTaskHours(task, hourDeltas(existing, -1));
+      return removed;
+    });
+    if (deleted) {
+      await this.publishEvent<TimeEntryDeletedEvent>({
+        name: 'time.deleted',
+        aggregateId: existing.taskId,
+        aggregateType: 'Task',
+        payload: { taskId: existing.taskId, timeEntryId: id, timeEntry: existing }
+      });
+    }
+    return deleted;
+  }
+
+  /** Adds `deltas` to a task's hour totals, atomically when the store supports it. */
+  private async adjustTaskHours(task: Task, deltas: TaskHourDeltas): Promise<void> {
+    if (this.store.incrementTaskHours) {
+      await this.store.incrementTaskHours(task.id, deltas);
+      return;
+    }
+    // Read-modify-write: adapters without incrementTaskHours can lose concurrent logs.
+    const current = (await this.store.getTask(task.id)) ?? task;
+    await this.store.updateTask(task.id, {
+      loggedHours: (current.loggedHours ?? 0) + (deltas.loggedHours ?? 0),
+      actualHours: (current.actualHours ?? 0) + (deltas.actualHours ?? 0),
+      billableHours: (current.billableHours ?? 0) + (deltas.billableHours ?? 0)
+    });
+  }
+
   // --- Comments ---
   async getComments(taskId: string): Promise<Comment[]> {
     if (this.enforcing && !(await this.getTask(taskId))) return [];
     return this.store.getComments(taskId);
+  }
+
+  /** One page of a task's comments, oldest first. */
+  async queryComments(query: CommentQuery): Promise<Page<Comment>> {
+    if (this.enforcing && !(await this.getTask(query.taskId))) return { items: [] };
+    return this.store.queryComments(query);
   }
 
   async getComment(id: string): Promise<Comment | null> {
@@ -2152,9 +2430,14 @@ export class CriticalPathEngine {
       validateCustomFieldValues(project.customFieldDefinitions, input.customFields, this.plugins.getCustomFieldTypes());
     }
 
+    const statuses = deliverableStatusesOf(project);
+    const status = input.status || statuses.find((s) => s.category === 'not_started')?.key || statuses[0].key;
+    const category = this.deliverableCategory(status, statuses);
     const created = await this.store.createDeliverable({
       ...input,
-      status: input.status || 'planned',
+      status,
+      semanticStatus: category,
+      ...(category === 'completed' && !input.deliveredAt ? { deliveredAt: new Date().toISOString() } : {}),
       outputUrls: input.outputUrls ?? [],
       customFields: input.customFields ?? {}
     });
@@ -2174,7 +2457,7 @@ export class CriticalPathEngine {
       projectId: created.projectId,
       actorId: this.actorIdOr('system'),
       action: 'deliverable.created',
-      details: { title: created.title, format: created.format }
+      details: { title: created.title }
     });
     return created;
   }
@@ -2184,8 +2467,15 @@ export class CriticalPathEngine {
     if (!existing) return null;
     await this.requireProjectAccess('plan.manage', existing.projectId);
 
-    if (updates.status && updates.status === 'delivered' && !existing.deliveredAt && !updates.deliveredAt) {
-      updates.deliveredAt = new Date().toISOString();
+    // semanticStatus follows the status; deliveredAt records when it first reached a completed status
+    const { semanticStatus: _ignored, ...rest } = updates;
+    updates = rest;
+    if (updates.status && updates.status !== existing.status) {
+      const project = await this.store.getProject(existing.projectId);
+      updates.semanticStatus = this.deliverableCategory(updates.status, deliverableStatusesOf(project));
+      if (updates.semanticStatus === 'completed' && !existing.deliveredAt && !updates.deliveredAt) {
+        updates.deliveredAt = new Date().toISOString();
+      }
     }
 
     const updated = await this.store.updateDeliverable(id, this.withoutOwnership(updates, ['projectId']));
@@ -2276,7 +2566,11 @@ export class CriticalPathEngine {
     let estimatedHours = 0;
     let loggedHours = 0;
     let totalProgress = 0;
+    let progressCount = 0;
 
+    // Summary tasks are spanned by their subtasks (counted once, through the leaves); canceled
+    // tasks keep their logged hours but leave the estimate and progress.
+    const summaries = getSummaryTaskIds(allTasks);
     for (const task of tasks) {
       const statusDef = resolveStatusDefinition(task.status, project?.statusDefinitions || workflow?.statuses);
       if (statusDef.category === 'completed') {
@@ -2284,18 +2578,16 @@ export class CriticalPathEngine {
       } else if (statusDef.category === 'in_progress') {
         activeTasks++;
       }
+      if (summaries.has(task.id)) continue;
 
-      if (task.estimatedHours) estimatedHours += task.estimatedHours;
-      if (task.loggedHours) loggedHours += task.loggedHours;
-
-      if (typeof task.progress === 'number') {
-        totalProgress += task.progress;
-      } else {
-        totalProgress += statusDef.category === 'completed' ? 100 : 0;
-      }
+      loggedHours += task.loggedHours ?? 0;
+      if (statusDef.category === 'canceled') continue;
+      estimatedHours += getTaskEstimateHours(task) ?? 0;
+      totalProgress += inferTaskProgress(task, { customStatusDefinitions: project?.statusDefinitions || workflow?.statuses }).progressPercentage;
+      progressCount++;
     }
 
-    const progressPercentage = totalTasks > 0 ? Math.round(totalProgress / totalTasks) : 0;
+    const progressPercentage = progressCount > 0 ? Math.round(totalProgress / progressCount) : 0;
 
     return {
       deliverable,
@@ -2451,18 +2743,83 @@ export class CriticalPathEngine {
   }
 
   // --- Ladder of Abstraction & Critical Path Method ---
+  /**
+   * Critical path analysis of a project. With `baselineId`, every task also reports how far it moved
+   * since that baseline (`baseline` per task and on the analysis).
+   */
   async calculateCriticalPath(
     projectId: string,
-    options: CPMOptions = {}
+    options: CPMOptions & { baselineId?: string } = {}
   ): Promise<CriticalPathAnalysis> {
     await this.requireProjectAccess('project.read', projectId);
     const project = await this.store.getProject(projectId);
+    const baseline = options.baselineId ? await this.getBaseline(options.baselineId) : undefined;
+    if (options.baselineId && baseline?.projectId !== projectId) {
+      throw new NotFoundError(`Baseline "${options.baselineId}" not found in this project.`);
+    }
+    const analysis = await this.analyseProject(projectId, project, options);
+    return baseline ? compareToBaseline(analysis, baseline, options.schedule || project?.schedule || this.config.defaultSchedule) : analysis;
+  }
+
+  /**
+   * Saves the project's current critical path analysis as a named baseline, to measure slippage
+   * against later (`calculateCriticalPath(projectId, { baselineId })`). Takes the same options as
+   * the analysis. Needs `plan.manage`.
+   */
+  async createBaseline(projectId: string, input: { name: string; customFields?: Record<string, unknown> } & CPMOptions): Promise<Baseline> {
+    await this.requireProjectAccess('plan.manage', projectId);
+    const project = await this.requireExistingProject(projectId);
+    const { name, customFields, ...options } = input;
+    if (!name?.trim()) throw new ValidationError('A baseline needs a name.');
+    const analysis = await this.analyseProject(projectId, project, options);
+    const created = await this.store.createBaseline({
+      projectId,
+      name,
+      ...(this.actor ? { createdBy: this.actor.userId } : {}),
+      ...(analysis.projectStartDate ? { projectStartDate: analysis.projectStartDate } : {}),
+      ...(analysis.projectEndDate ? { projectEndDate: analysis.projectEndDate } : {}),
+      totalDurationHours: analysis.totalDurationHours,
+      tasks: toBaselineTasks(analysis),
+      ...(customFields ? { customFields } : {})
+    });
+    await this.publishEvent<BaselineCreatedEvent>({ name: 'baseline.created', aggregateId: projectId, aggregateType: 'Project', payload: { baseline: created } });
+    return created;
+  }
+
+  /** A project's baselines, oldest first. */
+  async getBaselines(projectId: string): Promise<Baseline[]> {
+    if (!(await this.canReadProject(projectId))) return [];
+    return this.store.getBaselines(projectId);
+  }
+
+  async getBaseline(id: string): Promise<Baseline | null> {
+    const baseline = await this.store.getBaseline(id);
+    return baseline && (await this.canReadProject(baseline.projectId)) ? baseline : null;
+  }
+
+  async deleteBaseline(id: string): Promise<boolean> {
+    const existing = await this.getBaseline(id);
+    if (!existing) return false;
+    await this.requireProjectAccess('plan.manage', existing.projectId);
+    const deleted = await this.store.deleteBaseline(id);
+    if (deleted) {
+      await this.publishEvent<BaselineDeletedEvent>({
+        name: 'baseline.deleted',
+        aggregateId: existing.projectId,
+        aggregateType: 'Project',
+        payload: { baselineId: id, projectId: existing.projectId }
+      });
+    }
+    return deleted;
+  }
+
+  private async analyseProject(projectId: string, project: Project | null, options: CPMOptions): Promise<CriticalPathAnalysis> {
     const tasks = await this.store.getTasks(projectId);
     const dependencies = await this.loadDependencies(tasks);
     const schedule = options.schedule || project?.schedule || this.config.defaultSchedule;
     const projectStartDate = options.projectStartDate || project?.startDate;
-    const { calendars, levelResources, levelingPriority, effort } = this.resolveCpmModes(options);
-    if (calendars === 'project') return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate, effort });
+    const { calendars, levelResources, levelingPriority, effort, defaultEstimateHours } = this.resolveCpmModes(options);
+    if (calendars === 'project') return calculateCPM(projectId, tasks, dependencies, { schedule, projectStartDate, effort, defaultEstimateHours });
     const { users, teams } = await this.loadPeople(options, [project?.tenantId]);
     return calculateCPM(projectId, tasks, dependencies, {
       schedule,
@@ -2472,7 +2829,8 @@ export class CriticalPathEngine {
       teams,
       levelResources,
       levelingPriority,
-      effort
+      effort,
+      defaultEstimateHours
     });
   }
 
@@ -2485,7 +2843,7 @@ export class CriticalPathEngine {
    * Rejects runs above `portfolioTaskLimit` tasks (default 5000).
    */
   async calculatePortfolioCriticalPath(options: PortfolioCriticalPathOptions = {}): Promise<PortfolioCriticalPathAnalysis> {
-    const { calendars, levelResources, levelingPriority, effort } = this.resolveCpmModes(options);
+    const { calendars, levelResources, levelingPriority, effort, defaultEstimateHours } = this.resolveCpmModes(options);
     let projects: Project[];
     if (options.projectIds) {
       const ids = [...new Set(options.projectIds)];
@@ -2534,7 +2892,7 @@ export class CriticalPathEngine {
         ...(mode ? { background: mode } : {})
       })),
       dependencies,
-      { calendars, users, teams, levelResources, levelingPriority, effort, projectOrder: options.projectOrder }
+      { calendars, users, teams, levelResources, levelingPriority, effort, defaultEstimateHours, projectOrder: options.projectOrder }
     );
   }
 
@@ -2556,7 +2914,11 @@ export class CriticalPathEngine {
     if (effort !== 'estimate' && effort !== 'remaining') {
       throw new ValidationError(`Unknown effort "${effort}"; use "estimate" or "remaining".`);
     }
-    return { calendars, levelResources, levelingPriority, effort };
+    const defaultEstimateHours = options.defaultEstimateHours ?? this.config.criticalPathDefaultEstimateHours;
+    if (defaultEstimateHours !== undefined && !(Number.isFinite(defaultEstimateHours) && defaultEstimateHours >= 0)) {
+      throw new ValidationError('defaultEstimateHours must be a number of hours, 0 or more.');
+    }
+    return { calendars, levelResources, levelingPriority, effort, defaultEstimateHours };
   }
 
   /** Every dependency touching `tasks`, once each. */

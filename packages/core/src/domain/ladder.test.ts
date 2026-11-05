@@ -51,7 +51,7 @@ describe('Ladder of Abstraction Domain Logic', () => {
         projectId: 'proj-1',
         title: 'Checkout Prototype',
         status: 'in_production',
-        format: 'Figma',
+        customFields: { format: 'Figma' },
         outputUrls: ['https://figma.com/file/12345'],
         createdAt: now,
         updatedAt: now

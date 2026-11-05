@@ -16,22 +16,30 @@ import {
   getWorkingHoursBetween,
   nextWorkingTime,
   previousWorkingTime,
-  parseDate
+  parseDate,
+  toDateString
 } from './calendar.js';
 import { isTaskInProgress } from '../utils/status.js';
+import { precedenceOf } from './graph.js';
+import { getTaskEstimateHours, getSummaryTaskIds } from './effort.js';
 
-export function getTaskDurationHours(task: Task): number {
-  if (typeof task.estimatedHours === 'number' && task.estimatedHours >= 0) {
-    return task.estimatedHours;
-  }
-  if (typeof task.estimatedDurationMinutes === 'number' && task.estimatedDurationMinutes >= 0) {
-    return task.estimatedDurationMinutes / 60;
-  }
-  if (typeof task.actualHours === 'number' && task.actualHours > 0) {
-    return task.actualHours;
-  }
-  // Default to 1 hour for non-empty tasks without explicit estimate
-  return 1;
+/** Hours assumed for a task with no estimate and no logged effort (see `CPMOptions.defaultEstimateHours`). */
+export const DEFAULT_ESTIMATE_HOURS = 1;
+
+/**
+ * Effort critical path analysis and workload plan for a task: its estimate (`getTaskEstimateHours`;
+ * 0 for milestones), else the effort logged on it, else `defaultEstimateHours`.
+ */
+export function getTaskDurationHours(task: Task, defaultEstimateHours: number = DEFAULT_ESTIMATE_HOURS): number {
+  const estimate = getTaskEstimateHours(task);
+  if (estimate !== undefined) return estimate;
+  if (typeof task.actualHours === 'number' && task.actualHours > 0) return task.actualHours;
+  return defaultEstimateHours;
+}
+
+/** True when `getTaskDurationHours` falls back to the default: no estimate and no logged effort. */
+function isUnestimated(task: Task): boolean {
+  return getTaskEstimateHours(task) === undefined && !(typeof task.actualHours === 'number' && task.actualHours > 0);
 }
 
 /** The task's `allocation`, clamped to (0, 1]; 1 when unset or invalid. */
@@ -41,8 +49,8 @@ export function getTaskAllocation(task: Task): number {
 }
 
 /** Working hours a task spans: its effort divided by its allocation. */
-export function getTaskElapsedHours(task: Task): number {
-  return getTaskDurationHours(task) / getTaskAllocation(task);
+export function getTaskElapsedHours(task: Task, defaultEstimateHours?: number): number {
+  return getTaskDurationHours(task, defaultEstimateHours) / getTaskAllocation(task);
 }
 
 /** True for completed or canceled tasks (by `semanticStatus`, else the default `done`/`canceled` statuses). */
@@ -59,12 +67,12 @@ export type EffortBasis = 'estimate' | 'remaining';
  * more time and occupies nobody), otherwise its effort divided by its allocation. With
  * `effort: 'remaining'`, an in-progress task's effort is `max(0, estimate - loggedHours)`.
  */
-export function getTaskScheduledHours(task: Task, effort: EffortBasis = 'estimate'): number {
+export function getTaskScheduledHours(task: Task, effort: EffortBasis = 'estimate', defaultEstimateHours?: number): number {
   if (isTaskFinished(task)) return 0;
   if (effort === 'remaining' && isTaskInProgress({ status: task.status, semanticStatus: task.semanticStatus })) {
-    return Math.max(0, getTaskDurationHours(task) - (task.loggedHours ?? 0)) / getTaskAllocation(task);
+    return Math.max(0, getTaskDurationHours(task, defaultEstimateHours) - (task.loggedHours ?? 0)) / getTaskAllocation(task);
   }
-  return getTaskElapsedHours(task);
+  return getTaskElapsedHours(task, defaultEstimateHours);
 }
 
 export interface CPMOptions {
@@ -100,6 +108,11 @@ export interface CPMOptions {
    * no time either way.
    */
   effort?: EffortBasis;
+  /**
+   * Hours assumed for an unfinished task with no estimate and no logged effort. Default 1. Such
+   * tasks are listed in `unestimatedTaskIds`, so a half-estimated plan does not look certain.
+   */
+  defaultEstimateHours?: number;
 }
 
 export type LevelingPriority = 'slack' | 'priority' | 'dueDate' | 'order';
@@ -119,6 +132,27 @@ export function resolveTaskSchedule(
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * The instant a task's `deadline` falls on for `calendar`: the last working moment at or before it.
+ * A date-only deadline means the end of that day, so `2026-10-09` is the close of work on the 9th.
+ */
+export function getDeadlineInstant(deadline: string, calendar: WorkSchedule = DEFAULT_WORK_SCHEDULE): Date {
+  const limit = /^\d{4}-\d{2}-\d{2}$/.test(deadline)
+    ? toDateString(new Date(parseDate(deadline).getTime() + 24 * 60 * 60 * 1000))
+    : deadline;
+  return previousWorkingTime(limit, calendar);
+}
+
+/** Tasks whose forecast finish is after their deadline. */
+const missedDeadlines = (schedules: TaskCriticalPathSchedule[]) =>
+  schedules.filter((s) => (s.deadlineVarianceHours ?? 0) < -0.001).map((s) => s.taskId);
+
+/** Output fields that describe a task's milestone flag and deadline. */
+const milestoneFields = (task: Task, deadline: Date | undefined, varianceHours: number | undefined) => ({
+  ...(task.isMilestone ? { isMilestone: true as const } : {}),
+  ...(deadline ? { deadlineDate: deadline.toISOString(), deadlineVarianceHours: round2(varianceHours!) } : {})
+});
+
 const allocationField = (task: Task) => (getTaskAllocation(task) < 1 ? { allocation: getTaskAllocation(task) } : {});
 
 interface TaskGraph {
@@ -129,10 +163,49 @@ interface TaskGraph {
   /** successors[u]: tasks that can only start after u finishes. */
   successors: Map<string, Set<string>>;
   topoOrder: string[];
+  /** Tasks that are on, or wait on, a dependency cycle. */
+  cyclicTaskIds: string[];
+  /** Summary tasks (tasks with subtasks), which are not scheduled, and the leaf tasks under each. */
+  summaries: Map<string, { task: Task; leafIds: string[] }>;
+  /** Deadlines that cap a leaf task: its own and its summary tasks'. */
+  deadlines: Map<string, string[]>;
+  /** Start constraints (`earliestStart`) on a leaf task: its own and its summary tasks'. */
+  earliestStarts: Map<string, string[]>;
+  /** Lag in working hours on the edge `before -> after` (see `edgeKey`); absent means 0. */
+  lags: Map<string, number>;
 }
 
+const edgeKey = (before: string, after: string) => `${before}\u0000${after}`;
+
+const deadlinesOf = (graph: TaskGraph, id: string) => graph.deadlines.get(id) ?? [];
+
+/**
+ * The scheduling graph. Only leaf tasks are scheduled: a summary task (one with subtasks among
+ * `tasks`) spans its subtasks, so a dependency on it applies to every leaf under it, and its
+ * deadline caps those leaves. Summaries are reported afterwards as roll-ups (`addSummaries`).
+ */
 function buildGraph(tasks: Task[], dependencies: TaskDependency[]): TaskGraph {
-  const taskMap = new Map<string, Task>(tasks.map((t) => [t.id, t]));
+  const summaryIds = getSummaryTaskIds(tasks);
+  const all = new Map<string, Task>(tasks.map((t) => [t.id, t]));
+  const childrenOf = new Map<string, string[]>();
+  for (const t of tasks) {
+    if (t.parentId && summaryIds.has(t.parentId)) childrenOf.set(t.parentId, [...(childrenOf.get(t.parentId) ?? []), t.id]);
+  }
+  const leavesOf = (id: string, seen = new Set<string>()): string[] => {
+    if (!summaryIds.has(id) || seen.has(id)) return [id];
+    seen.add(id);
+    return childrenOf.get(id)!.flatMap((child) => leavesOf(child, seen));
+  };
+  const summaries = new Map([...summaryIds].map((id) => [id, { task: all.get(id)!, leafIds: leavesOf(id) }]));
+  const deadlines = new Map<string, string[]>();
+  const earliestStarts = new Map<string, string[]>();
+  for (const t of tasks) {
+    for (const leaf of t.deadline ? leavesOf(t.id) : []) deadlines.set(leaf, [...(deadlines.get(leaf) ?? []), t.deadline!]);
+    for (const leaf of t.earliestStart ? leavesOf(t.id) : []) earliestStarts.set(leaf, [...(earliestStarts.get(leaf) ?? []), t.earliestStart!]);
+  }
+  const lags = new Map<string, number>();
+
+  const taskMap = new Map<string, Task>(tasks.filter((t) => !summaryIds.has(t.id)).map((t) => [t.id, t]));
   const taskIds = Array.from(taskMap.keys());
 
   // Build adjacency graph:
@@ -147,22 +220,18 @@ function buildGraph(tasks: Task[], dependencies: TaskDependency[]): TaskGraph {
   }
 
   for (const dep of dependencies) {
-    let sourceId: string | null = null;
-    let targetId: string | null = null;
-
-    if (dep.type === 'blocking') {
-      // taskId depends on dependsOnTaskId (dependsOnTaskId -> taskId)
-      sourceId = dep.dependsOnTaskId;
-      targetId = dep.taskId;
-    } else if (dep.type === 'blocked_by') {
-      // dependsOnTaskId is blocked by taskId (taskId -> dependsOnTaskId)
-      sourceId = dep.taskId;
-      targetId = dep.dependsOnTaskId;
-    }
-
-    if (sourceId && targetId && taskMap.has(sourceId) && taskMap.has(targetId) && sourceId !== targetId) {
-      prerequisites.get(targetId)!.add(sourceId);
-      successors.get(sourceId)!.add(targetId);
+    const edge = precedenceOf(dep);
+    if (!edge || !all.has(edge.before) || !all.has(edge.after)) continue;
+    const lag = Number.isFinite(dep.lagHours) ? dep.lagHours! : 0;
+    for (const before of leavesOf(edge.before)) {
+      for (const after of leavesOf(edge.after)) {
+        if (before === after) continue;
+        prerequisites.get(after)!.add(before);
+        successors.get(before)!.add(after);
+        // Two links between the same tasks: the longer wait wins
+        const key = edgeKey(before, after);
+        if (lag !== 0 || lags.has(key)) lags.set(key, Math.max(lags.get(key) ?? -Infinity, lag));
+      }
     }
   }
 
@@ -193,16 +262,63 @@ function buildGraph(tasks: Task[], dependencies: TaskDependency[]): TaskGraph {
     }
   }
 
-  // If there's a cycle or disconnected nodes not processed in topoOrder, append them
-  if (topoOrder.length < taskIds.length) {
-    for (const id of taskIds) {
-      if (!topoOrder.includes(id)) {
-        topoOrder.push(id);
-      }
-    }
-  }
+  // Tasks on or after a dependency cycle never reach in-degree 0. Schedule them in input order so
+  // the analysis still completes, and report them (`cyclicTaskIds`): their dates are not reliable.
+  const sorted = new Set(topoOrder);
+  const cyclicTaskIds = taskIds.filter((id) => !sorted.has(id));
+  topoOrder.push(...cyclicTaskIds);
 
-  return { taskMap, taskIds, prerequisites, successors, topoOrder };
+  return { taskMap, taskIds, prerequisites, successors, topoOrder, cyclicTaskIds, summaries, deadlines, earliestStarts, lags };
+}
+
+/**
+ * Adds each summary task to `analysis` as a roll-up of the leaf tasks under it: earliest start,
+ * latest finish, least slack, critical when any leaf is. Summaries are not added to
+ * `criticalTaskIds`, whose tasks are the scheduled (leaf) ones. A summary's own deadline is
+ * reported against its latest finish.
+ */
+function addSummaries(analysis: CriticalPathAnalysis, graph: TaskGraph, schedule: WorkSchedule): CriticalPathAnalysis {
+  const byId = new Map(analysis.tasks.map((t) => [t.taskId, t]));
+  const rollups: TaskCriticalPathSchedule[] = [];
+  const missed: string[] = [];
+  for (const [id, { task, leafIds }] of graph.summaries) {
+    const leaves = leafIds.map((leaf) => byId.get(leaf)).filter((t): t is TaskCriticalPathSchedule => Boolean(t));
+    if (!leaves.length) continue;
+    const min = (pick: (t: TaskCriticalPathSchedule) => number) => Math.min(...leaves.map(pick));
+    const max = (pick: (t: TaskCriticalPathSchedule) => number) => Math.max(...leaves.map(pick));
+    const dates = (pick: (t: TaskCriticalPathSchedule) => string | undefined) => leaves.map(pick).filter((d): d is string => Boolean(d)).sort();
+    const [starts, finishes, lateStarts, lateFinishes] = [dates((t) => t.earlyStartDate), dates((t) => t.earlyFinishDate), dates((t) => t.lateStartDate), dates((t) => t.lateFinishDate)];
+    const slack = min((t) => t.totalSlack);
+    const earlyFinishDate = finishes[finishes.length - 1];
+    const deadline = task.deadline && earlyFinishDate ? getDeadlineInstant(task.deadline, schedule) : undefined;
+    const variance = deadline ? slackHours(new Date(earlyFinishDate!), deadline, schedule) : undefined;
+    if (variance !== undefined && variance < -0.001) missed.push(id);
+    rollups.push({
+      taskId: id,
+      isSummary: true,
+      earlyStart: min((t) => t.earlyStart),
+      earlyFinish: max((t) => t.earlyFinish),
+      lateStart: min((t) => t.lateStart),
+      lateFinish: max((t) => t.lateFinish),
+      totalSlack: slack,
+      slackWorkingHours: slack,
+      isCritical: leaves.some((t) => t.isCritical),
+      durationHours: round2(max((t) => t.earlyFinish) - min((t) => t.earlyStart)),
+      ...(starts.length ? { earlyStartDate: starts[0], earlyFinishDate, lateStartDate: lateStarts[0], lateFinishDate: lateFinishes[lateFinishes.length - 1] } : {}),
+      ...milestoneFields({ ...task, isMilestone: false }, deadline, variance)
+    });
+  }
+  if (!rollups.length) return analysis;
+  return { ...analysis, tasks: [...analysis.tasks, ...rollups], missedDeadlineTaskIds: [...analysis.missedDeadlineTaskIds, ...missed] };
+}
+
+/** Completes a project's analysis: unestimated tasks and summary roll-ups. */
+function finishAnalysis(analysis: CriticalPathAnalysis, graph: TaskGraph, schedule: WorkSchedule, taskIds: string[]): CriticalPathAnalysis {
+  const unestimatedTaskIds = taskIds.filter((id) => {
+    const task = graph.taskMap.get(id)!;
+    return !isTaskFinished(task) && isUnestimated(task);
+  });
+  return addSummaries({ ...analysis, ...(unestimatedTaskIds.length ? { unestimatedTaskIds } : {}) }, graph, schedule);
 }
 
 /**
@@ -266,8 +382,35 @@ function scheduleOnDates(
       return [id, options.calendars === 'assignee' ? resolveTaskSchedule(task, { ...options, schedule: seg.schedule }) : seg.schedule];
     })
   );
-  const durationOf = new Map(taskIds.map((id) => [id, getTaskScheduledHours(taskMap.get(id)!, options.effort)]));
-  const ctx: PassContext = { taskMap, calendarOf, durationOf, startOf: (id) => segmentOf.get(id)!.start };
+  const durationOf = new Map(taskIds.map((id) => [id, getTaskScheduledHours(taskMap.get(id)!, options.effort, options.defaultEstimateHours)]));
+  // A task's late finish is capped by its own deadline and by those of the summary tasks above it
+  const deadlineOf = new Map(
+    taskIds.flatMap((id) => {
+      const instants = deadlinesOf(graph, id).map((d) => getDeadlineInstant(d, calendarOf.get(id)!));
+      return instants.length ? [[id, new Date(Math.min(...instants.map((d) => d.getTime())))] as const] : [];
+    })
+  );
+  const ownDeadlineOf = (id: string) => {
+    const deadline = taskMap.get(id)!.deadline;
+    return deadline ? getDeadlineInstant(deadline, calendarOf.get(id)!) : undefined;
+  };
+  // A start constraint means "not before": the first working moment at or after it
+  const notBefore = new Map(
+    taskIds.flatMap((id) => {
+      const instants = (graph.earliestStarts.get(id) ?? []).map((d) => nextWorkingTime(d, calendarOf.get(id)!));
+      return instants.length ? [[id, new Date(Math.max(...instants.map((d) => d.getTime())))] as const] : [];
+    })
+  );
+  const ctx: PassContext = {
+    taskMap,
+    calendarOf,
+    durationOf,
+    deadlineOf,
+    ownDeadlineOf,
+    notBefore,
+    lagOf: (before, after) => graph.lags.get(edgeKey(before, after)) ?? 0,
+    startOf: (id) => segmentOf.get(id)!.start
+  };
   const endOfProjects = (dates: Dates) => {
     const ends = new Map(segments.map((seg) => [seg.projectId, latest(seg.taskIds.map((id) => dates.finish.get(id)!), seg.start)]));
     return (id: string) => ends.get(segmentOf.get(id)!.projectId)!;
@@ -276,8 +419,16 @@ function scheduleOnDates(
 
   const early = forwardPass(topoOrder, prerequisites, ctx);
   const late = backwardPass([...topoOrder].reverse(), (id) => successors.get(id)!, endOfProjects(early), ctx);
-  const analyse = (seg: ProjectSegment, e: Dates, l: Dates, extra?: (id: string) => Partial<TaskCriticalPathSchedule>) =>
-    buildAnalysis(seg, calculatedAt, e, l, ctx, extra);
+  const cyclic = new Set(graph.cyclicTaskIds);
+  const analyse = (seg: ProjectSegment, e: Dates, l: Dates, extra?: (id: string) => Partial<TaskCriticalPathSchedule>) => {
+    const cyclicTaskIds = seg.taskIds.filter((id) => cyclic.has(id));
+    return finishAnalysis(
+      { ...buildAnalysis(seg, calculatedAt, e, l, ctx, extra), ...(cyclicTaskIds.length ? { cyclicTaskIds } : {}) },
+      graph,
+      seg.schedule,
+      seg.taskIds
+    );
+  };
 
   if (!options.levelResources) {
     const overallocations = findOverallocations(taskMap, early, resourcesOf);
@@ -324,8 +475,41 @@ interface PassContext {
   taskMap: Map<string, Task>;
   calendarOf: Map<string, WorkSchedule>;
   durationOf: Map<string, number>;
+  /** Tasks' deadlines on their own calendars, including inherited ones; they cap late finishes. */
+  deadlineOf: Map<string, Date>;
+  /** A task's own deadline, which its schedule reports. */
+  ownDeadlineOf: (id: string) => Date | undefined;
   /** Earliest start for a task: its project's start. */
   startOf: (id: string) => Date;
+  /** Tasks' start constraints (`earliestStart`), as working instants on their calendars. */
+  notBefore: Map<string, Date>;
+  /** Lag on a dependency, in working hours of the waiting task's calendar. */
+  lagOf: (before: string, after: string) => number;
+}
+
+/** `date` moved by `hours` working hours on `calendar` (back when negative). */
+function shiftWorking(date: Date, hours: number, calendar: WorkSchedule): Date {
+  if (hours > 0) return addWorkingHours(date, hours, calendar);
+  if (hours < 0) return subtractWorkingHours(date, -hours, calendar);
+  return date;
+}
+
+/**
+ * When a task may start, given when its predecessors finish: the latest of its project's start, its
+ * start constraint and each predecessor's finish plus the lag on that dependency.
+ */
+function readyTime(id: string, prerequisites: Map<string, Set<string>>, finish: Map<string, Date>, ctx: PassContext): Date {
+  let ready = ctx.startOf(id);
+  const floor = ctx.notBefore.get(id);
+  if (floor && floor > ready) ready = floor;
+  const calendar = ctx.calendarOf.get(id)!;
+  for (const p of prerequisites.get(id)!) {
+    const f = finish.get(p);
+    if (!f) continue;
+    const after = shiftWorking(f, ctx.lagOf(p, id), calendar);
+    if (after > ready) ready = after;
+  }
+  return ready;
 }
 
 interface Dates {
@@ -340,11 +524,24 @@ function latest(dates: Iterable<Date>, floor: Date): Date {
 }
 
 function slackHours(earlyFinish: Date, lateFinish: Date, calendar: WorkSchedule): number {
-  return round2(
-    lateFinish >= earlyFinish
-      ? getWorkingHoursBetween(earlyFinish, lateFinish, calendar)
-      : -getWorkingHoursBetween(lateFinish, earlyFinish, calendar)
+  // `|| 0` turns -0 into 0
+  return (
+    round2(
+      lateFinish >= earlyFinish
+        ? getWorkingHoursBetween(earlyFinish, lateFinish, calendar)
+        : -getWorkingHoursBetween(lateFinish, earlyFinish, calendar)
+    ) || 0
   );
+}
+
+/**
+ * When a task that becomes ready at `ready` starts: the next working time, except that a
+ * zero-duration task (a milestone, or finished work) stays at the moment its predecessors finish
+ * when that is working time or the close of a window, rather than moving to the next morning.
+ */
+function startTime(ready: Date, duration: number, calendar: WorkSchedule): Date {
+  if (duration === 0 && previousWorkingTime(ready, calendar).getTime() === ready.getTime()) return ready;
+  return nextWorkingTime(ready, calendar);
 }
 
 /** Earliest dates ignoring resource limits. */
@@ -352,20 +549,17 @@ function forwardPass(order: string[], prerequisites: Map<string, Set<string>>, c
   const start = new Map<string, Date>();
   const finish = new Map<string, Date>();
   for (const id of order) {
-    let ready = ctx.startOf(id);
-    for (const p of prerequisites.get(id)!) {
-      const f = finish.get(p);
-      if (f && f > ready) ready = f;
-    }
+    const ready = readyTime(id, prerequisites, finish, ctx);
     const calendar = ctx.calendarOf.get(id)!;
-    const es = nextWorkingTime(ready, calendar);
+    const duration = ctx.durationOf.get(id)!;
+    const es = startTime(ready, duration, calendar);
     start.set(id, es);
-    finish.set(id, addWorkingHours(es, ctx.durationOf.get(id)!, calendar));
+    finish.set(id, addWorkingHours(es, duration, calendar));
   }
   return { start, finish };
 }
 
-/** Latest dates; `order` must list every successor before its predecessors. */
+/** Latest dates; `order` must list every successor before its predecessors. Deadlines cap them. */
 function backwardPass(order: string[], successorsOf: (id: string) => Iterable<string>, endOf: (id: string) => Date, ctx: PassContext): Dates {
   const start = new Map<string, Date>();
   const finish = new Map<string, Date>();
@@ -373,8 +567,12 @@ function backwardPass(order: string[], successorsOf: (id: string) => Iterable<st
     let due = endOf(id);
     for (const s of successorsOf(id)) {
       const ls = start.get(s);
-      if (ls && ls < due) due = ls;
+      // The successor's late start, less the lag it waits after this task finishes
+      const by = ls && shiftWorking(ls, -ctx.lagOf(id, s), ctx.calendarOf.get(s)!);
+      if (by && by < due) due = by;
     }
+    const deadline = ctx.deadlineOf.get(id);
+    if (deadline && deadline < due) due = deadline;
     const calendar = ctx.calendarOf.get(id)!;
     const lf = previousWorkingTime(due, calendar);
     finish.set(id, lf);
@@ -449,16 +647,12 @@ function levelSchedule(
     const id = first(eligible);
     eligible.delete(id);
 
-    let ready = ctx.startOf(id);
-    for (const p of prerequisites.get(id)!) {
-      const f = finish.get(p);
-      if (f && f > ready) ready = f;
-    }
+    const ready = readyTime(id, prerequisites, finish, ctx);
     const calendar = ctx.calendarOf.get(id)!;
     const duration = ctx.durationOf.get(id)!;
     const resources = duration > 0 ? resourcesOf(taskMap.get(id)!) : [];
     const allocation = getTaskAllocation(taskMap.get(id)!);
-    let es = nextWorkingTime(ready, calendar);
+    let es = startTime(ready, duration, calendar);
     let ef = addWorkingHours(es, duration, calendar);
     for (;;) {
       let release: Booking | undefined;
@@ -504,12 +698,33 @@ function levelSchedule(
   // whose finish freed its capacity.
   for (const [taskId, blocker] of waitingOn) link(blocker, taskId);
 
-  // Every edge (dependency or resource chain) goes forward in levelled start time; ties are
-  // zero-duration tasks, ordered by placement.
+  // The backward pass needs every successor (dependency or resource chain) before its
+  // predecessors. Edges mostly go forward in levelled start time, but a lead (negative lag) can
+  // start a successor first, so walk the edges depth-first, visiting tasks in start order.
   const placement = new Map(placed.map((id, i) => [id, i]));
-  const backwardOrder = [...taskIds].sort(
-    (a, b) => start.get(b)!.getTime() - start.get(a)!.getTime() || placement.get(b)! - placement.get(a)!
-  );
+  const byStart = [...taskIds].sort((a, b) => start.get(a)!.getTime() - start.get(b)!.getTime() || placement.get(a)! - placement.get(b)!);
+  const backwardOrder: string[] = [];
+  const visited = new Set<string>();
+  const visit = (root: string) => {
+    // Iterative post-order, so long chains cannot overflow the stack
+    const stack: Array<[string, Iterator<string>]> = [];
+    const enter = (id: string) => {
+      visited.add(id);
+      stack.push([id, [...successors.get(id)!, ...(resourceSuccessors.get(id) ?? [])][Symbol.iterator]()]);
+    };
+    enter(root);
+    while (stack.length) {
+      const [id, next] = stack[stack.length - 1];
+      const step = next.next();
+      if (step.done) {
+        stack.pop();
+        backwardOrder.push(id);
+      } else if (!visited.has(step.value)) {
+        enter(step.value);
+      }
+    }
+  };
+  for (const id of byStart) if (!visited.has(id)) visit(id);
 
   return {
     early: { start, finish } as Dates,
@@ -629,7 +844,7 @@ function buildAnalysis(
   ctx: PassContext,
   extra: (id: string) => Partial<TaskCriticalPathSchedule> = () => ({})
 ): CriticalPathAnalysis {
-  const { calendarOf, durationOf, taskMap } = ctx;
+  const { calendarOf, durationOf, ownDeadlineOf, taskMap } = ctx;
   const offset = (date: Date) =>
     date >= projectStart
       ? getWorkingHoursBetween(projectStart, date, projectSchedule)
@@ -660,6 +875,7 @@ function buildAnalysis(
       lateFinishDate: lf.toISOString(),
       ...(calendar.id ? { scheduleId: calendar.id } : {}),
       ...allocationField(taskMap.get(id)!),
+      ...milestoneFields(taskMap.get(id)!, ownDeadlineOf(id), ownDeadlineOf(id) ? slackHours(ef, ownDeadlineOf(id)!, calendar) : undefined),
       ...extra(id)
     });
   }
@@ -674,6 +890,7 @@ function buildAnalysis(
     projectStartDate: projectStart.toISOString(),
     projectEndDate: projectEnd.toISOString(),
     criticalTaskIds,
+    missedDeadlineTaskIds: missedDeadlines(schedules),
     tasks: schedules
   };
 }
@@ -719,7 +936,8 @@ export function calculatePortfolioCPM(
     projectId: p.projectId,
     start: startOrToday(p.projectStartDate),
     schedule: p.schedule || DEFAULT_WORK_SCHEDULE,
-    taskIds: p.tasks.map((t) => t.id)
+    // Summary tasks are not scheduled; they are added back as roll-ups
+    taskIds: p.tasks.map((t) => t.id).filter((id) => graph.taskMap.has(id))
   }));
   const result = scheduleOnDates(graph, segments, options, calculatedAt);
 
@@ -775,146 +993,36 @@ export function calculateCPM(
       projectStartDate: projectStartDate ? projectStartDate.toISOString() : undefined,
       projectEndDate: projectStartDate ? projectStartDate.toISOString() : undefined,
       criticalTaskIds: [],
+      missedDeadlineTaskIds: [],
       tasks: []
     };
   }
 
-  const { taskMap, taskIds, prerequisites, successors, topoOrder } = buildGraph(tasks, dependencies);
   if (options.levelResources && options.calendars !== 'assignee') {
     throw new Error("levelResources requires calendars: 'assignee'.");
   }
-  if (options.calendars === 'assignee') {
-    return calculateCalendarCPM(projectId, calculatedAt, { taskMap, taskIds, prerequisites, successors, topoOrder }, options);
+  // Both modes run the same date-based passes; project mode puts every task on the project calendar.
+  if (options.calendars === 'assignee' || projectStartDate) {
+    return calculateCalendarCPM(projectId, calculatedAt, buildGraph(tasks, dependencies), options);
   }
+  // Without a start date there is nothing to date the schedule from. It runs from a fixed anchor and
+  // reports working-hour offsets only, which do not depend on the anchor because they count working
+  // time on the one calendar. Deadlines and start constraints are dates, so they do not apply.
+  const undatedTasks = tasks.map(({ deadline: _deadline, earliestStart: _earliestStart, ...task }) => task);
+  const analysis = calculateCalendarCPM(projectId, calculatedAt, buildGraph(undatedTasks, dependencies), {
+    ...options,
+    projectStartDate: UNDATED_ANCHOR
+  });
+  return withoutDates(analysis);
+}
 
-  // --- FORWARD PASS ---
-  const earlyStart = new Map<string, number>();
-  const earlyFinish = new Map<string, number>();
+/** A Monday at UTC midnight: where an undated project-calendar schedule is laid out. */
+const UNDATED_ANCHOR = '2001-01-01T00:00:00.000Z';
 
-  for (const id of topoOrder) {
-    const task = taskMap.get(id)!;
-    const duration = getTaskScheduledHours(task, options.effort);
-    const prereqs = prerequisites.get(id) || new Set();
-
-    let maxPrereqFinish = 0;
-    for (const p of prereqs) {
-      const pFinish = earlyFinish.get(p) ?? 0;
-      if (pFinish > maxPrereqFinish) {
-        maxPrereqFinish = pFinish;
-      }
-    }
-
-    const es = maxPrereqFinish;
-    const ef = es + duration;
-
-    earlyStart.set(id, es);
-    earlyFinish.set(id, ef);
-  }
-
-  // Total project duration
-  let totalDurationHours = 0;
-  for (const ef of earlyFinish.values()) {
-    if (ef > totalDurationHours) {
-      totalDurationHours = ef;
-    }
-  }
-
-  // --- BACKWARD PASS ---
-  const lateStart = new Map<string, number>();
-  const lateFinish = new Map<string, number>();
-
-  // Process in reverse topological order
-  for (let i = topoOrder.length - 1; i >= 0; i--) {
-    const id = topoOrder[i];
-    const task = taskMap.get(id)!;
-    const duration = getTaskScheduledHours(task, options.effort);
-    const succs = successors.get(id) || new Set();
-
-    let minSuccLateStart = totalDurationHours;
-    if (succs.size > 0) {
-      minSuccLateStart = Infinity;
-      for (const s of succs) {
-        const sLateStart = lateStart.get(s);
-        if (sLateStart !== undefined && sLateStart < minSuccLateStart) {
-          minSuccLateStart = sLateStart;
-        }
-      }
-      if (!Number.isFinite(minSuccLateStart)) {
-        minSuccLateStart = totalDurationHours;
-      }
-    }
-
-    const lf = minSuccLateStart;
-    const ls = lf - duration;
-
-    lateFinish.set(id, lf);
-    lateStart.set(id, ls);
-  }
-
-  // --- SLACK & CRITICAL PATH ---
-  const schedules: TaskCriticalPathSchedule[] = [];
-  const criticalTaskIds: string[] = [];
-
-  for (const id of taskIds) {
-    const es = earlyStart.get(id) ?? 0;
-    const ef = earlyFinish.get(id) ?? 0;
-    const ls = lateStart.get(id) ?? 0;
-    const lf = lateFinish.get(id) ?? 0;
-
-    const rawSlack = lf - ef;
-    const totalSlack = Math.round(rawSlack * 100) / 100;
-    const isCritical = totalSlack <= 0.001;
-
-    if (isCritical) {
-      criticalTaskIds.push(id);
-    }
-
-    const task = taskMap.get(id)!;
-    const duration = getTaskScheduledHours(task, options.effort);
-
-    const earlyStartDate = projectStartDate
-      ? addWorkingHours(projectStartDate, es, schedule).toISOString()
-      : undefined;
-    const earlyFinishDate = projectStartDate
-      ? addWorkingHours(projectStartDate, ef, schedule).toISOString()
-      : undefined;
-    const lateStartDate = projectStartDate
-      ? addWorkingHours(projectStartDate, ls, schedule).toISOString()
-      : undefined;
-    const lateFinishDate = projectStartDate
-      ? addWorkingHours(projectStartDate, lf, schedule).toISOString()
-      : undefined;
-
-    schedules.push({
-      taskId: id,
-      earlyStart: Math.round(es * 100) / 100,
-      earlyFinish: Math.round(ef * 100) / 100,
-      lateStart: Math.round(ls * 100) / 100,
-      lateFinish: Math.round(lf * 100) / 100,
-      totalSlack,
-      isCritical,
-      durationHours: duration,
-      ...allocationField(task),
-      slackWorkingHours: totalSlack,
-      earlyStartDate,
-      earlyFinishDate,
-      lateStartDate,
-      lateFinishDate
-    });
-  }
-
-  const projectEndDate = projectStartDate
-    ? addWorkingHours(projectStartDate, totalDurationHours, schedule).toISOString()
-    : undefined;
-
+/** Drops the dates from an analysis laid out from `UNDATED_ANCHOR`, keeping working-hour offsets. */
+function withoutDates({ projectStartDate: _start, projectEndDate: _end, overallocations: _overallocations, ...analysis }: CriticalPathAnalysis): CriticalPathAnalysis {
   return {
-    projectId,
-    calculatedAt,
-    totalDurationHours: Math.round(totalDurationHours * 100) / 100,
-    totalWorkingHours: Math.round(totalDurationHours * 100) / 100,
-    projectStartDate: projectStartDate ? projectStartDate.toISOString() : undefined,
-    projectEndDate,
-    criticalTaskIds,
-    tasks: schedules
+    ...analysis,
+    tasks: analysis.tasks.map(({ earlyStartDate: _es, earlyFinishDate: _ef, lateStartDate: _ls, lateFinishDate: _lf, ...task }) => task)
   };
 }

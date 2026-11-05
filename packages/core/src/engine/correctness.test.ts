@@ -3,10 +3,16 @@ import {
   CriticalPathEngine,
   InMemoryStore,
   NotFoundError,
+  SQLiteStore,
   ValidationError,
+  calculateCPM,
+  ConflictError,
+  DEFAULT_SOFTWARE_WORKFLOW,
+  resolveStatusDefinition,
   createRolePolicy,
   type DomainEvent
 } from '../index.js';
+import { UpdateTaskSchema } from '../schemas/index.js';
 
 describe('project deletion', () => {
   it('finds subtasks without reloading the whole project for every task', async () => {
@@ -39,34 +45,56 @@ describe('auto-unblocking', () => {
     return { engine, events, project, task };
   }
 
-  it('does not announce tasks that were never blocked', async () => {
+  it('announces a downstream task once its last upstream task finishes, without writing to it', async () => {
     const { engine, events, task } = await setup();
     const up = await task('Up');
+    const other = await task('Other');
     const down = await task('Down');
     await engine.addDependency({ taskId: down.id, dependsOnTaskId: up.id, type: 'blocking' });
-    await engine.updateTask(up.id, { status: 'in_progress' });
+    await engine.addDependency({ taskId: down.id, dependsOnTaskId: other.id, type: 'blocking' });
+    expect((await engine.getTaskLifecycleState(down.id))?.isBlocked).toBe(true);
+
     await engine.updateTask(up.id, { status: 'done' });
-    expect(events).toHaveLength(0);
+    expect(events).toHaveLength(0); // `other` is still open
+    const before = await engine.getTask(down.id);
+    await engine.updateTask(other.id, { status: 'done' });
+    expect(events).toHaveLength(1);
+    expect(await engine.getTask(down.id)).toEqual(before);
+    expect((await engine.getTaskLifecycleState(down.id))?.isBlocked).toBe(false);
   });
 
-  it('treats canceled upstream tasks as satisfied, and unblocks when one is canceled', async () => {
+  it('keeps a manual block when dependencies finish', async () => {
+    const { engine, events, task } = await setup();
+    const up = await task('Up');
+    const down = await task('Down', { isBlocked: true, blockedReason: 'waiting on client sign-off' });
+    await engine.addDependency({ taskId: down.id, dependsOnTaskId: up.id, type: 'blocking' });
+
+    await engine.updateTask(up.id, { status: 'done' });
+    expect(events).toHaveLength(1);
+    expect(await engine.getTask(down.id)).toMatchObject({ isBlocked: true, blockedReason: 'waiting on client sign-off' });
+    expect((await engine.getTaskLifecycleState(down.id))?.isBlocked).toBe(true);
+  });
+
+  it('treats canceled upstream tasks as satisfied, everywhere', async () => {
     const { engine, events, task } = await setup();
     const done = await task('Done');
     const dropped = await task('Dropped');
-    const down = await task('Down', { isBlocked: true, blockedReason: 'waiting' });
+    const down = await task('Down');
     await engine.addDependency({ taskId: down.id, dependsOnTaskId: done.id, type: 'blocking' });
     await engine.addDependency({ taskId: down.id, dependsOnTaskId: dropped.id, type: 'blocking' });
 
     await engine.updateTask(dropped.id, { status: 'canceled' });
-    expect((await engine.getTask(down.id))?.isBlocked).toBe(true); // `done` is still open
-    await engine.updateTask(done.id, { status: 'in_progress' });
+    expect(events).toHaveLength(0); // `done` is still open
+    expect((await engine.getTaskLifecycleState(down.id))?.blockingTaskIds).toEqual([done.id]);
     await engine.updateTask(done.id, { status: 'done' });
-    expect(await engine.getTask(down.id)).toMatchObject({ isBlocked: false, blockedReason: null });
     expect(events).toHaveLength(1);
+    expect((await engine.getTaskLifecycleState(down.id))?.isBlocked).toBe(false);
   });
 
   it("reads each upstream task's status with its own project's definitions", async () => {
     const engine = new CriticalPathEngine();
+    const events: DomainEvent[] = [];
+    engine.events.subscribe('task.unblocked', (e) => void events.push(e));
     // 'shipped' means completed only in the shipping project's workflow
     const flow = await engine.createWorkflow({
       name: 'Shipping',
@@ -80,11 +108,11 @@ describe('auto-unblocking', () => {
     const shipping = await engine.createProject({ name: 'Shipping', workflowId: flow.id });
     const product = await engine.createProject({ name: 'Product' });
     const up = await engine.createTask({ projectId: shipping.id, title: 'Ship' });
-    const down = await engine.createTask({ projectId: product.id, title: 'Announce', isBlocked: true });
+    const down = await engine.createTask({ projectId: product.id, title: 'Announce' });
     await engine.addDependency({ taskId: down.id, dependsOnTaskId: up.id, type: 'blocking' });
 
     await engine.updateTask(up.id, { status: 'shipped' });
-    expect((await engine.getTask(down.id))?.isBlocked).toBe(false);
+    expect(events.map((e) => e.aggregateId)).toEqual([down.id]);
   });
 
   it('keeps tasks blocked by upstream work the caller cannot read', async () => {
@@ -99,9 +127,59 @@ describe('auto-unblocking', () => {
     await alice.addDependency({ taskId: down.id, dependsOnTaskId: first.id, type: 'blocking' });
     await engine.addDependency({ taskId: down.id, dependsOnTaskId: hidden.id, type: 'blocking' });
 
+    const events: DomainEvent[] = [];
+    engine.events.subscribe('task.unblocked', (e) => void events.push(e));
     await alice.updateTask(first.id, { status: 'in_progress' });
     await alice.updateTask(first.id, { status: 'done' });
-    expect((await engine.getTask(down.id))?.isBlocked).toBe(true);
+    expect(events).toHaveLength(0);
+  });
+});
+
+describe('dependency types', () => {
+  it('rejects real cycles and allows informational back-links', async () => {
+    const engine = new CriticalPathEngine();
+    const project = await engine.createProject({ name: 'P' });
+    const [a, b] = await Promise.all(['A', 'B'].map((title) => engine.createTask({ projectId: project.id, title })));
+    await engine.addDependency({ taskId: b.id, dependsOnTaskId: a.id, type: 'blocking' });
+    await expect(engine.addDependency({ taskId: a.id, dependsOnTaskId: b.id, type: 'blocking' })).rejects.toThrow(/circular/);
+    await expect(engine.addDependency({ taskId: a.id, dependsOnTaskId: b.id, type: 'relates_to' })).resolves.toMatchObject({ type: 'relates_to' });
+    // relates_to links are not upstream or downstream work
+    expect((await engine.getTaskDependencyGraph(a.id)).upstreamTasks).toEqual([]);
+    expect((await engine.getTaskLifecycleState(a.id))?.isBlocked).toBe(false);
+  });
+
+  it('rejects types outside the model, including the removed blocked_by', async () => {
+    const engine = new CriticalPathEngine();
+    const project = await engine.createProject({ name: 'P' });
+    const [a, b] = await Promise.all(['A', 'B'].map((title) => engine.createTask({ projectId: project.id, title })));
+    for (const type of ['blocked_by', 'finish_to_start']) {
+      await expect(engine.addDependency({ taskId: a.id, dependsOnTaskId: b.id, type: type as 'blocking' })).rejects.toThrow(ValidationError);
+    }
+  });
+
+  it('reads legacy blocked_by records in scheduling order, and finds cycles through them', async () => {
+    const store = new InMemoryStore();
+    const engine = new CriticalPathEngine({ store });
+    const project = await engine.createProject({ name: 'P', startDate: '2026-10-05T09:00:00.000Z' });
+    const a = await engine.createTask({ projectId: project.id, title: 'A', estimatedHours: 8 });
+    const b = await engine.createTask({ projectId: project.id, title: 'B', estimatedHours: 8 });
+    // Written by an older release: B waits for A
+    await store.addDependency({ taskId: a.id, dependsOnTaskId: b.id, type: 'blocked_by' as 'blocking' });
+
+    expect((await engine.getTaskDependencyGraph(b.id)).upstreamTasks.map((t) => t.id)).toEqual([a.id]);
+    const analysis = await engine.calculateCriticalPath(project.id);
+    expect(analysis.tasks.find((t) => t.taskId === b.id)?.earlyStart).toBe(8);
+    await expect(engine.addDependency({ taskId: a.id, dependsOnTaskId: b.id, type: 'blocking' })).rejects.toThrow(/circular/);
+  });
+
+  it('reports cycles that reach critical path analysis', () => {
+    const task = (id: string) => ({ id, projectId: 'p', title: id, status: 'todo', priority: 'medium', estimatedHours: 8, createdAt: '', updatedAt: '' }) as const;
+    const analysis = calculateCPM('p', [task('A'), task('B'), task('C')], [
+      { id: '1', taskId: 'A', dependsOnTaskId: 'B', type: 'blocking' },
+      { id: '2', taskId: 'B', dependsOnTaskId: 'A', type: 'blocking' }
+    ]);
+    expect(analysis.cyclicTaskIds).toEqual(['A', 'B']);
+    expect(calculateCPM('p', [task('C')], []).cyclicTaskIds).toBeUndefined();
   });
 });
 
@@ -112,7 +190,7 @@ describe('engine updates ignore ownership fields', () => {
     const other = await engine.createProject({ name: 'Other' });
     const container = await engine.createContainer({ projectId: project.id, name: 'C' });
     const iteration = await engine.createIteration({ projectId: project.id, name: 'I', status: 'planning' });
-    const deliverable = await engine.createDeliverable({ projectId: project.id, title: 'D', status: 'draft' } as never);
+    const deliverable = await engine.createDeliverable({ projectId: project.id, title: 'D', status: 'planned' } as never);
     const task = await engine.createTask({ projectId: project.id, title: 'T' });
     const comment = await engine.withActor({ userId: 'u1' }).addComment({ taskId: task.id, content: 'Hi' });
 
@@ -170,5 +248,117 @@ describe('references are checked even without a policy', () => {
     // A cross-tenant id written directly to the store is ignored when resolving
     await engine.store.updateProject(project.id, { workflowId: theirs.id });
     expect((await engine.resolveProjectWorkflow(project.id))?.id).toBe(ours.id);
+  });
+});
+
+describe('milestones and deadlines', () => {
+  it.each([
+    ['InMemoryStore', () => new InMemoryStore()],
+    ['SQLiteStore', () => new SQLiteStore({ filename: ':memory:' })]
+  ])('round-trip, drive the schedule and can be cleared (%s)', async (_name, makeStore) => {
+    const engine = new CriticalPathEngine({ store: makeStore() });
+    const project = await engine.createProject({ name: 'Launch', startDate: '2026-10-05T09:00:00.000Z' });
+    const build = await engine.createTask({ projectId: project.id, title: 'Build', estimatedHours: 16 });
+    const launch = await engine.createTask({ projectId: project.id, title: 'Launch', isMilestone: true, deadline: '2026-10-05' });
+    await engine.addDependency({ taskId: launch.id, dependsOnTaskId: build.id, type: 'blocking' });
+    expect(await engine.getTask(launch.id)).toMatchObject({ isMilestone: true, deadline: '2026-10-05' });
+
+    const analysis = await engine.calculateCriticalPath(project.id);
+    expect(analysis.missedDeadlineTaskIds).toEqual([launch.id]);
+    expect(analysis.tasks.find((t) => t.taskId === launch.id)).toMatchObject({ isMilestone: true, deadlineVarianceHours: -8 });
+
+    await engine.updateTask(launch.id, { deadline: undefined });
+    expect((await engine.getTask(launch.id))?.deadline).toBeUndefined();
+    expect((await engine.calculateCriticalPath(project.id)).missedDeadlineTaskIds).toEqual([]);
+  });
+});
+
+describe('status integrity', () => {
+  it('rejects statuses outside the project workflow and never guesses from spelling', async () => {
+    const engine = new CriticalPathEngine();
+    const project = await engine.createProject({ name: 'P' });
+    await expect(engine.createTask({ projectId: project.id, title: 'A', status: 'unfinished' })).rejects.toThrow(/not in this project's workflow/);
+    const task = await engine.createTask({ projectId: project.id, title: 'A' });
+    await expect(engine.updateTask(task.id, { status: 'qa' })).rejects.toThrow(ValidationError);
+    expect(resolveStatusDefinition('unfinished').category).toBe('not_started');
+    expect(resolveStatusDefinition('done').category).toBe('completed');
+  });
+
+  it('derives semanticStatus from the status, ignoring callers', async () => {
+    const engine = new CriticalPathEngine();
+    const project = await engine.createProject({ name: 'P' });
+    const task = await engine.createTask({ projectId: project.id, title: 'A', semanticStatus: 'completed' } as Parameters<typeof engine.createTask>[0]);
+    expect(task).toMatchObject({ status: 'todo', semanticStatus: 'not_started' });
+    const updated = await engine.updateTask(task.id, { semanticStatus: 'completed' });
+    expect(updated?.semanticStatus).toBe('not_started');
+  });
+
+  it('does not accept derived fields over the API', () => {
+    for (const field of ['semanticStatus', 'loggedHours', 'actualHours', 'billableHours', 'inProgressSince', 'blockedSince']) {
+      expect(UpdateTaskSchema.safeParse({ [field]: field === 'semanticStatus' ? 'completed' : 1 }).success).toBe(false);
+    }
+    expect(UpdateTaskSchema.safeParse({ completedAt: '2026-01-02T00:00:00.000Z' }).success).toBe(true);
+  });
+
+  it('keeps logged effort when a task leaves in-progress', async () => {
+    const engine = new CriticalPathEngine();
+    const project = await engine.createProject({ name: 'P' });
+    const task = await engine.createTask({ projectId: project.id, title: 'A', estimatedHours: 10 });
+    await engine.updateTask(task.id, { status: 'in_progress' });
+    await engine.logTime({ taskId: task.id, hours: 6 });
+    const done = await engine.updateTask(task.id, { status: 'done' });
+    expect(done).toMatchObject({ loggedHours: 6, actualHours: 6 });
+    expect(done?.actualDurationSeconds).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('workflow changes', () => {
+  async function setup() {
+    const engine = new CriticalPathEngine();
+    const simple = await engine.createWorkflow({
+      name: 'Simple',
+      statuses: [
+        { key: 'open', label: 'Open', category: 'not_started' },
+        { key: 'closed', label: 'Closed', category: 'completed' }
+      ],
+      transitions: [],
+      defaultStatusKey: 'open'
+    });
+    const project = await engine.createProject({ name: 'P', workflowId: simple.id });
+    return { engine, simple, project };
+  }
+
+  it('requires a status mapping when switching a project to a workflow without its tasks’ statuses', async () => {
+    const { engine, project } = await setup();
+    const software = await engine.createWorkflow({ ...DEFAULT_SOFTWARE_WORKFLOW, name: 'Software' });
+    const task = await engine.createTask({ projectId: project.id, title: 'A', status: 'closed' });
+
+    await expect(engine.updateProject(project.id, { workflowId: software.id })).rejects.toThrow(ConflictError);
+    expect((await engine.getProject(project.id))?.workflowId).toBe(project.workflowId);
+
+    await engine.updateProject(project.id, { workflowId: software.id }, { statusMapping: { closed: 'done' } });
+    expect(await engine.getTask(task.id)).toMatchObject({ status: 'done', semanticStatus: 'completed' });
+    expect(await engine.getAllowedTaskTransitions(task.id)).not.toEqual([]);
+  });
+
+  it('refuses to delete a workflow in use, or to remove statuses tasks are in', async () => {
+    const { engine, simple, project } = await setup();
+    await engine.createTask({ projectId: project.id, title: 'A', status: 'closed' });
+    await expect(engine.deleteWorkflow(simple.id)).rejects.toThrow(ConflictError);
+    await expect(engine.updateWorkflow(simple.id, { statuses: [simple.statuses[0]] })).rejects.toThrow(/closed/);
+    // Adding a status is fine
+    await expect(
+      engine.updateWorkflow(simple.id, { statuses: [...simple.statuses, { key: 'parked', label: 'Parked', category: 'not_started' }] })
+    ).resolves.toBeTruthy();
+  });
+
+  it('pins the default workflow at creation, so a new default does not move projects', async () => {
+    const engine = new CriticalPathEngine();
+    const first = await engine.createWorkflow({ ...DEFAULT_SOFTWARE_WORKFLOW, name: 'First', isDefault: true });
+    const project = await engine.createProject({ name: 'P' });
+    expect(project.workflowId).toBe(first.id);
+    await engine.updateWorkflow(first.id, { isDefault: false });
+    await engine.createWorkflow({ ...DEFAULT_SOFTWARE_WORKFLOW, name: 'Second', isDefault: true });
+    expect((await engine.resolveProjectWorkflow(project.id))?.id).toBe(first.id);
   });
 });

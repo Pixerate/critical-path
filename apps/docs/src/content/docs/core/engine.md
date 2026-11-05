@@ -79,14 +79,14 @@ const urgentTasks = await engine.listTasks({
 
 ## Automatic Unblocking
 
-When a task's status is updated to a `completed` semantic status (e.g. `done`), the engine automatically queries all dependent downstream tasks:
+When a task is completed or canceled, the engine checks the tasks that depend on it and publishes `task.unblocked` for each one whose upstream work is now all finished:
 
 ```typescript
 // Task B depends on Task A
-// Marking Task A as 'done' automatically unblocks Task B:
-await engine.updateTask(taskA.id, { status: 'done' });
+await engine.updateTask(taskA.id, { status: 'done' }); // publishes task.unblocked for Task B
 
-// Query blockers for Task B
-const blockers = await engine.getTaskBlockers(taskB.id);
-console.log(blockers); // [] -> No remaining blockers!
+const state = await engine.getTaskLifecycleState(taskB.id);
+console.log(state?.blockingTaskIds); // [] -> no remaining blockers
 ```
+
+Dependency blocking is derived, so Task B is not modified. A manual block (`isBlocked`, `blockedReason`) stays until it is cleared. See [Dependencies](/core/dependencies/#blocking-and-automatic-unblocking).

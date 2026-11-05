@@ -2,7 +2,7 @@
 
 > Critical Path is an enterprise-ready headless project management engine for modern web applications.
 > Source: https://criticalpath.uchiage.app
-> Documentation generated on: 2026-10-21T07:50:34.201Z
+> Documentation generated on: 2026-11-02T21:41:02.596Z
 
 ================================================================================
 
@@ -396,6 +396,51 @@ Work through the items whose version is newer than the version you started from 
 - **Check:** `GET /workload`, `GET /projects/:id/workload` or `GET /projects/:id/ladder` query strings; CLI `propose`/`subtask`, `client.createSubtask` or MCP `create_task` relying on `draft`/`todo`.
 - **Fix:** use the documented values (`interval`: `day|week|month`; `groupBy`: `assignee|team|taskType|priority|status`; `metric`: `scheduled|logged|remaining|blended`; dates as `YYYY-MM-DD`; `level`: `macro|standard|concrete|all`). New tasks start in the workflow's default status unless you pass `status`.
 
+### core 0.52: milestones and deadlines
+
+- **Check:** objects typed as `CriticalPathAnalysis` that your code builds (test fixtures, mocks), assertions on the dates of zero-duration or finished tasks in assignee-calendar analysis, or iterations with `type: 'milestone'`.
+- **Fix:** add `missedDeadlineTaskIds: []` to built analyses. Expect a zero-duration task to sit at its predecessors' finish (for example 17:00) instead of the next working morning. Model dated checkpoints as tasks with `isMilestone: true` and a `deadline` linked by dependencies, instead of milestone-type iterations (those still load, with no special meaning).
+
+### core 0.53: dependency types and blocking
+
+- **Check:** `type: 'blocked_by'` anywhere (requests, seed data, stored dependency records); code that reads `task.isBlocked` to decide whether dependencies are finished, or that sets `isBlocked` when adding a dependency; `task.unblocked` handlers that assume the task was marked blocked; assertions that `relates_to` links appear in `upstreamTasks`.
+- **Fix:** send `{ taskId: <waiting task>, dependsOnTaskId: <task it waits for>, type: 'blocking' }` instead of `blocked_by`, and migrate stored `blocked_by` records the same way (they are still read correctly meanwhile). Read `getTaskLifecycleState(id).isBlocked` (dependencies or a manual block) or `.blockingTaskIds` (dependencies only). Clear manual blocks yourself; the engine no longer does. Read a dependency's direction with `precedenceOf(dependency)`.
+
+### core 0.54: statuses, workflows and derived fields
+
+- **Check:** task statuses that are not in the project's workflow (including custom keys you relied on being classified by name); request bodies or `createTask` calls that include `semanticStatus`, `loggedHours`, `actualHours`, `billableHours`, `actualDuration*`, `billableDurationMinutes`, `inProgressSince`, `blockedSince` or `blockedDurationSeconds`; code that reads `actualHours` as elapsed time; project updates that change `workflowId`, `workflow` or `statusDefinitions`; workflow deletes; MCP `update_task` calls with `loggedHours`.
+- **Fix:** add missing statuses to the workflow with the right `category`. Log hours with `logTime` / `POST /time-entries` / MCP `log_time` instead of writing them. Read elapsed time from `actualDurationSeconds`. Pass `statusMapping` when changing a project's statuses (a `409` lists the statuses that need one). Switch projects off a workflow before deleting it. Handle `409` (`ConflictError`) where you call these.
+
+### core 0.55: summary tasks and roll-ups
+
+- **Check:** projects with subtasks (`parentId`); code that sums `totalEstimatedHours`, `durationHours` or `progressPercentage` from the ladder or deliverable summaries, or reads EVM for canceled tasks; code that expects a parent task in `criticalTaskIds`.
+- **Fix:** expect parents to be roll-ups of their subtasks (`isSummary: true` in analysis results, not scheduled or counted on their own); estimate subtasks rather than parents. Expect lower totals where parents were double-counted and canceled work was included, and 100% progress when the remaining work is canceled. Read `unestimatedTaskIds`, and set `defaultEstimateHours` if 1 hour is the wrong assumption for unestimated tasks.
+
+### core 0.56: clearing fields, dates and time entries
+
+- **Check:** request bodies with dates that are not ISO dates or date-times; a custom `StorageAdapter`; UI code that spreads update payloads into local state; code that relied on `logTime` accepting unknown task ids.
+- **Fix:** send ISO dates (keep free-form text in `customFields`). Implement `getTimeEntry` and `updateTimeEntry` in custom adapters and run the conformance suite. Apply update payloads with `applyUpdate` so `null` removes a field. Send `null` (not an empty string) to clear an optional field. Correct time with `PATCH /time-entries/:id` instead of writing hours on the task.
+
+### core 0.57: one scheduling engine, start constraints and lag
+
+- **Check:** assertions on project-mode `earlyStartDate` / `lateStartDate` of tasks that follow another task, or on the exact shape of project-mode results.
+- **Fix:** expect a successor to start at the next working moment after its predecessor finishes (offsets are unchanged), and `overallocations` / `scheduleId` in project-mode results. Model "not before" dates with `earliestStart` and waits between tasks with `lagHours` instead of dummy tasks.
+
+### core 0.58: deliverables, entities and helpers
+
+- **Check:** deliverable statuses other than `planned`, `in_progress`, `in_review`, `delivered`, `canceled`; `format` or `specs` on deliverables; imports of `TaskEntity`, `ProjectEntity`, `DeliverableEntity`, `BaseEntity`, `isDraftTask`, `isArchivedTask`, `isTrashedTask`, `isTrashedOrArchivedTask`, `isWorkflowTask` (or `isTaskDraft`, `isTaskArchived`, `isTaskTrashed`, `isTaskTrashedOrArchived`, `isTaskWorkflow`); tasks whose `assigneeId` is not in `assignees`; the `'blocked'` tag; `sprintId`.
+- **Fix:** set `deliverableStatusDefinitions` on projects that use other statuses (`CREATIVE_DELIVERABLE_STATUSES` for the old list). Move `format` / `specs` into `customFields`. Use the engine instead of entity classes (`createTask`, `updateTask`, `logTime`). Model drafts, archiving or trash as statuses or `customFields` your app filters on. Make `assigneeId` one of `assignees`. Set `isBlocked` instead of tagging `'blocked'`. Use `iterationId`.
+
+### core 0.59: baselines
+
+- **Check:** a custom `StorageAdapter`.
+- **Fix:** implement `getBaselines(projectId)` (oldest first), `getBaseline(id)`, `createBaseline(baseline)` (assign `id` and `createdAt`) and `deleteBaseline(id)`, and run the conformance suite.
+
+### core 0.60: paginated comments
+
+- **Check:** a custom `StorageAdapter`; direct HTTP calls to `GET /comments?taskId=` or `GET /tasks/:taskId/comments` (not through `CriticalPathClient`) that expect every comment.
+- **Fix:** implement `queryComments({ taskId, limit, cursor })` returning `{ items, nextCursor }` ordered by `(createdAt, id)` ascending (`paginate` and `matchesCommentQuery` do this in memory), and run the conformance suite. For HTTP calls, follow `nextCursor` until it is absent, or use `client.getComments`, which does.
+
 ### mcp 0.19: tool results, selection and annotations
 
 - **Check:** code that reads MCP or WebMCP results of `list_projects`, `list_deliverables` or `list_comments` (for example `window.__CRITICAL_PATH_WEBMCP__.execute(...)`, `onToolExecuted`, or a tool's `execute`), `get_*` results compared with `null`, a `tools: [...]` option or `--tools` value, or `ToolDefinition.annotations.requiresConfirmation`.
@@ -530,7 +575,7 @@ The engine is the pure TypeScript brain of the framework. It handles:
 - Real-time dependency graph maintenance.
 - Topological sort & cycle detection (preventing deadlocks like A &rarr; B &rarr; A).
 - Critical Path Method (Early Start, Early Finish, Late Start, Late Finish, Total Slack).
-- Automatic unblocking: When a task is marked `completed`, dependent downstream tasks automatically transition from `blocked` to `todo`/`in_progress`.
+- Automatic unblocking: when a task is completed or canceled, `task.unblocked` is published for each downstream task that is now free to start. Dependency blocking is derived from the graph; manual blocks (`isBlocked`) are left alone.
 
 ### 3. Universal Router (`@critical-path/server`)
 A lightweight, zero-dependency router that receives standard Web `Request` objects and outputs standard `Response` objects. Framework adapters wrap this router for Next.js, SvelteKit, and standard serverless endpoints.
@@ -629,17 +674,17 @@ const urgentTasks = await engine.listTasks({
 
 ## Automatic Unblocking
 
-When a task's status is updated to a `completed` semantic status (e.g. `done`), the engine automatically queries all dependent downstream tasks:
+When a task is completed or canceled, the engine checks the tasks that depend on it and publishes `task.unblocked` for each one whose upstream work is now all finished:
 
 ```typescript
 // Task B depends on Task A
-// Marking Task A as 'done' automatically unblocks Task B:
-await engine.updateTask(taskA.id, { status: 'done' });
+await engine.updateTask(taskA.id, { status: 'done' }); // publishes task.unblocked for Task B
 
-// Query blockers for Task B
-const blockers = await engine.getTaskBlockers(taskB.id);
-console.log(blockers); // [] -> No remaining blockers!
+const state = await engine.getTaskLifecycleState(taskB.id);
+console.log(state?.blockingTaskIds); // [] -> no remaining blockers
 ```
+
+Dependency blocking is derived, so Task B is not modified. A manual block (`isBlocked`, `blockedReason`) stays until it is cleared. See [Dependencies](/core/dependencies/#blocking-and-automatic-unblocking).
 
 --------------------------------------------------------------------------------
 
@@ -663,25 +708,40 @@ type SemanticStatus = 'not_started' | 'in_progress' | 'completed' | 'canceled';
 type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled' | (string & {});
 
 interface Task {
+  // Abridged: every field is in packages/core/src/types/index.ts
   id: string;
   projectId: string;
+  key?: string;                    // e.g. "MOB-12"
   title: string;
   description?: string;
-  status: TaskStatus;
-  semanticStatus?: SemanticStatus;
+  status: TaskStatus;              // must be one of the project's statuses
+  semanticStatus?: SemanticStatus; // derived from status
   priority: Priority;
-  assigneeId?: string;
+  taskType?: string;
+  assigneeId?: string;             // primary assignee; scheduling uses it
+  assignees?: TaskAssignee[];      // everyone on the task; includes assigneeId
   reporterId?: string;
-  sprintId?: string;
-  dueDate?: string;            // ISO-8601 string (e.g. 2026-09-15T00:00:00Z)
-  estimatedHours?: number;     // Effort, used for Critical Path calculations
-  allocation?: number;         // Share of the assignee's time, (0, 1], default 1
-  loggedHours?: number;
+  reviewerId?: string;
+  iterationId?: string;            // sprint or cycle
+  teamId?: string;
+  containerId?: string;
+  deliverableId?: string;
+  parentId?: string;               // a task with subtasks is a summary of them
+  plannedStartDate?: string;       // informational
+  dueDate?: string;                // informational
+  deadline?: string;               // latest finish, enforced by critical path analysis
+  earliestStart?: string;          // start no earlier than, enforced by critical path analysis
+  isMilestone?: boolean;           // zero-duration checkpoint
+  estimatedHours?: number;         // effort
+  allocation?: number;             // share of the assignee's time, (0, 1]; default 1
+  loggedHours?: number;            // derived: sum of time entries
+  progress?: number;               // 0-100
+  isBlocked?: boolean;             // manual block; dependency blocking is derived
+  blockedReason?: string | null;
   tags?: string[];
   customFields?: Record<string, unknown>;
-  parentId?: string;           // Parent task: must exist in the same project and cannot create a cycle
-  createdAt: string;           // ISO-8601
-  updatedAt: string;           // ISO-8601
+  createdAt: string;
+  updatedAt: string;
 }
 ```
 
@@ -695,6 +755,29 @@ In many organizations, teams use custom statuses like `qa_in_review`, `waiting_o
 | `in_progress` | Active work underway | `in_progress`, `in_review` |
 | `completed` | Successfully resolved; unblocks downstream tasks | `done`, `closed` |
 | `canceled` | Abandoned or discarded; bypasses blockers | `canceled` |
+
+A task's `status` must be one of its project's statuses (the project's `statusDefinitions`, else its workflow's); anything else is rejected. `semanticStatus` is always derived from the status's definition and cannot be set directly. Keys are never guessed from their spelling: data written around the engine with an unknown key counts as `not_started`.
+
+### Derived fields
+
+The engine maintains these fields; request bodies that include them are rejected:
+
+- `semanticStatus`: from the status definition.
+- `loggedHours`, `actualHours`, `billableHours`: effort, summed from time entries (`engine.logTime`, `POST /time-entries`, MCP `log_time`).
+- `actualDurationSeconds`, `actualDurationMinutes`, `inProgressSince`: elapsed time in progress, measured from status changes. Elapsed time is not effort, so it never changes the hours above.
+- `blockedSince`, `blockedDurationSeconds`, `billableDurationMinutes`.
+
+`completedAt`, `actualStartDate` and `actualEndDate` stay writable for imports and corrections.
+
+### Changing a project's workflow
+
+New projects are pinned to the workflow they start with. To switch one, pass a mapping for every status its tasks are in that the new workflow does not have:
+
+```typescript
+await engine.updateProject(projectId, { workflowId: newWorkflow.id }, { statusMapping: { in_review: 'todo' } });
+```
+
+Over HTTP, send `statusMapping` in the `PATCH /projects/:id` body. Without a complete mapping the update is refused with `409` and nothing changes. Removing a status from a workflow that tasks are still in, or deleting a workflow that a project uses, is also refused with `409`.
 
 ---
 
@@ -732,6 +815,20 @@ interface Project {
 ```
 
 ---
+
+## Deliverable Entity
+
+A deliverable is an output the project produces (a document, a build, an asset), linked to the tasks that produce it (`task.deliverableId`). Like tasks, its `status` is a key from a status set with semantic categories:
+
+- `project.deliverableStatusDefinitions`, else `DEFAULT_DELIVERABLE_STATUSES`: `planned`, `in_progress`, `in_review` (in progress), `delivered` (completed), `canceled`.
+- `CREATIVE_DELIVERABLE_STATUSES` is a preset for production pipelines (`draft` … `client_review`, `revision_requested`, `approved`, `delivered`, `canceled`).
+
+Unknown statuses are rejected. `semanticStatus` is derived, and `deliveredAt` is set when the deliverable first reaches a completed status. Domain-specific details (a format, resolution, page count) go in `customFields`. For a dated checkpoint the schedule should enforce, use a milestone task with a `deadline` instead.
+
+```typescript
+await engine.updateProject(projectId, { deliverableStatusDefinitions: CREATIVE_DELIVERABLE_STATUSES });
+await engine.createDeliverable({ projectId, title: 'Hero video', customFields: { format: 'ProRes 422HQ' } });
+```
 
 ## Dependency Entity
 
@@ -792,17 +889,23 @@ Task dependencies in Critical Path are modeled as a **Directed Acyclic Graph (DA
 
 ## Adding Dependencies
 
-A dependency indicates that a **target task** depends on a **source task** (the prerequisite).
+A dependency has two tasks and a type:
+
+- `blocking`: `taskId` cannot start until `dependsOnTaskId` finishes. This is the edge the critical path, lifecycle state and auto-unblocking use.
+- `relates_to`: an informational link. It never affects the schedule, never blocks, and never forms a cycle.
+
+A `blocking` dependency can carry `lagHours`: working hours to wait after the other task finishes (negative for a lead). See [start constraints and lag](/core/calendars-and-schedules/#start-constraints-and-lag). Two links between the same tasks that differ only in lag are separate dependencies; the longer wait applies.
 
 ```typescript
+// The frontend waits for the wireframes
 await engine.addDependency({
-  projectId: 'proj-1',
-  sourceTaskId: 'task-wireframes',
-  targetTaskId: 'task-frontend-ui',
-  type: 'finish_to_start',
-  lagHours: 0,
+  taskId: 'task-frontend-ui',
+  dependsOnTaskId: 'task-wireframes',
+  type: 'blocking'
 });
 ```
+
+Releases before 0.53 also had `blocked_by` (the same edge with the ids swapped). New `blocked_by` dependencies are rejected; records already stored with it are still read in the right direction. To migrate them, swap `taskId` and `dependsOnTaskId` and set `type: 'blocking'`.
 
 ---
 
@@ -810,22 +913,19 @@ await engine.addDependency({
 
 Circular dependencies cause infinite loops and project deadlocks (e.g. Task A depends on Task B, which depends on Task A).
 
-Critical Path performs an automatic topological cycle check before adding or updating any dependency edge:
+Critical Path checks every new `blocking` dependency against the existing scheduling edges before adding it:
 
 ```typescript
 try {
-  // If task-a already depends on task-b:
-  await engine.addDependency({
-    projectId: 'proj-1',
-    sourceTaskId: 'task-b',
-    targetTaskId: 'task-a',
-    type: 'finish_to_start',
-  });
+  // task-a already waits for task-b, so task-b cannot wait for task-a
+  await engine.addDependency({ taskId: 'task-b', dependsOnTaskId: 'task-a', type: 'blocking' });
 } catch (error) {
   console.error(error.message);
-  // Throws: "Circular dependency detected: task-a -> task-b -> task-a"
+  // Cannot add dependency from "task-b" to "task-a" because it would create a circular dependency cycle ...
 }
 ```
+
+`calculateCPM` is a pure function, so it can be handed cyclic data that never went through the engine. It still completes, scheduling the affected tasks in input order, and lists them in `cyclicTaskIds`; their dates are not reliable.
 
 ---
 
@@ -846,13 +946,20 @@ console.log(`Project Completion Time: ${result.totalDurationHours} hours`);
 console.log(`Bottleneck Tasks:`, result.criticalTaskIds);
 ```
 
-## Automatic unblocking
+## Blocking and automatic unblocking
 
-When a task is completed or canceled, the engine checks the tasks that depend on it. A downstream task that is marked blocked (`isBlocked`, `blockedReason` or `blockedSince`) is unblocked once every task it depends on is completed or canceled, and `task.unblocked` is published. Blocked time is added to `blockedDurationSeconds`.
+A task can be blocked in two independent ways:
+
+- **By dependencies (derived).** `getTaskLifecycleState(taskId)` lists `blockingTaskIds`: upstream `blocking` tasks that are not completed or canceled. Nothing is stored for this; it is always computed from the graph.
+- **By hand (stored).** `isBlocked` and `blockedReason` record a block the graph does not know about, such as "waiting on client sign-off". Only a person or your code clears them.
+
+`isBlocked` in the lifecycle state is true when either applies.
+
+When a task is completed or canceled, the engine publishes `task.unblocked` for each downstream task whose upstream tasks are now all completed or canceled, so it is free to start. The task itself is not changed: a manual block stays in place.
 
 - Each task's status is read with its own project's status definitions, so dependencies across projects with different workflows work.
-- Upstream tasks the caller cannot read still count, so nothing is unblocked early.
-- Tasks that were never blocked get no event.
+- Upstream tasks the caller cannot read still count, so nothing is announced early.
+- Canceled upstream tasks count as satisfied, here, in lifecycle state and in critical path analysis.
 
 Adding a dependency that already exists (same tasks and type) returns the existing one instead of creating a duplicate. Both tasks must exist.
 
@@ -936,7 +1043,7 @@ In **Critical Path**, this is materialized as a multi-scale timeline framework c
                                     ▼
 +------------------------------------------------------------------------+
 | 3. Concrete Rung (Low Abstraction - Tangible Ground Truth)            |
-|    - Physical Deliverables (format specs, resolutions, output URLs)   |
+|    - Physical Deliverables (output URLs, custom fields)              |
 |    - Real-world Attachments & File Assets (render frames, Figma, docs) |
 |    - Daily Effort Distributions & Timesheet Work Logs                  |
 |    - Reality Delta: Planned vs. Actual duration & schedule drift       |
@@ -949,6 +1056,8 @@ Answers executive questions: *Are we on track? What is the projected completion?
 - Automatic phase synthesis grouped by parent tasks, deliverable containers, or sprints.
 - Health states: `on_track`, `at_risk`, `delayed`, `completed`.
 - Total estimated hours vs. logged hours, overall percentage progress, and bottleneck critical path duration.
+- Effort and progress come from leaf tasks: a task with subtasks is spanned by them, so its own estimate is not added again. Progress per task is the inferred progress (explicit, todos, effort or schedule; see [task metrics](/core/task-metrics/)), weighted by estimate.
+- Canceled tasks leave the estimate and the progress denominator (their logged hours still count), so a project whose remaining work was canceled reaches 100% and `completed`.
 
 ### 2. Standard Rung: Topological CPM Gantt
 Answers tactical questions: *How do parts connect, and where are the real bottlenecks?*
@@ -959,7 +1068,7 @@ Answers tactical questions: *How do parts connect, and where are the real bottle
 
 ### 3. Concrete Rung: Tangible Ground Truth & Reality Delta
 Answers empirical questions: *What was actually built? Where is the real work?*
-- Links tasks to concrete deliverables (render specs, resolution, output URLs).
+- Links tasks to concrete deliverables (output URLs and their custom fields).
 - Aggregates file attachments and uploaded assets.
 - Timesheet log breakdown by day (`dailyEffort`).
 - **Reality Delta**: Calculates exact variance between planned estimates and actual logged hours (`hoursDelta`, `scheduleStatus`).
@@ -1340,7 +1449,9 @@ const cpm = await engine.calculateCriticalPath(projectId, { calendars: 'assignee
 
 Suppose Bob's task finishes Thursday at 17:00 and Alice, who does not work Fridays, picks up the next task. Her task starts Monday at 09:00, and everything after it moves with it. A single project calendar would have started it on Friday.
 
-How the results differ from project mode:
+Both modes run the same date-based passes; project mode simply puts every task on the project calendar. With a start date, every task starts at the next working moment after its predecessors finish (a task after a 17:00 finish starts at 09:00 the next working day). Without one, project mode reports working-hour offsets only: no dates, and deadlines and start constraints (which are dates) do not apply.
+
+How assignee mode differs:
 
 - **Dates are exact per task.** Each task starts at the next working moment on its own calendar after its predecessors finish. Each `scheduleId` names the calendar used (when the schedule has an `id`).
 - **Slack is in the task's own working hours.** A Monday–Thursday assignee has less slack across the same span than a Monday–Friday one.
@@ -1419,6 +1530,73 @@ await engine.createTeam({ name: 'Agency', memberIds: [], headcount: 2 });       
 - **Slack:** a delayed task is linked to the task whose finish freed its slot, as are tasks whose combined allocation exceeds the pool. Slack is exact along those chains but can be generous elsewhere in a busy pool.
 - **Over-allocation report:** entries have `teamId` (instead of `assigneeId`) and `capacity` when a pool is booked above its headcount, counting team tasks and members' own tasks.
 
+
+### Milestones and deadlines
+
+A **milestone** is a task with `isMilestone: true`: a zero-duration checkpoint such as a release, a client sign-off or a permit. It takes no time and no effort whatever its estimate says, and it joins the schedule through dependencies like any other task. A **deadline** is the latest acceptable finish for any task, milestone or not:
+
+```ts
+const build = await engine.createTask({ projectId, title: 'Build', estimatedHours: 16 });
+const launch = await engine.createTask({ projectId, title: 'Launch', isMilestone: true, deadline: '2026-10-05' });
+await engine.addDependency({ taskId: launch.id, dependsOnTaskId: build.id, type: 'blocking' });
+
+const cpm = await engine.calculateCriticalPath(projectId);
+cpm.missedDeadlineTaskIds; // [launch.id]
+cpm.tasks.find((t) => t.taskId === launch.id);
+// { isMilestone: true, deadlineDate: '2026-10-05T17:00:00.000Z', deadlineVarianceHours: -8, totalSlack: -8, ... }
+```
+
+- **Deadlines cap late dates.** A task's late finish is the earlier of what its successors allow and its deadline. When the forecast misses, slack goes negative on the task and on every task driving it, so the critical path shows what to fix. Forecast (early) dates and `projectEndDate` do not move.
+- **A date-only deadline is the end of that working day** on the task's calendar and time zone; a date-time is the last working moment at or before it. A deadline on a weekend or holiday falls back to the previous working day's close.
+- **`deadlineVarianceHours`** is the working time from the forecast finish to the deadline: positive is ahead, negative is late. `missedDeadlineTaskIds` lists every task with a negative variance.
+- **Project-calendar mode needs a start date** (`project.startDate` or `projectStartDate`) to place deadlines; without one they are ignored. Assignee mode always works in dates.
+- **Levelling** sees deadlines through slack, so with the default `levelingPriority: 'slack'` the work behind a tight deadline gets people first.
+- **`dueDate` is different:** it is informational and only used by `levelingPriority: 'dueDate'`. Use `deadline` when the schedule should hold you to the date.
+- On assignee calendars, a milestone sits at the moment its predecessors finish (for example 17:00), not the next morning.
+
+### Start constraints and lag
+
+Two more constraints are dates and waits, so they work like deadlines and need a start date in project mode:
+
+- **`earliestStart`** on a task: it starts no earlier than the first working moment at or after it ("the venue is free from the 12th"). A date-only value is the start of that day. On a summary task it applies to every leaf under it. Levelling honours it too.
+- **`lagHours`** on a `blocking` dependency: working hours (on the waiting task's calendar) between the other task's finish and this one's start, e.g. `16` to let concrete cure for two days. A negative value is a lead: the waiting task may start that long before the other finishes.
+
+```ts
+await engine.addDependency({ taskId: build.id, dependsOnTaskId: pour.id, type: 'blocking', lagHours: 16 });
+await engine.updateTask(fitOut.id, { earliestStart: '2026-11-12' });
+```
+
+A start constraint that makes a deadline impossible shows up like any other miss: negative slack and an entry in `missedDeadlineTaskIds`. Dependencies are finish-to-start; with lag or lead that covers most start-to-start and finish-to-finish needs. `plannedStartDate` stays informational.
+
+### Summary tasks (subtasks)
+
+A task with subtasks is a **summary task**. It is not scheduled itself: its subtasks carry the work.
+
+- A dependency on a summary task applies to every leaf task under it (`Y -> Epic` makes each of the epic's subtasks wait for `Y`; `Epic -> X` makes `X` wait for all of them).
+- A summary's own estimate is ignored, and so is its `isMilestone`. A summary's `deadline` caps every leaf under it.
+- The summary appears in `tasks` with `isSummary: true`, as a roll-up: earliest start, latest finish, least slack, critical when any leaf is. It is not listed in `criticalTaskIds`, and it is listed in `missedDeadlineTaskIds` when its latest leaf finishes after its deadline.
+- Workload, the ladder and deliverable summaries also count effort from leaf tasks only, so subtasks are never counted twice.
+
+### Unestimated tasks
+
+An unfinished task with no estimate and no logged effort is scheduled for `defaultEstimateHours` (default 1) and listed in `unestimatedTaskIds`, so a half-estimated plan does not look more certain than it is. Set the assumption per call (`defaultEstimateHours`, `?defaultEstimateHours=` over HTTP) or on the engine (`criticalPathDefaultEstimateHours`). An explicit estimate of 0 counts as an estimate.
+
+### Baselines
+
+A baseline is a named, frozen copy of a project's analysis: the plan to measure slippage against. Take one when a plan is agreed, then pass its id to later analyses:
+
+```ts
+const plan = await engine.createBaseline(projectId, { name: 'Agreed plan', calendars: 'assignee' });
+
+const now = await engine.calculateCriticalPath(projectId, { calendars: 'assignee', baselineId: plan.id });
+now.baseline;  // { endVarianceHours: 16, slippedTaskIds: [...], addedTaskIds: [...], removedTaskIds: [...] }
+now.tasks[0].baseline; // { startVarianceHours: 8, finishVarianceHours: 16 }
+```
+
+- Variances are working hours on the project calendar; positive is later than the plan. Dated analyses compare dates, so re-running from a later start shows the delay; undated ones compare offsets.
+- `slippedTaskIds` lists leaf tasks that finish later than planned, worst first. Tasks added since are in `addedTaskIds`, removed ones in `removedTaskIds`.
+- `createBaseline` takes the same options as the analysis (`calendars`, `levelResources`, `effort`, ...); compare like with like. It needs `plan.manage`; reading needs access to the project. Baselines are deleted with their project.
+- Over HTTP: `POST /projects/:projectId/baselines`, `GET /projects/:projectId/baselines`, `GET | DELETE /baselines/:baselineId`, and `?baselineId=` on `GET /projects/:projectId/critical-path`. MCP: `create_baseline`, `list_baselines`, and `baselineId` on `calculate_critical_path`.
 
 ### Finished tasks
 
@@ -1604,6 +1782,8 @@ $$\text{Cost Variance } (CV) = EV - AC$$
 $$\text{Schedule Variance } (SV) = EV - PV$$
 $$\text{Cost Performance Index } (CPI) = \frac{EV}{AC}$$
 $$\text{Schedule Performance Index } (SPI) = \frac{EV}{PV}$$
+
+A canceled task was never going to be earned: its PV and EV are 0, so it is never behind schedule, and any hours logged on it are cost with no value (CV = -AC). Estimates are read with `getTaskEstimateHours` (milestones are 0).
 
 ---
 
@@ -1808,7 +1988,7 @@ outbox.start();            // poll in this process
 
 Each attempt is a separate entry. A worker leases the entries it claims, so other workers skip them, and deletes each one after the attempt (a failed attempt first stores its retry). If a worker dies mid-delivery, the entry is claimed again when its lease expires. Delivery is therefore **at-least-once**: deduplicate on `X-CriticalPath-Delivery`. `FirebaseStore` claims without a transaction, so concurrent workers can occasionally deliver the same attempt twice.
 
-Jobs are enqueued after the mutation is stored, so a crash between the two can still drop an event.
+When the outbox uses the engine's own store and that store supports transactions (`SQLiteStore`), each mutation runs in a transaction that also writes its jobs. A committed change always has its deliveries queued, and a rolled-back change has none. If the jobs cannot be written, the mutation fails. `FirebaseStore`, `InMemoryStore` and stores without `transaction` write jobs right after the change is stored, so a crash between the two can still drop an event. A custom queue can join the transaction too: expose the store it writes to as `queue.store` and write through the `outbox` argument of `enqueue(job, delayMs, outbox)` when one is given.
 
 To use an existing job system instead, supply a `queue` that persists jobs and calls `engine.webhooks.deliver(job)` from a worker:
 
@@ -2198,7 +2378,7 @@ Initialize Firestore and instantiate `FirebaseStore`:
 
 ```typescript
 import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { CriticalPathEngine, FirebaseStore } from '@critical-path/core';
 
 // Initialize Firebase App with default credentials (or service account)
@@ -2206,10 +2386,8 @@ initializeApp();
 
 const db = getFirestore();
 
-const store = new FirebaseStore({
-  db,
-  collectionPrefix: 'cp_', // Optional prefix for collections
-});
+// fieldValue lets hour totals use Firestore's atomic increments
+const store = new FirebaseStore({ db, fieldValue: FieldValue });
 
 const engine = new CriticalPathEngine({ store });
 ```
@@ -2225,6 +2403,8 @@ projects  workflows  tasks  teams  containers  deliverables  iterations
 comments  attachments  activities  time_entries  dependencies  webhooks
 webhook_outbox
 ```
+
+Updates read and write each document inside `db.runTransaction`, so concurrent changes to one record (two `PATCH` requests, or a `PATCH` racing time being logged) retry instead of overwriting each other. Hour totals use `FieldValue.increment` when you pass `fieldValue` (recommended: it never contends), and the same transactions otherwise. A `db` without `runTransaction` (such as a hand-written mock) falls back to plain reads and writes.
 
 Queries push equality filters such as `projectId` and `tenantId` down to Firestore, which uses its automatic single-field indexes. Further task and activity filters, sorting and pagination run in memory, so very large projects are better served by SQLite or a custom adapter.
 
@@ -2251,10 +2431,11 @@ Any class implementing `StorageAdapter` from `@critical-path/core` can be passed
 | `ProjectRepository` | `getProjects`, `getProject`, `createProject`, `updateProject`, `deleteProject` |
 | `TaskRepository` | `getTasks(projectId?)`, `queryTasks(query)`, `getTask`, `createTask`, `updateTask`, `deleteTask` |
 | `WorkflowRepository`, `TeamRepository`, `ContainerRepository`, `IterationRepository`, `DeliverableRepository` | `get…s`, `get…`, `create…`, `update…`, `delete…` |
-| `CommentRepository` | `getComments(taskId)`, `getComment`, `addComment`, `updateComment`, `deleteComment`, optional `addReaction` / `removeReaction` |
+| `CommentRepository` | `getComments(taskId)`, `queryComments(query)`, `getComment`, `addComment`, `updateComment`, `deleteComment`, optional `addReaction` / `removeReaction` |
 | `AttachmentRepository` | `getAttachments(filter)`, `getAttachment`, `createAttachment`, `deleteAttachment` |
 | `ActivityRepository` | `getActivities(filter)`, `queryActivities(query)`, `logActivity` |
-| `TimeEntryRepository` | `getTimeEntries(taskId)`, `logTime`, `deleteTimeEntry` |
+| `BaselineRepository` | `getBaselines(projectId)` (oldest first), `getBaseline`, `createBaseline`, `deleteBaseline` |
+| `TimeEntryRepository` | `getTimeEntries(taskId)`, `getTimeEntry`, `logTime`, `updateTimeEntry`, `deleteTimeEntry` |
 | `DependencyRepository` | `getDependencies(taskId)`, `getDependency`, `addDependency`, `removeDependency` |
 | `WebhookRepository` | `getWebhooks`, `getWebhook`, `addWebhook`, `updateWebhook`, `deleteWebhook` |
 
@@ -2279,9 +2460,9 @@ const engine = new CriticalPathEngine({ store: new PostgresStore(pool) });
 - **Ordering.**
   - `getComments`: oldest first.
   - `getActivities`: newest first.
-  - `queryTasks`: `(createdAt, id)` ascending.
+  - `queryTasks`, `queryComments`: `(createdAt, id)` ascending.
   - `queryActivities`: `(createdAt, id)` descending.
-- **Filters.** Every filter passed to `getAttachments`, `getActivities`, `queryTasks` and `queryActivities` must be applied together. The exported helpers `matchesTaskQuery`, `matchesActivityQuery` and `paginate` implement the in-memory semantics if your database cannot push a filter down.
+- **Filters.** Every filter passed to `getAttachments`, `getActivities`, `queryTasks` and `queryActivities` must be applied together. The exported helpers `matchesTaskQuery`, `matchesActivityQuery`, `matchesCommentQuery` and `paginate` implement the in-memory semantics if your database cannot push a filter down.
 - **Hour totals (optional).** Implement `incrementTaskHours(taskId, { loggedHours?, actualHours?, billableHours? })` as a single atomic update (e.g. `UPDATE tasks SET loggedHours = COALESCE(loggedHours, 0) + $1 ...`) returning the updated task, or `null`. `logTime` uses it so concurrent logs are never lost; without it the engine falls back to read-modify-write.
 - **Transactions (optional).** Implement `transaction(fn)` to make cascading deletes atomic. Run `fn` with an adapter (`tx`) whose calls all belong to one database transaction, commit when it resolves, and roll back when it throws. A nested `transaction` call should join the outer one. Keep unrelated concurrent calls out of the transaction, for example by giving `tx` its own connection from a pool:
 
@@ -2906,7 +3087,25 @@ routes: [
 ]
 ```
 
-`engine` is the caller's `withActor` view, so authorization and tenancy apply. Errors thrown from handlers map to HTTP statuses just like built-in routes (`ForbiddenError` → 403, `ValidationError` → 400, ...). Plugin routes are not included in `/openapi.json`.
+`engine` is the caller's `withActor` view, so authorization and tenancy apply. Errors thrown from handlers map to HTTP statuses just like built-in routes (`ForbiddenError` → 403, `ValidationError` → 400, ...).
+
+Plugin routes appear in `/openapi.json` under the `Plugins` tag. Describe them with `openapi` (schemas may be zod schemas or JSON Schema), or set `hidden: true` to leave a route out:
+
+```typescript
+{
+  method: 'POST',
+  path: '/reports/:projectId/summary',
+  handler,
+  openapi: {
+    summary: 'Summarise a project',
+    tags: ['Reports'],
+    query: ['format'], // a trailing ! marks a parameter required
+    requestSchema: z.object({ since: z.string() }),
+    responseSchema: z.object({ taskCount: z.number() }),
+    status: 200
+  }
+}
+```
 
 ---
 
@@ -3034,16 +3233,21 @@ graph TD
 | `list_tasks` | core | Finding tasks by project, status, priority, assignee, iteration, deliverable, container or parent; returns `{ tasks, nextCursor }` | `projectId`, `status`, `priority`, `assigneeId`, `parentId`, `limit`, `cursor` |
 | `get_task` | core | One task's full record; with `includeDependencies`, the tasks it waits for and the tasks waiting for it | `id`, `includeDependencies` |
 | `create_task` | core | Adding work | `projectId`, `title`, `estimatedHours`, `priority`, `assigneeId` |
-| `update_task` | core | Changing status, priority, assignee, estimates, logged hours, blocked state | `id`, plus the fields to change |
+| `update_task` | core | Changing status, priority, assignee, estimates, deadline, blocked state | `id`, plus the fields to change |
+| `log_time` | core | Recording hours worked (the only way to add logged hours) | `taskId`, `hours`, `description` |
+| `update_time_entry` | core | Correcting logged time | `id`, `hours` |
+| `delete_time_entry` | core | Removing time logged by mistake | `id` |
 | `delete_task` | core | Permanent deletion (destructive) | `id` |
 | `add_dependency` | core | Making a task wait for another so the critical path orders them; adding an existing link returns it, a loop is refused | `taskId`, `dependsOnTaskId`, `type` |
 | `remove_dependency` | core | Removing that link by the same two task ids; returns `{ removed, dependencyIds }` | `taskId`, `dependsOnTaskId`, `type` |
-| `list_deliverables` | collaboration | A project's milestones; returns `{ deliverables }` | `projectId` |
-| `create_deliverable` | collaboration | A dated milestone grouping tasks | `projectId`, `title`, `dueDate`, `taskIds` |
-| `list_comments` | collaboration | A task's discussion; returns `{ comments }` | `taskId` |
+| `list_deliverables` | collaboration | A project's deliverables (outputs that group tasks); returns `{ deliverables }` | `projectId` |
+| `create_deliverable` | collaboration | An output that several tasks produce | `projectId`, `title`, `dueDate`, `taskIds` |
+| `list_comments` | collaboration | A task's discussion, oldest first; returns `{ comments, nextCursor }` | `taskId`, `limit`, `cursor` |
 | `add_comment` | collaboration | Recording a decision or note (authored by the server's actor) | `taskId`, `content` |
-| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort` |
+| `calculate_critical_path` | scheduling | Forecast finish, critical tasks, slack, over-allocations | `projectId`, `calendars`, `levelResources`, `effort`, `baselineId` |
 | `calculate_portfolio_critical_path` | scheduling | Several projects sharing people | `projectIds`, `projectOrder`, `calendars`, `levelResources` |
+| `create_baseline` | scheduling | Saving the agreed plan to track slippage | `projectId`, `name` |
+| `list_baselines` | scheduling | Finding a baseline to compare with | `projectId` |
 | `get_workload_distribution` | scheduling | Hours and utilization per person, team or category over time | `projectId`, `groupBy`, `interval`, `metric`, `startDate`, `endDate` |
 | `get_timeline_ladder` | analytics | Project status: phase health, timeline, evidence of work | `projectId`, `level` |
 | `get_task_ladder` | analytics | One task's phase, schedule position and evidence | `taskId` |
@@ -3421,7 +3625,7 @@ systemPrompt += '\n\n' + handle.instructions; // also mentions the ambient proje
 
 ## 📦 Structured results and annotations
 
-- Every tool declares an `outputSchema` and returns `structuredContent` (plus the same JSON as text for older clients). Results are always objects: list tools return `{ projects }`, `{ tasks, nextCursor }`, `{ deliverables }` or `{ comments }`.
+- Every tool declares an `outputSchema` and returns `structuredContent` (plus the same JSON as text for older clients). Results are always objects: list tools return `{ projects }`, `{ tasks, nextCursor }`, `{ deliverables }` or `{ comments, nextCursor }`.
 - A lookup that finds nothing (`get_task` with an unknown id, for example) is an error, not `null`.
 - Errors carry a recovery hint: a not-found error points to `list_projects` / `list_tasks`, invalid arguments point back to the input schema, and a permission error tells the agent to stop and tell the user.
 - Every tool sends the standard MCP annotations `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`. Only `delete_task` is destructive.
@@ -3540,7 +3744,7 @@ Description: Complete REST endpoint documentation exposed by @critical-path/serv
 
 The `@critical-path/server` router exposes the following REST endpoints under the configured base path (e.g. `/api/critical-path`).
 
-A machine-readable OpenAPI 3.1 document is served at `GET /openapi.json`. Its request bodies are generated from the same zod schemas the router validates with (`@critical-path/core/schemas`).
+A machine-readable OpenAPI 3.1 document is served at `GET /openapi.json`. Its request bodies are generated from the same zod schemas the router validates with (`@critical-path/core/schemas`). Plugin routes are listed too, under the `Plugins` tag unless their `openapi` metadata says otherwise.
 
 ---
 
@@ -3618,7 +3822,7 @@ Create a new task.
 ```
 
 ### `PATCH /tasks/:taskId`
-Update a task's title, status, priority, or custom fields.
+Update a task: only the fields sent change. Send `null` to remove an optional field (`{ "dueDate": null, "assigneeId": null }`); `title`, `status` and `priority` cannot be removed. The same applies to `PATCH` on projects (except `name` and `key`), deliverables (except `title` and `status`), containers and iterations (except `name`).
 
 ### `DELETE /tasks/:taskId`
 Delete a task with its subtasks (recursively), dependencies, comments, attachments (including stored files) and time entries. Pass `?subtasks=detach` to keep subtasks and clear their `parentId` instead.
@@ -3705,6 +3909,22 @@ Register a webhook. Returns `201 { webhook, secret }`; the secret is only shown 
 ### `GET | PATCH | DELETE /webhooks/:webhookId`
 Read, update (including `secret` rotation and `active`), or delete a webhook. See the Webhooks guide for the delivery format and signature verification.
 
+## Baselines
+
+### `GET | POST /projects/:projectId/baselines`
+List a project's baselines (oldest first), or save the current critical path analysis as one: `{ name, calendars?, levelResources?, levelingPriority?, effort?, defaultEstimateHours?, customFields? }` (needs `plan.manage`).
+
+### `GET | DELETE /baselines/:baselineId`
+Read or delete a baseline. Compare with one by adding `?baselineId=` to `GET /projects/:projectId/critical-path`: each task gets `baseline: { startVarianceHours, finishVarianceHours }` and the analysis gets `baseline: { endVarianceHours, slippedTaskIds, addedTaskIds, removedTaskIds }`.
+
+## Time Tracking
+
+### `GET /time-entries?taskId=:taskId` and `POST /time-entries`
+List a task's time entries, or log time (`{ taskId, hours, isBillable?, description?, loggedAt?, customFields? }`). Logging adds the hours to the task's `loggedHours`, `actualHours` and (when billable) `billableHours`. The task must exist.
+
+### `GET | PATCH | DELETE /time-entries/:timeEntryId`
+Read, correct (`{ hours?, isBillable?, description?, loggedAt?, customFields? }`; `null` clears `description` or `customFields`) or delete an entry. The task's hour totals move by the difference. Needs `time.manage` (project managers and admins by default), or `time.log` for your own entries. Publishes `time.updated` / `time.deleted`.
+
 ### `POST /status`
 Reports what the caller (typically an agent) is doing, as an `agent.status_updated` domain event delivered to webhooks. Body: `{ status?, taskId?, projectId?, details?, isEngaged? }` (strict; `taskId` or `projectId` required). Requires `task.update` on the project, so it only works within the caller's tenant (`404` otherwise). Returns `{ success, status, timestamp }`.
 
@@ -3731,6 +3951,8 @@ Errors are returned as JSON with an `error` message and, where useful, extra det
 ### Validation
 
 Request bodies must be sent as `Content-Type: application/json`. Browsers can send cross-site form posts (`text/plain`, form data) without a CORS preflight, so other content types are rejected with `415`, which protects cookie-authenticated deployments from cross-site request forgery.
+
+Every date field must be an ISO date (`2026-10-05`) or date-time (`2026-10-05T17:00:00Z`, with or without an offset); anything else is a `400`.
 
 Request bodies are strict. Server-assigned fields (`id`, `createdAt`, `updatedAt`, task `key`, and the owning `projectId` on updates), identity fields (`actorId`, `authorId`, `userId`, `uploaderId`) and unknown keys are rejected with `400`. Authors of comments, reactions, attachments and time entries are the caller resolved by `getContext`, or `anonymous`. Remove a reaction with `DELETE /comments/:commentId/reactions?emoji=<emoji>`.
 
@@ -3761,23 +3983,38 @@ export interface StatusDefinition {
 }
 
 export interface Task {
+  // Abridged: every field is in packages/core/src/types/index.ts
   id: string;
   projectId: string;
+  key?: string;                    // e.g. "MOB-12"
   title: string;
   description?: string;
-  status: TaskStatus;
-  semanticStatus?: SemanticStatus;
+  status: TaskStatus;              // must be one of the project's statuses
+  semanticStatus?: SemanticStatus; // derived from status
   priority: Priority;
-  assigneeId?: string;
+  taskType?: string;
+  assigneeId?: string;             // primary assignee; scheduling uses it
+  assignees?: TaskAssignee[];      // everyone on the task; includes assigneeId
   reporterId?: string;
-  sprintId?: string;
-  dueDate?: string;
-  estimatedHours?: number;
-  allocation?: number; // share of the assignee's time, (0, 1]; default 1
-  loggedHours?: number;
+  reviewerId?: string;
+  iterationId?: string;            // sprint or cycle
+  teamId?: string;
+  containerId?: string;
+  deliverableId?: string;
+  parentId?: string;               // a task with subtasks is a summary of them
+  plannedStartDate?: string;       // informational
+  dueDate?: string;                // informational
+  deadline?: string;               // latest finish, enforced by critical path analysis
+  earliestStart?: string;          // start no earlier than, enforced by critical path analysis
+  isMilestone?: boolean;           // zero-duration checkpoint
+  estimatedHours?: number;         // effort
+  allocation?: number;             // share of the assignee's time, (0, 1]; default 1
+  loggedHours?: number;            // derived: sum of time entries
+  progress?: number;               // 0-100
+  isBlocked?: boolean;             // manual block; dependency blocking is derived
+  blockedReason?: string | null;
   tags?: string[];
   customFields?: Record<string, unknown>;
-  parentId?: string;
   createdAt: string;
   updatedAt: string;
 }

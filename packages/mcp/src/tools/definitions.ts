@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { CriticalPathEngine, Task, TaskDependency, TaskDependencyGraph } from '@critical-path/core';
+import { precedenceOf } from '@critical-path/core';
 import type { CriticalPathClient } from '@critical-path/client';
 import {
   ProjectOutput,
@@ -9,6 +10,8 @@ import {
   DependencyOutput,
   DeliverableOutput,
   CommentOutput,
+  TimeEntryOutput,
+  BaselineOutput,
   CriticalPathOutput,
   PortfolioCriticalPathOutput,
   TimelineLadderOutput,
@@ -28,8 +31,8 @@ export type BackendContext = CriticalPathEngine | CriticalPathClient;
  */
 export const TOOLSETS = {
   core: 'Projects, tasks and task dependencies: find, read, create, update and delete',
-  collaboration: 'Deliverables (milestones) and task comments',
-  scheduling: 'Critical path, portfolio scheduling and workload/capacity',
+  collaboration: 'Deliverables and task comments',
+  scheduling: 'Critical path, portfolio scheduling, baselines and workload/capacity',
   analytics: 'Project status ladder, task metrics, earned value and progress history',
   guidance: 'Skills: step-by-step playbooks for multi-step jobs'
 } as const;
@@ -241,6 +244,13 @@ export const getTaskTool = defineTool<{ id: string; includeDependencies?: boolea
     if (!task || !args.includeDependencies) return task;
     const graph = await getDependencyGraph(target, args.id);
     const related = new Map<string, Task>([...graph.upstreamTasks, ...graph.downstreamTasks].map((t) => [t.id, t]));
+    // relates_to partners are not upstream or downstream work, so look them up separately
+    for (const dependency of graph.dependencies) {
+      const otherId = dependency.taskId === args.id ? dependency.dependsOnTaskId : dependency.taskId;
+      if (related.has(otherId) || otherId === args.id) continue;
+      const other = await target.getTask(otherId).catch(() => null);
+      if (other) related.set(otherId, other);
+    }
     const dependsOn: DependencyLink[] = [];
     const dependents: DependencyLink[] = [];
     for (const dependency of graph.dependencies) {
@@ -264,14 +274,11 @@ interface DependencyLink {
   type: 'blocking' | 'relates_to';
 }
 
-/**
- * Which task waits for which. A `blocked_by` record is stored the other way round: its
- * `dependsOnTaskId` waits for its `taskId` (see the scheduler in `@critical-path/core`).
- */
+/** Which task waits for which, read the way the scheduler reads it (`precedenceOf` in core). */
 function dependencyDirection(dependency: TaskDependency): { waiting: string; waitedFor: string } {
-  return dependency.type === 'blocked_by'
-    ? { waiting: dependency.dependsOnTaskId, waitedFor: dependency.taskId }
-    : { waiting: dependency.taskId, waitedFor: dependency.dependsOnTaskId };
+  const edge = precedenceOf(dependency);
+  // relates_to links have no direction; show them as recorded
+  return edge ? { waiting: edge.after, waitedFor: edge.before } : { waiting: dependency.taskId, waitedFor: dependency.dependsOnTaskId };
 }
 
 const linkType = (dependency: TaskDependency): DependencyLink['type'] => (dependency.type === 'relates_to' ? 'relates_to' : 'blocking');
@@ -291,6 +298,9 @@ export const createTaskTool = defineTool<{
   priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
   assigneeId?: string;
   dueDate?: string;
+  deadline?: string;
+  earliestStart?: string;
+  isMilestone?: boolean;
   tags?: string[];
   estimatedHours?: number;
   allocation?: number;
@@ -312,6 +322,9 @@ export const createTaskTool = defineTool<{
     priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().default('none').describe('Task priority'),
     assigneeId: z.string().optional().describe('User ID to assign task to'),
     dueDate: z.string().optional().describe('Due date (ISO string)'),
+    deadline: z.string().optional().describe('Latest acceptable finish (YYYY-MM-DD for the end of that working day, or an ISO date-time). Critical path analysis reports a miss as negative slack'),
+    earliestStart: z.string().optional().describe('Earliest the task may start (YYYY-MM-DD for the start of that day, or an ISO date-time), e.g. when something from outside the project arrives'),
+    isMilestone: z.boolean().optional().describe('Mark the task as a milestone: a zero-duration checkpoint (release, sign-off) fed by dependencies; its estimate is ignored'),
     tags: z.array(z.string()).optional().describe('Tags for categorization'),
     estimatedHours: z.number().optional().describe('Estimated hours to complete'),
     allocation: z
@@ -338,6 +351,9 @@ export const createTaskTool = defineTool<{
       priority: args.priority || 'none',
       assigneeId: args.assigneeId,
       dueDate: args.dueDate,
+      deadline: args.deadline,
+      earliestStart: args.earliestStart,
+      isMilestone: args.isMilestone,
       tags: args.tags || [],
       estimatedHours: args.estimatedHours,
       customFields: args.customFields,
@@ -357,10 +373,12 @@ export const updateTaskTool = defineTool<{
   priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
   assigneeId?: string;
   dueDate?: string;
+  deadline?: string;
+  earliestStart?: string;
+  isMilestone?: boolean;
   tags?: string[];
   estimatedHours?: number;
   allocation?: number;
-  loggedHours?: number;
   isBlocked?: boolean;
   blockedReason?: string;
   customFields?: Record<string, unknown>;
@@ -368,7 +386,7 @@ export const updateTaskTool = defineTool<{
   name: 'update_task',
   title: 'Update Task',
   description:
-    'Change an existing task: title, description, status, priority, assignee, due date, estimate, logged hours, allocation, blocked state, tags or custom fields. Only the fields you pass change. Use it to move a task through its workflow or re-plan it. Returns the updated task.',
+    'Change an existing task: title, description, status, priority, assignee, due date, deadline, milestone flag, estimate, allocation, blocked state, tags or custom fields. Only the fields you pass change. Use it to move a task through its workflow or re-plan it. Returns the updated task.',
   toolset: 'core',
   outputZodSchema: TaskOutput,
   zodSchema: z.object({
@@ -379,6 +397,9 @@ export const updateTaskTool = defineTool<{
     priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().describe('New priority'),
     assigneeId: z.string().optional().describe('User ID to assign the task to'),
     dueDate: z.string().optional().describe('Due date (ISO string)'),
+    deadline: z.string().optional().describe('Latest acceptable finish (YYYY-MM-DD for the end of that working day, or an ISO date-time). Critical path analysis reports a miss as negative slack'),
+    earliestStart: z.string().optional().describe('Earliest the task may start (YYYY-MM-DD for the start of that day, or an ISO date-time), e.g. when something from outside the project arrives'),
+    isMilestone: z.boolean().optional().describe('Mark the task as a milestone: a zero-duration checkpoint (release, sign-off) fed by dependencies; its estimate is ignored'),
     tags: z.array(z.string()).optional().describe('Replaces all tags'),
     estimatedHours: z.number().optional().describe('Estimated effort in hours'),
     allocation: z
@@ -387,7 +408,6 @@ export const updateTaskTool = defineTool<{
       .max(1)
       .optional()
       .describe("Share of the assignee's time the task takes, in (0, 1]; e.g. 0.5 for half-time. Estimates are effort, so a 0.5 task takes twice as long"),
-    loggedHours: z.number().optional().describe('Total hours worked so far'),
     isBlocked: z.boolean().optional().describe('Whether the task is blocked'),
     blockedReason: z.string().optional().describe('Reason why the task is blocked'),
     customFields: z.record(z.unknown()).optional().describe('Custom field values as a JSON object (validated against the project\'s field definitions for tasks)')
@@ -416,7 +436,56 @@ export const deleteTaskTool = defineTool<{ id: string }>({
   }
 });
 
-export const addDependencyTool = defineTool<{ taskId: string; dependsOnTaskId: string; type?: 'blocking' | 'relates_to' }>({
+export const logTimeTool = defineTool<{ taskId: string; hours: number; description?: string; isBillable?: boolean; loggedAt?: string }>({
+  name: 'log_time',
+  title: 'Log Time',
+  description:
+    "Record time worked on a task. The task's logged hours are the sum of its time entries, so this is how hours are added (they cannot be set directly). Returns the time entry.",
+  toolset: 'core',
+  outputZodSchema: TimeEntryOutput,
+  zodSchema: z.object({
+    taskId: z.string().describe('The task worked on'),
+    hours: z.number().positive().describe('Hours worked, e.g. 1.5'),
+    description: z.string().optional().describe('What was done'),
+    isBillable: z.boolean().optional().describe('Whether the time is billable (default true)'),
+    loggedAt: z.string().optional().describe('When the work was done (ISO date-time; default now)')
+  }),
+  execute: async (args, target) => target.logTime(args)
+});
+
+export const updateTimeEntryTool = defineTool<{ id: string; hours?: number; description?: string; isBillable?: boolean; loggedAt?: string }>({
+  name: 'update_time_entry',
+  title: 'Update Time Entry',
+  description:
+    "Correct a time entry logged with `log_time` (its id is in that result). The task's logged hours move by the difference. You can change your own entries; other people's need a project manager. Returns the entry.",
+  toolset: 'core',
+  outputZodSchema: TimeEntryOutput,
+  zodSchema: z.object({
+    id: z.string().describe('The time entry id'),
+    hours: z.number().positive().optional().describe('Corrected hours'),
+    description: z.string().optional().describe('What was done'),
+    isBillable: z.boolean().optional().describe('Whether the time is billable'),
+    loggedAt: z.string().optional().describe('When the work was done (ISO date-time)')
+  }),
+  annotations: { idempotentHint: true },
+  execute: async (args, target) => {
+    const { id, ...updates } = args;
+    return target.updateTimeEntry(id, updates);
+  }
+});
+
+export const deleteTimeEntryTool = defineTool<{ id: string }>({
+  name: 'delete_time_entry',
+  title: 'Delete Time Entry',
+  description: "Delete a time entry logged by mistake; its hours come off the task. Confirm with the user first. Returns { success }.",
+  toolset: 'core',
+  outputZodSchema: z.object({ success: z.boolean() }),
+  zodSchema: z.object({ id: z.string().describe('The time entry id') }),
+  annotations: { destructiveHint: true, idempotentHint: true },
+  execute: async (args, target) => ({ success: await target.deleteTimeEntry(args.id) })
+});
+
+export const addDependencyTool = defineTool<{ taskId: string; dependsOnTaskId: string; type?: 'blocking' | 'relates_to'; lagHours?: number }>({
   name: 'add_dependency',
   title: 'Add Dependency',
   description:
@@ -429,16 +498,21 @@ export const addDependencyTool = defineTool<{ taskId: string; dependsOnTaskId: s
     type: z
       .enum(['blocking', 'relates_to'])
       .optional()
-      .describe("'blocking' (default) affects the schedule; 'relates_to' only links the tasks for reference")
+      .describe("'blocking' (default) affects the schedule; 'relates_to' only links the tasks for reference"),
+    lagHours: z
+      .number()
+      .optional()
+      .describe('Working hours to wait after the other task finishes, e.g. 16 for two working days of curing; negative to start that much earlier')
   }),
   annotations: { idempotentHint: true },
   execute: async (args, target) => {
     const type = args.type ?? 'blocking';
+    const lag = args.lagHours !== undefined ? { lagHours: args.lagHours } : {};
     const { isEngine } = await resolveBackend(target);
     if (isEngine) {
-      return (target as CriticalPathEngine).addDependency({ taskId: args.taskId, dependsOnTaskId: args.dependsOnTaskId, type });
+      return (target as CriticalPathEngine).addDependency({ taskId: args.taskId, dependsOnTaskId: args.dependsOnTaskId, type, ...lag });
     }
-    return (target as CriticalPathClient).addDependency(args.taskId, { dependsOnTaskId: args.dependsOnTaskId, type });
+    return (target as CriticalPathClient).addDependency(args.taskId, { dependsOnTaskId: args.dependsOnTaskId, type, ...lag });
   }
 });
 
@@ -480,7 +554,7 @@ export const listDeliverablesTool = defineTool<{ projectId?: string }>({
   name: 'list_deliverables',
   title: 'List Deliverables',
   description:
-    'List a project\'s deliverables: milestones that group tasks toward a dated outcome. Use it to see what is due and which tasks feed each milestone. Returns { deliverables }.',
+    'List a project\'s deliverables: outputs that group the tasks producing them. Use it to see what is due and which tasks feed each deliverable. For dated checkpoints, look for milestone tasks (`isMilestone`). Returns { deliverables }.',
   toolset: 'collaboration',
   outputZodSchema: z.object({ deliverables: z.array(DeliverableOutput) }),
   zodSchema: z.object({
@@ -508,7 +582,7 @@ export const createDeliverableTool = defineTool<{
   name: 'create_deliverable',
   title: 'Create Deliverable',
   description:
-    'Create a deliverable (milestone) in a project, optionally linking existing tasks by id. Use it when planning a dated outcome that several tasks build toward. Returns the created deliverable.',
+    'Create a deliverable in a project, optionally linking existing tasks by id. Use it for an output (a document, a build, an asset) that several tasks produce. For a dated checkpoint the schedule should enforce, create a task with `isMilestone: true` and a `deadline` instead. Returns the created deliverable.',
   toolset: 'collaboration',
   outputZodSchema: DeliverableOutput,
   zodSchema: z.object({
@@ -532,22 +606,22 @@ export const createDeliverableTool = defineTool<{
   }
 });
 
-export const listCommentsTool = defineTool<{ taskId: string }>({
+export const listCommentsTool = defineTool<{ taskId: string; limit?: number; cursor?: string }>({
   name: 'list_comments',
   title: 'List Comments',
   description:
-    'List the comments on a task. Use it to read the discussion, decisions or blockers recorded there. Returns { comments }.',
+    'List the comments on a task, oldest first. Use it to read the discussion, decisions or blockers recorded there. Returns { comments, nextCursor }; pass nextCursor back as cursor for the next (newer) page.',
   toolset: 'collaboration',
-  outputZodSchema: z.object({ comments: z.array(CommentOutput) }),
+  outputZodSchema: z.object({ comments: z.array(CommentOutput), nextCursor: z.string().nullable().optional() }),
   zodSchema: z.object({
-    taskId: z.string().describe('The task ID')
+    taskId: z.string().describe('The task ID'),
+    limit: z.number().int().min(1).max(500).optional().describe('Page size (default 100)'),
+    cursor: z.string().optional().describe('nextCursor from a previous call')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target) => {
-    if ('getComments' in target && typeof (target as any).getComments === 'function') {
-      return { comments: await (target as any).getComments(args.taskId) };
-    }
-    return { comments: [] };
+    const page = await target.queryComments({ taskId: args.taskId, limit: args.limit, cursor: args.cursor });
+    return { comments: page.items, nextCursor: page.nextCursor };
   }
 });
 
@@ -576,6 +650,7 @@ export const calculatePortfolioCriticalPathTool = defineTool<{
   levelResources?: boolean;
   levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
   effort?: 'estimate' | 'remaining';
+  defaultEstimateHours?: number;
 }>({
   name: 'calculate_portfolio_critical_path',
   title: 'Calculate Portfolio Critical Path',
@@ -599,7 +674,12 @@ export const calculatePortfolioCriticalPathTool = defineTool<{
     effort: z
       .enum(['estimate', 'remaining'])
       .optional()
-      .describe("'remaining' schedules only estimate minus logged hours for in-progress tasks (default: full estimates)")
+      .describe("'remaining' schedules only estimate minus logged hours for in-progress tasks (default: full estimates)"),
+    defaultEstimateHours: z
+      .number()
+      .nonnegative()
+      .optional()
+      .describe('Hours to assume for tasks with no estimate (default 1). They are listed in unestimatedTaskIds')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target) => (target as any).calculatePortfolioCriticalPath(args)
@@ -611,6 +691,8 @@ export const calculateCriticalPathTool = defineTool<{
   levelResources?: boolean;
   levelingPriority?: 'slack' | 'priority' | 'dueDate' | 'order';
   effort?: 'estimate' | 'remaining';
+  defaultEstimateHours?: number;
+  baselineId?: string;
 }>({
   name: 'calculate_critical_path',
   title: 'Calculate Critical Path',
@@ -635,7 +717,13 @@ export const calculateCriticalPathTool = defineTool<{
     effort: z
       .enum(['estimate', 'remaining'])
       .optional()
-      .describe("'remaining' schedules only estimate minus logged hours for in-progress tasks (default: full estimates)")
+      .describe("'remaining' schedules only estimate minus logged hours for in-progress tasks (default: full estimates)"),
+    defaultEstimateHours: z
+      .number()
+      .nonnegative()
+      .optional()
+      .describe('Hours to assume for tasks with no estimate (default 1). They are listed in unestimatedTaskIds'),
+    baselineId: z.string().optional().describe('Compare with a baseline from `list_baselines`: each task reports how far it moved, and the result lists slipped tasks')
   }),
   annotations: { readOnlyHint: true },
   execute: async (args, target, ambientContext) => {
@@ -643,8 +731,47 @@ export const calculateCriticalPathTool = defineTool<{
     if (!projectId) {
       throw new Error('projectId is required to calculate the critical path. Find one with `list_projects`.');
     }
-    const { calendars, levelResources, levelingPriority, effort } = args;
-    return (target as any).calculateCriticalPath(projectId, { calendars, levelResources, levelingPriority, effort });
+    const { calendars, levelResources, levelingPriority, effort, defaultEstimateHours, baselineId } = args;
+    return (target as any).calculateCriticalPath(projectId, { calendars, levelResources, levelingPriority, effort, defaultEstimateHours, baselineId });
+  }
+});
+
+export const createBaselineTool = defineTool<{ projectId?: string; name: string; calendars?: 'project' | 'assignee'; levelResources?: boolean }>({
+  name: 'create_baseline',
+  title: 'Create Baseline',
+  description:
+    'Save the project\'s current schedule as a named baseline (for example when a plan is agreed), so later analyses can show what slipped. Use the same calendars/levelResources you analyse with. Returns the baseline with its id.',
+  toolset: 'scheduling',
+  outputZodSchema: BaselineOutput,
+  zodSchema: z.object({
+    projectId: z.string().optional().describe('Project ID (inferred from active view in browser if omitted)'),
+    name: z.string().describe('What the plan is, e.g. "Approved plan" or "Sprint 4 start"'),
+    calendars: z.enum(['project', 'assignee']).optional().describe("'assignee' schedules each task on its assignee's calendar"),
+    levelResources: z.boolean().optional().describe("With calendars 'assignee': one task at a time per person")
+  }),
+  execute: async (args, target, ambientContext) => {
+    const projectId = args.projectId || ambientContext?.projectId;
+    if (!projectId) throw new Error('projectId is required. Find one with `list_projects`.');
+    const { projectId: _projectId, ...input } = args;
+    return target.createBaseline(projectId, input);
+  }
+});
+
+export const listBaselinesTool = defineTool<{ projectId?: string }>({
+  name: 'list_baselines',
+  title: 'List Baselines',
+  description:
+    'List a project\'s saved baselines, oldest first. Pass one\'s id as baselineId to `calculate_critical_path` to see slippage since then. Returns { baselines }.',
+  toolset: 'scheduling',
+  outputZodSchema: z.object({ baselines: z.array(BaselineOutput) }),
+  zodSchema: z.object({
+    projectId: z.string().optional().describe('Project ID (inferred from active view in browser if omitted)')
+  }),
+  annotations: { readOnlyHint: true },
+  execute: async (args, target, ambientContext) => {
+    const projectId = args.projectId || ambientContext?.projectId;
+    if (!projectId) throw new Error('projectId is required. Find one with `list_projects`.');
+    return { baselines: await target.getBaselines(projectId) };
   }
 });
 
@@ -798,6 +925,9 @@ export const ALL_TOOLS: ToolDefinition[] = [
   createTaskTool,
   updateTaskTool,
   deleteTaskTool,
+  logTimeTool,
+  updateTimeEntryTool,
+  deleteTimeEntryTool,
   addDependencyTool,
   removeDependencyTool,
   listDeliverablesTool,
@@ -806,6 +936,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   addCommentTool,
   calculateCriticalPathTool,
   calculatePortfolioCriticalPathTool,
+  createBaselineTool,
+  listBaselinesTool,
   getTimelineLadderTool,
   getTaskLadderTool,
   getTaskMetricsTool,

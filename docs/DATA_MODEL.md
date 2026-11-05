@@ -94,7 +94,7 @@ erDiagram
         string projectId FK
         string name
         string goal
-        string type "sprint | cycle | milestone"
+        string type "sprint | cycle"
         datetime startDate
         datetime endDate
         string status "planning | active | completed"
@@ -119,6 +119,9 @@ erDiagram
         datetime actualStartDate
         datetime actualEndDate
         datetime dueDate
+        datetime deadline
+        datetime earliestStart
+        boolean isMilestone
         number estimatedHours
         number loggedHours
         number actualHours
@@ -138,7 +141,7 @@ erDiagram
         string id PK
         string taskId FK
         string dependsOnTaskId FK
-        string type "blocking | blocked_by | relates_to"
+        string type "blocking | relates_to"
     }
 
     COMMENT {
@@ -195,11 +198,12 @@ Teams group users together (`memberIds`). A project can be associated with multi
 Containers provide structural hierarchy within a project (e.g., Epics, Groups, Sections, Folders). Containers can nest inside other containers via `parentId`.
 
 ### 4. Iteration
-Generalizes time-boxed or milestone-based planning units (e.g., Sprints, Cycles, Release Milestones). Configured with `type`, `startDate`, `endDate`, and `status`.
+Generalizes time-boxed planning units (e.g., Sprints, Cycles). Configured with `type`, `startDate`, `endDate`, and `status`. An iteration is a span of time; for a dated checkpoint use a milestone task (below).
 
 ### 5. Task
 The central unit of work. Tasks support:
-- **Date Tracking**: `plannedStartDate`, `actualStartDate`, `actualEndDate`, `dueDate`.
+- **Date Tracking**: `plannedStartDate`, `actualStartDate`, `actualEndDate`, `dueDate` (informational), `deadline` (enforced by critical path analysis).
+- **Milestones**: `isMilestone: true` makes a task a zero-duration checkpoint (a release, a sign-off, a gate). It takes part in dependencies like any task, takes no effort whatever its estimate, and usually has a `deadline`.
 - **Duration & Effort Tracking**:
   - `estimatedHours` / `estimatedDurationMinutes`
   - `actualHours` / `actualDurationMinutes`
@@ -207,7 +211,7 @@ The central unit of work. Tasks support:
 - **Progress Tracking**: `progress` (percentage from `0` to `100`).
 - **People & Roles**: `assigneeId`, `reporterId`, `reviewerId`.
 - **Associations**: `projectId`, `teamId`, `containerId`, `iterationId`.
-- **Subtasks**: `parentId` pointing to parent task.
+- **Subtasks**: `parentId` pointing to parent task. A task with subtasks is a summary task: its subtasks carry the effort and the schedule, and it is reported as their roll-up.
 - **Custom Config & Metadata**: `status` (string key), `priority` (string key), `tags`, `customFields`.
 
 ### 6. Universal Semantic Status & Implied Status Framework
@@ -256,13 +260,14 @@ Calculated dynamically by the engine based on task metadata, dates, assignees, e
 ## Dependency Graph
 
 Tasks can establish relationships using `TaskDependency`:
-- `blocking`: `taskId` cannot proceed until `dependsOnTaskId` is completed.
-- `blocked_by`: Inverse of blocking.
-- `relates_to`: Informational link.
+- `blocking`: `taskId` cannot start until `dependsOnTaskId` finishes (completed or canceled).
+- `relates_to`: Informational link. It never schedules, blocks or forms a cycle.
+
+(`blocked_by`, the inverse of `blocking`, was removed in 0.53. Stored records are still read the right way round; `precedenceOf(dependency)` is the one helper that reads a dependency's direction.)
 
 Querying `engine.getTaskDependencyGraph(taskId)` returns:
-- `upstreamTasks`: Tasks that `taskId` depends on.
-- `downstreamTasks`: Tasks that depend on `taskId`.
+- `upstreamTasks`: Tasks that `taskId` waits for (`blocking` only).
+- `downstreamTasks`: Tasks that wait for `taskId` (`blocking` only).
 - `dependencies`: Raw dependency records.
 
 ### DAG Invariant & Cycle Prevention
@@ -272,8 +277,6 @@ The dependency graph enforces a strict **Directed Acyclic Graph (DAG)** invarian
 
 ## Domain Aggregates & Event Contracts
 
-In addition to DTO interfaces, `@critical-path/core` provides rich Domain Aggregates:
-- `TaskEntity`: Manages state transitions, duration calculations, and raises uncommitted domain events (`task.created`, `task.status_changed`, `time.logged`).
-- `ProjectEntity`: Manages key generation and schema validation for custom fields.
+Domain rules live in `CriticalPathEngine` (there is no separate entity layer):
 - `DomainEventBus`: Dispatches strongly typed events (`DomainEvent<T>`) across the domain boundary.
 

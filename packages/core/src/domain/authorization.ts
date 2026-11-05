@@ -19,6 +19,7 @@ const PROJECT_MANAGER: AuthorizationAction[] = [
   ...CONTRIBUTOR,
   'task.delete',
   'plan.manage',
+  'time.manage',
   'project.update',
   'project.manage_members',
   'comment.moderate',
@@ -79,6 +80,7 @@ export function createRolePolicy(options: RolePolicyOptions = {}): Authorization
     const ownsResource = resource?.ownerId !== undefined && resource.ownerId === actor.userId;
     if (action === 'comment.moderate' && ownsResource && granted.has('comment.create')) return true;
     if (action === 'attachment.delete' && ownsResource && granted.has('attachment.create')) return true;
+    if (action === 'time.manage' && ownsResource && granted.has('time.log')) return true;
 
     return false;
   };

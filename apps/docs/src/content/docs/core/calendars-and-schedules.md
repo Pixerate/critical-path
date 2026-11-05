@@ -183,7 +183,9 @@ const cpm = await engine.calculateCriticalPath(projectId, { calendars: 'assignee
 
 Suppose Bob's task finishes Thursday at 17:00 and Alice, who does not work Fridays, picks up the next task. Her task starts Monday at 09:00, and everything after it moves with it. A single project calendar would have started it on Friday.
 
-How the results differ from project mode:
+Both modes run the same date-based passes; project mode simply puts every task on the project calendar. With a start date, every task starts at the next working moment after its predecessors finish (a task after a 17:00 finish starts at 09:00 the next working day). Without one, project mode reports working-hour offsets only: no dates, and deadlines and start constraints (which are dates) do not apply.
+
+How assignee mode differs:
 
 - **Dates are exact per task.** Each task starts at the next working moment on its own calendar after its predecessors finish. Each `scheduleId` names the calendar used (when the schedule has an `id`).
 - **Slack is in the task's own working hours.** A Monday–Thursday assignee has less slack across the same span than a Monday–Friday one.
@@ -262,6 +264,73 @@ await engine.createTeam({ name: 'Agency', memberIds: [], headcount: 2 });       
 - **Slack:** a delayed task is linked to the task whose finish freed its slot, as are tasks whose combined allocation exceeds the pool. Slack is exact along those chains but can be generous elsewhere in a busy pool.
 - **Over-allocation report:** entries have `teamId` (instead of `assigneeId`) and `capacity` when a pool is booked above its headcount, counting team tasks and members' own tasks.
 
+
+### Milestones and deadlines
+
+A **milestone** is a task with `isMilestone: true`: a zero-duration checkpoint such as a release, a client sign-off or a permit. It takes no time and no effort whatever its estimate says, and it joins the schedule through dependencies like any other task. A **deadline** is the latest acceptable finish for any task, milestone or not:
+
+```ts
+const build = await engine.createTask({ projectId, title: 'Build', estimatedHours: 16 });
+const launch = await engine.createTask({ projectId, title: 'Launch', isMilestone: true, deadline: '2026-10-05' });
+await engine.addDependency({ taskId: launch.id, dependsOnTaskId: build.id, type: 'blocking' });
+
+const cpm = await engine.calculateCriticalPath(projectId);
+cpm.missedDeadlineTaskIds; // [launch.id]
+cpm.tasks.find((t) => t.taskId === launch.id);
+// { isMilestone: true, deadlineDate: '2026-10-05T17:00:00.000Z', deadlineVarianceHours: -8, totalSlack: -8, ... }
+```
+
+- **Deadlines cap late dates.** A task's late finish is the earlier of what its successors allow and its deadline. When the forecast misses, slack goes negative on the task and on every task driving it, so the critical path shows what to fix. Forecast (early) dates and `projectEndDate` do not move.
+- **A date-only deadline is the end of that working day** on the task's calendar and time zone; a date-time is the last working moment at or before it. A deadline on a weekend or holiday falls back to the previous working day's close.
+- **`deadlineVarianceHours`** is the working time from the forecast finish to the deadline: positive is ahead, negative is late. `missedDeadlineTaskIds` lists every task with a negative variance.
+- **Project-calendar mode needs a start date** (`project.startDate` or `projectStartDate`) to place deadlines; without one they are ignored. Assignee mode always works in dates.
+- **Levelling** sees deadlines through slack, so with the default `levelingPriority: 'slack'` the work behind a tight deadline gets people first.
+- **`dueDate` is different:** it is informational and only used by `levelingPriority: 'dueDate'`. Use `deadline` when the schedule should hold you to the date.
+- On assignee calendars, a milestone sits at the moment its predecessors finish (for example 17:00), not the next morning.
+
+### Start constraints and lag
+
+Two more constraints are dates and waits, so they work like deadlines and need a start date in project mode:
+
+- **`earliestStart`** on a task: it starts no earlier than the first working moment at or after it ("the venue is free from the 12th"). A date-only value is the start of that day. On a summary task it applies to every leaf under it. Levelling honours it too.
+- **`lagHours`** on a `blocking` dependency: working hours (on the waiting task's calendar) between the other task's finish and this one's start, e.g. `16` to let concrete cure for two days. A negative value is a lead: the waiting task may start that long before the other finishes.
+
+```ts
+await engine.addDependency({ taskId: build.id, dependsOnTaskId: pour.id, type: 'blocking', lagHours: 16 });
+await engine.updateTask(fitOut.id, { earliestStart: '2026-11-12' });
+```
+
+A start constraint that makes a deadline impossible shows up like any other miss: negative slack and an entry in `missedDeadlineTaskIds`. Dependencies are finish-to-start; with lag or lead that covers most start-to-start and finish-to-finish needs. `plannedStartDate` stays informational.
+
+### Summary tasks (subtasks)
+
+A task with subtasks is a **summary task**. It is not scheduled itself: its subtasks carry the work.
+
+- A dependency on a summary task applies to every leaf task under it (`Y -> Epic` makes each of the epic's subtasks wait for `Y`; `Epic -> X` makes `X` wait for all of them).
+- A summary's own estimate is ignored, and so is its `isMilestone`. A summary's `deadline` caps every leaf under it.
+- The summary appears in `tasks` with `isSummary: true`, as a roll-up: earliest start, latest finish, least slack, critical when any leaf is. It is not listed in `criticalTaskIds`, and it is listed in `missedDeadlineTaskIds` when its latest leaf finishes after its deadline.
+- Workload, the ladder and deliverable summaries also count effort from leaf tasks only, so subtasks are never counted twice.
+
+### Unestimated tasks
+
+An unfinished task with no estimate and no logged effort is scheduled for `defaultEstimateHours` (default 1) and listed in `unestimatedTaskIds`, so a half-estimated plan does not look more certain than it is. Set the assumption per call (`defaultEstimateHours`, `?defaultEstimateHours=` over HTTP) or on the engine (`criticalPathDefaultEstimateHours`). An explicit estimate of 0 counts as an estimate.
+
+### Baselines
+
+A baseline is a named, frozen copy of a project's analysis: the plan to measure slippage against. Take one when a plan is agreed, then pass its id to later analyses:
+
+```ts
+const plan = await engine.createBaseline(projectId, { name: 'Agreed plan', calendars: 'assignee' });
+
+const now = await engine.calculateCriticalPath(projectId, { calendars: 'assignee', baselineId: plan.id });
+now.baseline;  // { endVarianceHours: 16, slippedTaskIds: [...], addedTaskIds: [...], removedTaskIds: [...] }
+now.tasks[0].baseline; // { startVarianceHours: 8, finishVarianceHours: 16 }
+```
+
+- Variances are working hours on the project calendar; positive is later than the plan. Dated analyses compare dates, so re-running from a later start shows the delay; undated ones compare offsets.
+- `slippedTaskIds` lists leaf tasks that finish later than planned, worst first. Tasks added since are in `addedTaskIds`, removed ones in `removedTaskIds`.
+- `createBaseline` takes the same options as the analysis (`calendars`, `levelResources`, `effort`, ...); compare like with like. It needs `plan.manage`; reading needs access to the project. Baselines are deleted with their project.
+- Over HTTP: `POST /projects/:projectId/baselines`, `GET /projects/:projectId/baselines`, `GET | DELETE /baselines/:baselineId`, and `?baselineId=` on `GET /projects/:projectId/critical-path`. MCP: `create_baseline`, `list_baselines`, and `baselineId` on `calculate_critical_path`.
 
 ### Finished tasks
 

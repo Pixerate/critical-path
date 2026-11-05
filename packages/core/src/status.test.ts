@@ -3,11 +3,6 @@ import { CriticalPathEngine } from './engine/index.js';
 import {
   resolveStatusDefinition,
   deriveTaskLifecycleState,
-  isDraftTask,
-  isArchivedTask,
-  isTrashedTask,
-  isTrashedOrArchivedTask,
-  isWorkflowTask,
   getTaskSemanticStatus,
   isTaskCompleted,
   isTaskInProgress,
@@ -44,12 +39,10 @@ describe('Universal Semantic Statuses & Implied Statuses', () => {
       expect(resolveStatusDefinition('abandoned', customDefs).category).toBe('canceled');
     });
 
-    it('infers category heuristically when unknown status key is provided', () => {
-      expect(resolveStatusDefinition('draft_v2').category).toBe('not_started');
-      expect(resolveStatusDefinition('final_approved').category).toBe('completed');
-      expect(resolveStatusDefinition('active_development').category).toBe('in_progress');
-      expect(resolveStatusDefinition('rejected_proposal').category).toBe('canceled');
-      expect(resolveStatusDefinition('custom_arbitrary_key').category).toBe('not_started');
+    it('does not guess a category from the spelling of an unknown key', () => {
+      for (const key of ['draft_v2', 'final_approved', 'unfinished', 'not_done', 'inactive', 'custom_arbitrary_key']) {
+        expect(resolveStatusDefinition(key).category).toBe('not_started');
+      }
     });
   });
 
@@ -241,44 +234,6 @@ describe('Universal Semantic Statuses & Implied Statuses', () => {
   });
 
   describe('Canonical Task Lifecycle & Semantic Status Predicates', () => {
-    it('identifies draft, archived, and trashed tasks properly', () => {
-      expect(isDraftTask(null)).toBe(false);
-      expect(isDraftTask({ isDraft: true })).toBe(true);
-      expect(isDraftTask({ isDraft: false })).toBe(false);
-
-      expect(isArchivedTask(null)).toBe(false);
-      expect(isArchivedTask({ archived: true })).toBe(true);
-      expect(isArchivedTask({ archivedAt: '2026-09-01T00:00:00Z' })).toBe(true);
-      expect(isArchivedTask({ status: 'archived' })).toBe(true);
-      expect(isArchivedTask({ customFields: { isArchived: true } })).toBe(true);
-      expect(isArchivedTask({ status: 'todo' })).toBe(false);
-
-      expect(isTrashedTask(null)).toBe(false);
-      expect(isTrashedTask({ trashed: true })).toBe(true);
-      expect(isTrashedTask({ trashedAt: '2026-09-01T00:00:00Z' })).toBe(true);
-      expect(isTrashedTask({ status: 'trashed' })).toBe(true);
-      expect(isTrashedTask({ customFields: { isTrashed: true } })).toBe(true);
-      expect(isTrashedTask({ status: 'todo' })).toBe(false);
-
-      expect(isTrashedOrArchivedTask({ trashed: true })).toBe(true);
-      expect(isTrashedOrArchivedTask({ archived: true })).toBe(true);
-      expect(isTrashedOrArchivedTask({ status: 'todo' })).toBe(false);
-    });
-
-    it('identifies workflow tasks excluding draft, trashed, and archived tasks (UCH-137)', () => {
-      expect(isWorkflowTask(null)).toBe(false);
-      expect(isWorkflowTask({ status: 'todo' })).toBe(true);
-      expect(isWorkflowTask({ status: 'in_progress' })).toBe(true);
-      expect(isWorkflowTask({ status: 'done' })).toBe(true);
-
-      // Draft tasks are excluded
-      expect(isWorkflowTask({ status: 'todo', isDraft: true })).toBe(false);
-      // Trashed tasks are excluded
-      expect(isWorkflowTask({ status: 'todo', trashed: true })).toBe(false);
-      // Archived tasks are excluded
-      expect(isWorkflowTask({ status: 'done', archived: true })).toBe(false);
-    });
-
     it('resolves semantic status using workflow, defaults, and custom definitions', () => {
       const mockWorkflow: Workflow = {
         id: 'wf_custom',
@@ -330,9 +285,6 @@ describe('Universal Semantic Statuses & Implied Statuses', () => {
       expect(isTaskActive(taskActive)).toBe(true);
       expect(isTaskActive(taskDone)).toBe(false);
       expect(isTaskActive(taskCanceled)).toBe(false);
-      expect(isTaskActive({ ...taskActive, isDraft: true })).toBe(false);
-      expect(isTaskActive({ ...taskActive, archived: true })).toBe(false);
-      expect(isTaskActive({ ...taskActive, trashed: true })).toBe(false);
     });
 
     it('identifies unassigned tasks properly', () => {

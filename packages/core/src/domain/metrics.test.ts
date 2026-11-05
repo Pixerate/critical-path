@@ -6,7 +6,6 @@ import {
   reconstructTaskProgressHistory,
   calculateTaskMetrics
 } from './metrics.js';
-import { TaskEntity } from './entities.js';
 import { CriticalPathEngine } from '../engine/index.js';
 import { InMemoryStore } from '../store/index.js';
 
@@ -229,28 +228,6 @@ describe('Task Metrics Domain', () => {
   });
 
   describe('Task Re-opening Timestamp Behavior', () => {
-    it('resets actualEndDate when TaskEntity transitions from completed back to in_progress', () => {
-      const entity = TaskEntity.create({
-        projectId: 'proj-1',
-        title: 'Bugfix',
-        status: 'todo'
-      });
-
-      // Move to in_progress -> stamps actualStartDate
-      entity.transitionTo('in_progress');
-      expect(entity.actualStartDate).toBeDefined();
-      expect(entity.actualEndDate).toBeUndefined();
-
-      // Move to done -> stamps actualEndDate
-      entity.transitionTo('done');
-      expect(entity.actualEndDate).toBeDefined();
-
-      // Re-open back to in_progress -> actualEndDate must be cleared
-      entity.transitionTo('in_progress');
-      expect(entity.actualEndDate).toBeUndefined();
-      expect(entity.actualStartDate).toBeDefined();
-    });
-
     it('integrates with CriticalPathEngine getTaskMetrics and getTaskProgressHistory', async () => {
       const store = new InMemoryStore();
       const engine = new CriticalPathEngine({ store });

@@ -30,7 +30,7 @@ In **Critical Path**, this is materialized as a multi-scale timeline framework c
                                     ▼
 +------------------------------------------------------------------------+
 | 3. Concrete Rung (Low Abstraction - Tangible Ground Truth)            |
-|    - Physical Deliverables (format specs, resolutions, output URLs)   |
+|    - Physical Deliverables (output URLs, custom fields)              |
 |    - Real-world Attachments & File Assets (render frames, Figma, docs) |
 |    - Daily Effort Distributions & Timesheet Work Logs                  |
 |    - Reality Delta: Planned vs. Actual duration & schedule drift       |
@@ -43,6 +43,8 @@ Answers executive questions: *Are we on track? What is the projected completion?
 - Automatic phase synthesis grouped by parent tasks, deliverable containers, or sprints.
 - Health states: `on_track`, `at_risk`, `delayed`, `completed`.
 - Total estimated hours vs. logged hours, overall percentage progress, and bottleneck critical path duration.
+- Effort and progress come from leaf tasks: a task with subtasks is spanned by them, so its own estimate is not added again. Progress per task is the inferred progress (explicit, todos, effort or schedule; see [task metrics](/core/task-metrics/)), weighted by estimate.
+- Canceled tasks leave the estimate and the progress denominator (their logged hours still count), so a project whose remaining work was canceled reaches 100% and `completed`.
 
 ### 2. Standard Rung: Topological CPM Gantt
 Answers tactical questions: *How do parts connect, and where are the real bottlenecks?*
@@ -53,7 +55,7 @@ Answers tactical questions: *How do parts connect, and where are the real bottle
 
 ### 3. Concrete Rung: Tangible Ground Truth & Reality Delta
 Answers empirical questions: *What was actually built? Where is the real work?*
-- Links tasks to concrete deliverables (render specs, resolution, output URLs).
+- Links tasks to concrete deliverables (output URLs and their custom fields).
 - Aggregates file attachments and uploaded assets.
 - Timesheet log breakdown by day (`dailyEffort`).
 - **Reality Delta**: Calculates exact variance between planned estimates and actual logged hours (`hoursDelta`, `scheduleStatus`).

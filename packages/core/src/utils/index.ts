@@ -5,3 +5,4 @@ export * from './mentions.js';
 export * from './fractional-index.js';
 
 
+export * from './update.js';

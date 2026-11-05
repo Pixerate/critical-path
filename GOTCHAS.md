@@ -181,7 +181,7 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Area / Package**: `@critical-path/core` (`WebhookDispatcher`, `InProcessWebhookQueue`)
 - **Symptom / Behavior**: Webhooks that were waiting for a retry never arrive after a deploy or crash. Tests that assert on deliveries are flaky.
 - **Root Cause**: The default queue schedules attempts with in-memory timers (unref'd so they never keep the process alive). Deliveries are also asynchronous, so they complete after the mutation returns.
-- **Solution / Workaround**: In tests, `await engine.webhooks.idle()` before asserting. For durable delivery, pass `new OutboxWebhookQueue(store)` as `webhookDelivery.queue` and call `start()` (or `processDue()`); it is at-least-once, so deduplicate on `X-CriticalPath-Delivery`. Alternatively, pass a queue backed by your job system that calls `engine.webhooks.deliver(job)`. Note that `engine.events.clear()` also removes the webhook subscription.
+- **Solution / Workaround**: In tests, `await engine.webhooks.idle()` before asserting. For durable delivery, pass `new OutboxWebhookQueue(store)` as `webhookDelivery.queue` and call `start()` (or `processDue()`). With `SQLiteStore` as both the engine store and the outbox, jobs are written inside the mutation's transaction, so they are in the store as soon as the call returns, and a failing outbox write makes the mutation throw; it is at-least-once, so deduplicate on `X-CriticalPath-Delivery`. Alternatively, pass a queue backed by your job system that calls `engine.webhooks.deliver(job)`. Note that `engine.events.clear()` also removes the webhook subscription.
 
 ### Webhooks Mirror Domain Events, So One Change Can Send Several Deliveries
 - **Area / Package**: `@critical-path/core` webhooks
@@ -406,3 +406,99 @@ This document tracks known issues, pitfalls, non-obvious quirks, and their solut
 - **Symptom / Behavior**: `pnpm run build` fails in `apps/docs` with `The requested module 'astro/zod' does not provide an export named 'locales'`.
 - **Root Cause**: Dependabot groups "minor" updates, but for 0.x packages a minor bump is breaking. `@astrojs/starlight` 0.42 requires Astro ^7, while the docs site is on Astro 5.
 - **Solution / Workaround**: Starlight is pinned to `^0.32.0`, and `.github/dependabot.yml` ignores Starlight `>=0.33.0`. Upgrade Astro and Starlight together by hand, then update both `pnpm-lock.yaml` and `apps/docs/package-lock.json` (`cd apps/docs && npm install --package-lock-only`).
+
+### Date Constraints Are Ignored in Project-Calendar Mode Without a Start Date
+- **Area / Package**: `@critical-path/core` (`calculateCPM`, `Task.deadline`, `Task.earliestStart`)
+- **Symptom / Behavior**: A task with a `deadline` that is clearly missed shows positive slack, no `deadlineDate`, and is absent from `missedDeadlineTaskIds`; an `earliestStart` has no effect; results have no dates.
+- **Root Cause**: Without `project.startDate` (or `projectStartDate`) there is no date to place the schedule on, so project mode reports working-hour offsets only and skips deadlines and start constraints. Lag still applies (it is a duration). Assignee mode always works in dates (today when no start is set).
+- **Solution / Workaround**: Set the project's `startDate`, pass `projectStartDate`, or use `calendars: 'assignee'`.
+
+### `dueDate` and `deadline` Are Different
+- **Area / Package**: `@critical-path/core` (`Task`, critical path analysis)
+- **Symptom / Behavior**: A task past its `dueDate` still shows positive slack.
+- **Root Cause**: `dueDate` is informational (it only orders levelling under `levelingPriority: 'dueDate'`). Only `deadline` constrains the backward pass. A date-only `deadline` means the end of that working day on the task's calendar, so `2026-10-05` is 17:00 on the default schedule, not midnight.
+- **Solution / Workaround**: Set `deadline` for dates the schedule must hold. Milestones (`isMilestone: true`) are zero-duration, so their estimates are ignored everywhere (all roll-ups read estimates through `getTaskEstimateHours`).
+
+### `task.unblocked` Does Not Change the Task, and Manual Blocks Stay
+- **Area / Package**: `@critical-path/core` (auto-unblocking, `isBlocked`, `getTaskLifecycleState`)
+- **Symptom / Behavior**: After upgrading to 0.53, a task with `isBlocked: true` stays blocked when its upstream work finishes, and `task.unblocked` fires for tasks that were never marked blocked.
+- **Root Cause**: Blocking has two sources. Dependency blocking is derived from the graph (`blockingTaskIds` in the lifecycle state) and never stored. `isBlocked` / `blockedReason` are a manual block, for reasons the graph does not know, and only people or your code clear them. Before 0.53 auto-unblocking cleared manual blocks, which silently dropped reasons such as "waiting on client sign-off". `task.unblocked` now means "every upstream task is finished, this one is free to start".
+- **Solution / Workaround**: Read `getTaskLifecycleState(id).isBlocked` (either source) or `.blockingTaskIds` (dependencies only) instead of `task.isBlocked`. Do not set `isBlocked` to mirror dependencies. If your app used to set `isBlocked` when adding a dependency, stop: the lifecycle state already reports it.
+
+### Dependency Direction: Use `precedenceOf`
+- **Area / Package**: `@critical-path/core` (`TaskDependency`, `domain/graph.ts`)
+- **Symptom / Behavior**: Code that reads `dependency.taskId` / `dependsOnTaskId` directly treats `relates_to` links as blocking, or reads legacy `blocked_by` records backwards.
+- **Root Cause**: Only `blocking` dependencies are scheduling edges. Records stored before 0.53 may still have `type: 'blocked_by'`, which is the same edge with the ids swapped. Before 0.53 the cycle check, the dependency graph and lifecycle state ignored the type while the critical path respected it, so they disagreed.
+- **Solution / Workaround**: Use `precedenceOf(dependency)` (returns `{ before, after }` or `null` for informational links) wherever you need direction. To clean up legacy data, swap the ids of `blocked_by` records and set `type: 'blocking'`.
+
+### Statuses Must Exist in the Project's Workflow
+- **Area / Package**: `@critical-path/core` (`createTask`, `updateTask`, `resolveStatusDefinition`)
+- **Symptom / Behavior**: After 0.54, creating or moving a task to a status such as `qa` or `blocked` fails with `400 Status "qa" is not in this project's workflow`. Data written straight to a store with an unknown key now counts as `not_started`, where an older release may have called it completed or in progress.
+- **Root Cause**: Statuses were never checked, and unknown keys were classified by substring (`unfinished`, `not_done` and `final_draft` counted as completed). Now the key must be in the project's `statusDefinitions` (else its workflow's statuses), and unknown keys are not guessed.
+- **Solution / Workaround**: Add the status to the workflow (or the project's `statusDefinitions`) with the right `category`, or use an existing key. For data written around the engine, move tasks to real statuses.
+
+### Switching Workflows Needs a Status Mapping; Workflows in Use Cannot Be Deleted
+- **Area / Package**: `@critical-path/core` (`updateProject`, `updateWorkflow`, `deleteWorkflow`)
+- **Symptom / Behavior**: `PATCH /projects/:id` with a new `workflowId` returns `409`. `DELETE /workflows/:id` returns `409`. Removing a status from a workflow returns `409`.
+- **Root Cause**: Tasks left in a status the project no longer has had no allowed transitions and were stuck. Deleting a workflow silently moved its projects to another one.
+- **Solution / Workaround**: Pass `statusMapping` (old key -> new key) with the project update; the engine moves the tasks in the same operation. Move tasks out of a status before removing it, and switch projects to another workflow before deleting one. New projects are pinned to their starting workflow (`workflowId` is filled in), so marking another workflow `isDefault` later does not move them; projects created before 0.54 without a `workflowId`, or created while their tenant had no stored workflows (they use the built-in software workflow), still follow the tenant default and move when one is added. Set `workflowId` on those projects to pin them.
+
+### Hours Are Effort from Time Entries; `actualDuration*` Is Elapsed Time
+- **Area / Package**: `@critical-path/core` (`Task.loggedHours`, `actualHours`, `actualDurationSeconds`)
+- **Symptom / Behavior**: `400 Unrecognized key "loggedHours"` when sending hours in a task body. `actualHours` no longer changes when a task leaves in-progress.
+- **Root Cause**: `actualHours` had two writers: time entries (effort) and the in-progress timer (wall-clock), so marking a task done replaced logged effort with elapsed time. Derived fields were also writable over the API, so totals could disagree with time entries.
+- **Solution / Workaround**: Log time with `engine.logTime`, `POST /time-entries` or MCP `log_time`. Read elapsed time from `actualDurationSeconds`. Server code that must correct a derived field can still call `engine.updateTask` directly.
+
+### Parent Tasks Are Summaries of Their Subtasks
+- **Area / Package**: `@critical-path/core` (critical path analysis, ladder, workload, deliverable summaries)
+- **Symptom / Behavior**: After 0.55, a parent task's estimate no longer adds to totals, the parent appears in analysis results with `isSummary: true` and is missing from `criticalTaskIds`, and its dates span its subtasks.
+- **Root Cause**: Parents were summed and scheduled like any other task, so an epic of 40h with two 20h subtasks counted 80h and ran alongside its subtasks in CPM.
+- **Solution / Workaround**: Estimate subtasks, not their parents. Put dependencies and deadlines on whichever level reads best: on a parent they apply to every leaf under it. To find what drives a summary, look at its leaves (`isCritical`, `totalSlack`).
+
+### Unestimated Tasks Take 1 Hour (and Are Listed)
+- **Area / Package**: `@critical-path/core` (`getTaskDurationHours`, `CPMOptions.defaultEstimateHours`)
+- **Symptom / Behavior**: A plan with many unestimated tasks finishes suspiciously soon; the ladder's estimated hours are lower than the CPM duration.
+- **Root Cause**: CPM must give every task a duration, so an unfinished task with no estimate and no logged effort takes `defaultEstimateHours` (default 1). Roll-ups of estimated effort (ladder, deliverable summaries, EVM) count such tasks as 0, because nobody estimated them.
+- **Solution / Workaround**: Read `unestimatedTaskIds` and estimate those tasks, or set `defaultEstimateHours` (`criticalPathDefaultEstimateHours` on the engine) to a realistic size for unestimated work.
+
+### `null` Clears a Field in Update Bodies; Optimistic State Should Use `applyUpdate`
+- **Area / Package**: `@critical-path/core/schemas`, `@critical-path/react`, `@critical-path/svelte`, custom UIs
+- **Symptom / Behavior**: A UI that spreads an update payload into local state (`{ ...task, ...updates }`) shows `dueDate: null` until the server responds, or TypeScript complains that `null` is not assignable.
+- **Root Cause**: JSON has no `undefined`, so update schemas accept `null` for optional fields and parse it to `undefined`, which the engine and stores treat as "remove". `UpdateTaskBody` and the other update body types therefore allow `null`.
+- **Solution / Workaround**: Apply payloads with `applyUpdate(record, updates)` from `@critical-path/core`, which removes fields set to `null` (the built-in React and Svelte state already do). Required fields (titles, names, task `status` and `priority`) still reject `null`. `blockedReason` keeps `null` as its value.
+
+### Custom Adapters Need `getTimeEntry` and `updateTimeEntry`
+- **Area / Package**: `@critical-path/core` (`StorageAdapter`, `TimeEntryRepository`)
+- **Symptom / Behavior**: After 0.56 a custom adapter fails to compile against `StorageAdapter`, or the conformance suite fails on time entries.
+- **Root Cause**: Time entries can now be corrected and deleted through the engine (`updateTimeEntry`, `deleteTimeEntry`, which move the task's hour totals by the difference), which needs lookups by id.
+- **Solution / Workaround**: Implement `getTimeEntry(id)` (return `null` when missing) and `updateTimeEntry(id, updates)` (merge, remove fields set to `undefined`, keep `id` and `taskId`, return `null` when missing). Implement `incrementTaskHours` atomically so concurrent logs and corrections are never lost.
+
+### Successors Start the Next Working Morning in Project Mode Too
+- **Area / Package**: `@critical-path/core` (`calculateCPM`, project-calendar mode)
+- **Symptom / Behavior**: After 0.57, a task after one that finishes at 17:00 has `earlyStartDate` 09:00 the next working day instead of 17:00 the same day, and project-mode results include `overallocations` and `scheduleId`.
+- **Root Cause**: Project mode used to be a separate offset-based implementation. Both modes now run the same date-based passes, so they cannot drift; working-hour offsets (`earlyStart`, `totalDurationHours`) are unchanged.
+- **Solution / Workaround**: Read dates as "when work can begin". Compare offsets if you need to match older results.
+
+### Deliverable Statuses Are a Configurable Set; `format` and `specs` Are Custom Fields
+- **Area / Package**: `@critical-path/core` (`Deliverable`, `Project.deliverableStatusDefinitions`)
+- **Symptom / Behavior**: After 0.58, `createDeliverable` / `updateDeliverable` with `client_review`, `approved` or `in_production` fails with `400 Deliverable status ... is not one of this project's`. `format` and `specs` are rejected in request bodies.
+- **Root Cause**: Deliverables used to have a fixed creative-production status list with no categories, so other domains inherited film statuses and roll-ups could not tell when a deliverable was done. They now follow the task status model: a configurable set with semantic categories, defaulting to `planned`, `in_progress`, `in_review`, `delivered`, `canceled`.
+- **Solution / Workaround**: For creative projects, set `deliverableStatusDefinitions: CREATIVE_DELIVERABLE_STATUSES` on the project (or your own set). Put formats and specs in `customFields`; `SQLiteStore` surfaces values from the old `format` / `specs` columns there automatically. `deliveredAt` is now set on the first completed status, so `approved` sets it in the creative preset.
+
+### `assigneeId` Is the Primary Assignee
+- **Area / Package**: `@critical-path/core` (`Task.assigneeId`, `Task.assignees`)
+- **Symptom / Behavior**: A task with several `assignees` only books one person when levelling; setting `assigneeId` to someone not in `assignees` fails with `400`.
+- **Root Cause**: Scheduling, levelling and workload use one person's calendar and capacity per task: `assigneeId`. `assignees` lists everyone involved (people, agents, teams) for display and filtering.
+- **Solution / Workaround**: Set `assigneeId` to the person whose time the task takes, and include them in `assignees` when you use it. Split work that needs several people's time into a task per person.
+
+### Custom Adapters Need a `BaselineRepository`
+- **Area / Package**: `@critical-path/core` (`StorageAdapter`, baselines)
+- **Symptom / Behavior**: After 0.59 a custom adapter no longer compiles against `StorageAdapter`; `createBaseline` fails.
+- **Root Cause**: Baselines (saved analyses to measure slippage against) are stored entities: `getBaselines(projectId)` (oldest first), `getBaseline`, `createBaseline` (assign `id` and `createdAt`), `deleteBaseline`.
+- **Solution / Workaround**: Implement the four methods. A baseline is written once and read whole, so storing it as one JSON document per row is enough (that is what `SQLiteStore` does). The engine deletes a project's baselines with the project.
+
+### Compare Like with Like Against a Baseline
+- **Area / Package**: `@critical-path/core` (`calculateCriticalPath({ baselineId })`)
+- **Symptom / Behavior**: Every task shows a large variance right after taking a baseline.
+- **Root Cause**: The baseline froze an analysis made with some options (`calendars`, `levelResources`, `effort`); comparing with an analysis made with different options measures the difference between the modes, not slippage.
+- **Solution / Workaround**: Pass the same options to `createBaseline` and to the analyses you compare. Variances are working hours on the project calendar; dated analyses compare dates, undated ones offsets.

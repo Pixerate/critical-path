@@ -24,7 +24,7 @@ describe('agent tool discovery', () => {
   describe('tool selection', () => {
     it('exposes toolsets, combined with exact tool names', () => {
       const names = selectTools({ toolsets: ['scheduling'], tools: ['get_task'] }).map((t) => t.name);
-      expect(names).toEqual(['get_task', 'calculate_critical_path', 'calculate_portfolio_critical_path', 'get_workload_distribution']);
+      expect(names).toEqual(['get_task', 'calculate_critical_path', 'calculate_portfolio_critical_path', 'create_baseline', 'list_baselines', 'get_workload_distribution']);
     });
 
     it('exposes only tools that change nothing in read-only mode', () => {
@@ -73,7 +73,8 @@ describe('agent tool discovery', () => {
       const design = await engine.createTask({ projectId: project.id, title: 'Design', estimatedHours: 8, assigneeId: 'ana', status: 'in_progress' });
       const build = await engine.createTask({ projectId: project.id, title: 'Build', estimatedHours: 16, assigneeId: 'ana' });
       await engine.addDependency({ taskId: build.id, dependsOnTaskId: design.id, type: 'blocking' });
-      await engine.updateTask(design.id, { loggedHours: 3 });
+      await engine.logTime({ taskId: design.id, hours: 3 });
+      const entry = await engine.logTime({ taskId: design.id, hours: 1 });
 
       // The SDK client validates structuredContent against the outputSchema of each listed tool.
       const client = await connect({ engine });
@@ -87,6 +88,9 @@ describe('agent tool discovery', () => {
         ['get_task', { id: build.id, includeDependencies: true }],
         ['create_task', { projectId: project.id, title: 'Ship', estimatedHours: 2, assigneeId: 'ana' }],
         ['update_task', { id: build.id, priority: 'high' }],
+        ['log_time', { taskId: design.id, hours: 1.5, description: 'Wireframes' }],
+        ['update_time_entry', { id: entry.id, hours: 2 }],
+        ['delete_time_entry', { id: entry.id }],
         ['add_dependency', { taskId: build.id, dependsOnTaskId: design.id }],
         ['remove_dependency', { taskId: build.id, dependsOnTaskId: design.id, type: 'relates_to' }],
         ['create_deliverable', { projectId: project.id, title: 'Beta', taskIds: [design.id] }],
@@ -95,6 +99,8 @@ describe('agent tool discovery', () => {
         ['list_comments', { taskId: design.id }],
         ['calculate_critical_path', { projectId: project.id, calendars: 'assignee' }],
         ['calculate_critical_path', { projectId: project.id, calendars: 'assignee', levelResources: true, effort: 'remaining' }],
+        ['create_baseline', { projectId: project.id, name: 'Agreed plan' }],
+        ['list_baselines', { projectId: project.id }],
         ['calculate_portfolio_critical_path', { calendars: 'assignee', levelResources: true }],
         ['get_timeline_ladder', { projectId: project.id, level: 'all' }],
         ['get_task_ladder', { taskId: build.id }],
@@ -191,12 +197,12 @@ describe('agent tool discovery', () => {
       expect(text(missing)).toMatch(/list_tasks/);
     });
 
-    it('reads blocked_by records in the direction the scheduler uses', async () => {
+    it('reads legacy blocked_by records in the direction the scheduler uses', async () => {
       const project = await engine.createProject({ name: 'Launch' });
       const design = await engine.createTask({ projectId: project.id, title: 'Design' });
       const build = await engine.createTask({ projectId: project.id, title: 'Build' });
       // Stored the other way round: build (dependsOnTaskId) waits for design (taskId).
-      const record = await engine.addDependency({ taskId: design.id, dependsOnTaskId: build.id, type: 'blocked_by' });
+      const record = await engine.store.addDependency({ taskId: design.id, dependsOnTaskId: build.id, type: 'blocked_by' as 'blocking' });
       const client = await connect({ engine });
 
       const buildView = await call(client, 'get_task', { id: build.id, includeDependencies: true });

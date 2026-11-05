@@ -5,6 +5,7 @@ import type {
   Project,
   Task,
   Iteration,
+  Baseline,
   Team,
   TaskContainer,
   Comment,
@@ -21,9 +22,11 @@ import { generateProjectKey } from '../utils/key.js';
 import type { WebhookOutboxEntry, WebhookOutboxStore } from '../webhooks/outbox.js';
 import {
   matchesActivityQuery,
+  matchesCommentQuery,
   matchesTaskQuery,
   paginate,
   type ActivityQuery,
+  type CommentQuery,
   type Page,
   type TaskQuery
 } from './query.js';
@@ -86,8 +89,18 @@ export interface IterationRepository {
   deleteIteration(id: string): Promise<boolean>;
 }
 
+export interface BaselineRepository {
+  /** A project's baselines, oldest first. */
+  getBaselines(projectId: string): Promise<Baseline[]>;
+  getBaseline(id: string): Promise<Baseline | null>;
+  createBaseline(baseline: Omit<Baseline, 'id' | 'createdAt'>): Promise<Baseline>;
+  deleteBaseline(id: string): Promise<boolean>;
+}
+
 export interface CommentRepository {
   getComments(taskId: string): Promise<Comment[]>;
+  /** A task's comments, paginated and ordered by `(createdAt, id)` ascending (oldest first). */
+  queryComments(query: CommentQuery): Promise<Page<Comment>>;
   getComment(id: string): Promise<Comment | null>;
   addComment(comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Comment>;
   updateComment(id: string, updates: Partial<Comment>): Promise<Comment | null>;
@@ -112,7 +125,10 @@ export interface ActivityRepository {
 
 export interface TimeEntryRepository {
   getTimeEntries(taskId: string): Promise<TimeEntry[]>;
+  getTimeEntry(id: string): Promise<TimeEntry | null>;
   logTime(entry: Omit<TimeEntry, 'id' | 'loggedAt'> & { loggedAt?: string }): Promise<TimeEntry>;
+  /** Merges `updates` into the entry (fields set to `undefined` are removed). */
+  updateTimeEntry(id: string, updates: Partial<Omit<TimeEntry, 'id' | 'taskId'>>): Promise<TimeEntry | null>;
   deleteTimeEntry(id: string): Promise<boolean>;
 }
 
@@ -148,6 +164,7 @@ export interface StorageAdapter
     ContainerRepository,
     DeliverableRepository,
     IterationRepository,
+    BaselineRepository,
     CommentRepository,
     AttachmentRepository,
     ActivityRepository,
@@ -187,6 +204,7 @@ export class InMemoryStore implements StorageAdapter, WebhookOutboxStore {
   private containers = new Map<string, TaskContainer>();
   private deliverables = new Map<string, Deliverable>();
   private iterations = new Map<string, Iteration>();
+  private baselines = new Map<string, Baseline>();
   private comments = new Map<string, Comment>();
   private attachments = new Map<string, Attachment>();
   private activities: Activity[] = [];
@@ -463,9 +481,35 @@ export class InMemoryStore implements StorageAdapter, WebhookOutboxStore {
     return this.iterations.delete(id);
   }
 
+  // Baselines
+  async getBaselines(projectId: string): Promise<Baseline[]> {
+    return Array.from(this.baselines.values())
+      .filter((b) => b.projectId === projectId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  }
+
+  async getBaseline(id: string): Promise<Baseline | null> {
+    return this.baselines.get(id) ?? null;
+  }
+
+  async createBaseline(baseline: Omit<Baseline, 'id' | 'createdAt'>): Promise<Baseline> {
+    const created: Baseline = { ...baseline, id: `base_${crypto.randomUUID()}`, createdAt: new Date().toISOString() };
+    this.baselines.set(created.id, created);
+    return created;
+  }
+
+  async deleteBaseline(id: string): Promise<boolean> {
+    return this.baselines.delete(id);
+  }
+
   // Comments
   async getComments(taskId: string): Promise<Comment[]> {
     return Array.from(this.comments.values()).filter((c) => c.taskId === taskId);
+  }
+
+  async queryComments(query: CommentQuery): Promise<Page<Comment>> {
+    const comments = Array.from(this.comments.values()).filter((c) => matchesCommentQuery(c, query));
+    return paginate(comments, (c) => c.createdAt, 'asc', query.limit, query.cursor);
   }
 
   async getComment(id: string): Promise<Comment | null> {
@@ -594,6 +638,18 @@ export class InMemoryStore implements StorageAdapter, WebhookOutboxStore {
     const newEntry: TimeEntry = { ...entry, id, loggedAt: entry.loggedAt || new Date().toISOString() };
     this.timeEntries.set(id, newEntry);
     return newEntry;
+  }
+
+  async getTimeEntry(id: string): Promise<TimeEntry | null> {
+    return this.timeEntries.get(id) ?? null;
+  }
+
+  async updateTimeEntry(id: string, updates: Partial<Omit<TimeEntry, 'id' | 'taskId'>>): Promise<TimeEntry | null> {
+    const existing = this.timeEntries.get(id);
+    if (!existing) return null;
+    const updated: TimeEntry = { ...existing, ...updates, id, taskId: existing.taskId };
+    this.timeEntries.set(id, updated);
+    return updated;
   }
 
   async deleteTimeEntry(id: string): Promise<boolean> {

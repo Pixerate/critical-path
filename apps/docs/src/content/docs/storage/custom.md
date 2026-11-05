@@ -10,10 +10,11 @@ Any class implementing `StorageAdapter` from `@critical-path/core` can be passed
 | `ProjectRepository` | `getProjects`, `getProject`, `createProject`, `updateProject`, `deleteProject` |
 | `TaskRepository` | `getTasks(projectId?)`, `queryTasks(query)`, `getTask`, `createTask`, `updateTask`, `deleteTask` |
 | `WorkflowRepository`, `TeamRepository`, `ContainerRepository`, `IterationRepository`, `DeliverableRepository` | `get…s`, `get…`, `create…`, `update…`, `delete…` |
-| `CommentRepository` | `getComments(taskId)`, `getComment`, `addComment`, `updateComment`, `deleteComment`, optional `addReaction` / `removeReaction` |
+| `CommentRepository` | `getComments(taskId)`, `queryComments(query)`, `getComment`, `addComment`, `updateComment`, `deleteComment`, optional `addReaction` / `removeReaction` |
 | `AttachmentRepository` | `getAttachments(filter)`, `getAttachment`, `createAttachment`, `deleteAttachment` |
 | `ActivityRepository` | `getActivities(filter)`, `queryActivities(query)`, `logActivity` |
-| `TimeEntryRepository` | `getTimeEntries(taskId)`, `logTime`, `deleteTimeEntry` |
+| `BaselineRepository` | `getBaselines(projectId)` (oldest first), `getBaseline`, `createBaseline`, `deleteBaseline` |
+| `TimeEntryRepository` | `getTimeEntries(taskId)`, `getTimeEntry`, `logTime`, `updateTimeEntry`, `deleteTimeEntry` |
 | `DependencyRepository` | `getDependencies(taskId)`, `getDependency`, `addDependency`, `removeDependency` |
 | `WebhookRepository` | `getWebhooks`, `getWebhook`, `addWebhook`, `updateWebhook`, `deleteWebhook` |
 
@@ -38,9 +39,9 @@ const engine = new CriticalPathEngine({ store: new PostgresStore(pool) });
 - **Ordering.**
   - `getComments`: oldest first.
   - `getActivities`: newest first.
-  - `queryTasks`: `(createdAt, id)` ascending.
+  - `queryTasks`, `queryComments`: `(createdAt, id)` ascending.
   - `queryActivities`: `(createdAt, id)` descending.
-- **Filters.** Every filter passed to `getAttachments`, `getActivities`, `queryTasks` and `queryActivities` must be applied together. The exported helpers `matchesTaskQuery`, `matchesActivityQuery` and `paginate` implement the in-memory semantics if your database cannot push a filter down.
+- **Filters.** Every filter passed to `getAttachments`, `getActivities`, `queryTasks` and `queryActivities` must be applied together. The exported helpers `matchesTaskQuery`, `matchesActivityQuery`, `matchesCommentQuery` and `paginate` implement the in-memory semantics if your database cannot push a filter down.
 - **Hour totals (optional).** Implement `incrementTaskHours(taskId, { loggedHours?, actualHours?, billableHours? })` as a single atomic update (e.g. `UPDATE tasks SET loggedHours = COALESCE(loggedHours, 0) + $1 ...`) returning the updated task, or `null`. `logTime` uses it so concurrent logs are never lost; without it the engine falls back to read-modify-write.
 - **Transactions (optional).** Implement `transaction(fn)` to make cascading deletes atomic. Run `fn` with an adapter (`tx`) whose calls all belong to one database transaction, commit when it resolves, and roll back when it throws. A nested `transaction` call should join the outer one. Keep unrelated concurrent calls out of the transaction, for example by giving `tx` its own connection from a pool:
 

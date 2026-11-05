@@ -29,13 +29,34 @@ export function parsePayload<S extends z.ZodTypeAny>(schema: S, data: unknown): 
   throw new ValidationError(`Invalid request body: ${summary}`, issues);
 }
 
+type Clearable<T extends z.ZodRawShape> = {
+  [K in keyof T]: z.ZodOptional<z.ZodEffects<z.ZodNullable<T[K]>, z.output<T[K]> | undefined>>;
+};
+
+/**
+ * Update payloads may send `null` for these fields to clear them (JSON has no `undefined`).
+ * Parsing turns `null` into `undefined`, which the engine and every store treat as "remove this field".
+ */
+function clearable<T extends z.ZodRawShape>(shape: T): Clearable<T> {
+  return Object.fromEntries(
+    Object.entries(shape).map(([key, field]) => [key, field.nullable().transform((value: unknown) => value ?? undefined).optional()])
+  ) as Clearable<T>;
+}
+
 /** Objects reject unknown keys so typos and protected fields surface as 400s. */
 function strictObject<T extends z.ZodRawShape>(shape: T) {
   return z.object(shape).strict();
 }
 
-const isoString = z.string();
 const nonEmpty = z.string().min(1);
+/**
+ * A date (`2026-10-05`) or date-time (`2026-10-05T17:00`, optionally with `Z` or an offset). Every
+ * date field is checked, because the engine computes with them (critical path, metrics, ladder).
+ */
+const isoDateOrDateTime = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/, 'must be an ISO date or date-time')
+  .refine((value) => !Number.isNaN(new Date(value).getTime()), 'must be a valid date');
 
 export const SemanticStatusSchema = z.enum(['not_started', 'in_progress', 'completed', 'canceled']);
 export const AuthorTypeSchema = z.enum(['user', 'agent', 'system']);
@@ -128,16 +149,24 @@ export const CreateProjectSchema = strictObject({
   workflowId: z.string().optional(),
   taskTypes: z.array(TaskTypeDefinitionSchema).optional(),
   statusDefinitions: z.array(StatusDefinitionSchema).optional(),
+  deliverableStatusDefinitions: z.array(StatusDefinitionSchema).min(1).optional(),
   priorityDefinitions: z
     .array(strictObject({ key: z.string(), label: z.string(), level: z.number().optional() }))
     .optional(),
   customFieldDefinitions: z.array(CustomFieldDefinitionSchema).optional(),
   schedule: WorkScheduleSchema.optional(),
-  startDate: isoString.optional(),
-  targetEndDate: isoString.optional(),
+  startDate: isoDateOrDateTime.optional(),
+  targetEndDate: isoDateOrDateTime.optional(),
   customFields: customFields.optional()
 });
-export const UpdateProjectSchema = CreateProjectSchema.partial();
+const { name: projectName, key: projectKey, ...clearableProjectFields } = CreateProjectSchema.shape;
+export const UpdateProjectSchema = strictObject({ name: projectName, key: projectKey, ...clearable(clearableProjectFields) }).partial().extend({
+  /**
+   * Not stored. When the update changes the project's statuses, maps each status tasks are in that
+   * the project will no longer have to its replacement (see `engine.updateProject`).
+   */
+  statusMapping: z.record(nonEmpty).optional()
+});
 
 // --- Tasks ---
 
@@ -145,7 +174,6 @@ const taskFields = {
   title: nonEmpty,
   description: z.string().optional(),
   status: z.string().optional(),
-  semanticStatus: SemanticStatusSchema.optional(),
   priority: z.string().optional(),
   taskType: z.string().optional(),
   assigneeId: z.string().optional(),
@@ -166,23 +194,17 @@ const taskFields = {
   teamId: z.string().optional(),
   containerId: z.string().optional(),
   deliverableId: z.string().optional(),
-  plannedStartDate: isoString.optional(),
-  actualStartDate: isoString.optional(),
-  actualEndDate: isoString.optional(),
-  completedAt: isoString.optional(),
-  dueDate: isoString.optional(),
+  plannedStartDate: isoDateOrDateTime.optional(),
+  actualStartDate: isoDateOrDateTime.optional(),
+  actualEndDate: isoDateOrDateTime.optional(),
+  completedAt: isoDateOrDateTime.optional(),
+  dueDate: isoDateOrDateTime.optional(),
+  deadline: isoDateOrDateTime.optional(),
+  earliestStart: isoDateOrDateTime.optional(),
+  isMilestone: z.boolean().optional(),
   estimatedHours: z.number().nonnegative().optional(),
   allocation: z.number().gt(0).max(1).optional(),
-  loggedHours: z.number().nonnegative().optional(),
-  actualHours: z.number().nonnegative().optional(),
-  billableHours: z.number().nonnegative().optional(),
   estimatedDurationMinutes: z.number().nonnegative().optional(),
-  actualDurationMinutes: z.number().nonnegative().optional(),
-  billableDurationMinutes: z.number().nonnegative().optional(),
-  actualDurationSeconds: z.number().nonnegative().optional(),
-  inProgressSince: isoString.nullable().optional(),
-  blockedDurationSeconds: z.number().nonnegative().optional(),
-  blockedSince: isoString.nullable().optional(),
   progress: z.number().min(0).max(100).optional(),
   isBlocked: z.boolean().optional(),
   blockedReason: z.string().nullable().optional(),
@@ -193,8 +215,8 @@ const taskFields = {
         id: z.string(),
         title: z.string(),
         completed: z.boolean(),
-        createdAt: isoString.optional(),
-        completedAt: isoString.optional()
+        createdAt: isoDateOrDateTime.optional(),
+        completedAt: isoDateOrDateTime.optional()
       })
     )
     .optional(),
@@ -204,7 +226,15 @@ const taskFields = {
 
 export const CreateTaskSchema = strictObject({ projectId: nonEmpty, ...taskFields });
 
-export const UpdateTaskSchema = strictObject(taskFields).partial();
+// title, status and priority cannot be removed; blockedReason already takes null as a value
+const { title: taskTitle, status: taskStatus, priority: taskPriority, blockedReason, ...clearableTaskFields } = taskFields;
+export const UpdateTaskSchema = strictObject({
+  title: taskTitle,
+  status: taskStatus,
+  priority: taskPriority,
+  blockedReason,
+  ...clearable(clearableTaskFields)
+}).partial();
 
 // --- Agent status ---
 
@@ -221,7 +251,8 @@ export type ReportAgentStatusBody = z.infer<typeof ReportAgentStatusSchema>;
 
 export const CreateDependencySchema = strictObject({
   dependsOnTaskId: nonEmpty,
-  type: z.enum(['blocking', 'blocked_by', 'relates_to']).default('blocking'),
+  type: z.enum(['blocking', 'relates_to']).default('blocking'),
+  lagHours: z.number().finite().optional(),
   customFields: customFields.optional()
 });
 
@@ -231,17 +262,16 @@ const deliverableFields = {
   title: nonEmpty,
   description: z.string().optional(),
   status: z.string().optional(),
-  format: z.string().optional(),
-  specs: z.record(z.unknown()).optional(),
   leadId: z.string().optional(),
   reviewerId: z.string().optional(),
-  dueDate: isoString.optional(),
-  deliveredAt: isoString.optional(),
+  dueDate: isoDateOrDateTime.optional(),
+  deliveredAt: isoDateOrDateTime.optional(),
   outputUrls: z.array(z.string()).optional(),
   customFields: customFields.optional()
 };
 export const CreateDeliverableSchema = strictObject({ projectId: nonEmpty, ...deliverableFields });
-export const UpdateDeliverableSchema = strictObject(deliverableFields).partial();
+const { title: deliverableTitle, status: deliverableStatus, ...clearableDeliverableFields } = deliverableFields;
+export const UpdateDeliverableSchema = strictObject({ title: deliverableTitle, status: deliverableStatus, ...clearable(clearableDeliverableFields) }).partial();
 
 // --- Teams ---
 
@@ -268,7 +298,8 @@ const containerFields = {
   customFields: customFields.optional()
 };
 export const CreateContainerSchema = strictObject({ projectId: nonEmpty, ...containerFields });
-export const UpdateContainerSchema = strictObject(containerFields).partial();
+const { name: containerName, ...clearableContainerFields } = containerFields;
+export const UpdateContainerSchema = strictObject({ name: containerName, ...clearable(clearableContainerFields) }).partial();
 
 // --- Iterations ---
 
@@ -276,13 +307,18 @@ const iterationFields = {
   name: nonEmpty,
   goal: z.string().optional(),
   type: z.string().optional(),
-  startDate: isoString.optional(),
-  endDate: isoString.optional(),
+  startDate: isoDateOrDateTime.optional(),
+  endDate: isoDateOrDateTime.optional(),
   status: z.enum(['planning', 'active', 'completed']).default('planning'),
   customFields: customFields.optional()
 };
 export const CreateIterationSchema = strictObject({ projectId: nonEmpty, ...iterationFields });
-export const UpdateIterationSchema = strictObject({ ...iterationFields, status: z.enum(['planning', 'active', 'completed']) }).partial();
+const { name: iterationName, status: _iterationStatus, ...clearableIterationFields } = iterationFields;
+export const UpdateIterationSchema = strictObject({
+  name: iterationName,
+  status: z.enum(['planning', 'active', 'completed']),
+  ...clearable(clearableIterationFields)
+}).partial();
 
 // --- Comments & Reactions ---
 
@@ -346,7 +382,28 @@ export const LogTimeSchema = strictObject({
   hours: z.number().positive(),
   isBillable: z.boolean().optional(),
   description: z.string().optional(),
-  loggedAt: isoString.optional(),
+  loggedAt: isoDateOrDateTime.optional(),
+  customFields: customFields.optional()
+});
+
+/** Correcting a time entry; the task and author stay as they are. `null` clears the description. */
+export const UpdateTimeEntrySchema = strictObject({
+  hours: z.number().positive(),
+  isBillable: z.boolean(),
+  loggedAt: isoDateOrDateTime,
+  ...clearable({ description: z.string(), customFields })
+}).partial();
+
+// --- Baselines ---
+
+/** Saving a baseline: a name, and the same options as critical path analysis. */
+export const CreateBaselineSchema = strictObject({
+  name: nonEmpty,
+  calendars: z.enum(['project', 'assignee']).optional(),
+  levelResources: z.boolean().optional(),
+  levelingPriority: z.enum(['slack', 'priority', 'dueDate', 'order']).optional(),
+  effort: z.enum(['estimate', 'remaining']).optional(),
+  defaultEstimateHours: z.number().nonnegative().optional(),
   customFields: customFields.optional()
 });
 
@@ -392,6 +449,12 @@ export const LadderQuerySchema = strictObject({
 });
 
 /** `GET /activities` query parameters. */
+export const CommentListQuerySchema = strictObject({
+  taskId: nonEmpty.optional(),
+  limit: pageLimit.optional(),
+  cursor: nonEmpty.optional()
+});
+
 export const ActivityListQuerySchema = strictObject({
   projectId: nonEmpty.optional(),
   taskId: nonEmpty.optional(),
@@ -433,6 +496,8 @@ export type CreateTeamBody = z.input<typeof CreateTeamSchema>;
 export type UpdateTeamBody = z.input<typeof UpdateTeamSchema>;
 export type CreateContainerBody = z.input<typeof CreateContainerSchema>;
 export type UpdateContainerBody = z.input<typeof UpdateContainerSchema>;
+export type UpdateTimeEntryBody = z.input<typeof UpdateTimeEntrySchema>;
+export type CreateBaselineBody = z.input<typeof CreateBaselineSchema>;
 export type CreateIterationBody = z.input<typeof CreateIterationSchema>;
 export type UpdateIterationBody = z.input<typeof UpdateIterationSchema>;
 export type CreateCommentBody = z.input<typeof CreateCommentSchema>;
