@@ -70,8 +70,7 @@ export const DEFAULT_AGENTIC_WORKFLOW: Workflow = {
     DEFAULT_STATUS_DEFINITIONS.todo,
     DEFAULT_STATUS_DEFINITIONS.in_progress,
     DEFAULT_STATUS_DEFINITIONS.in_review,
-    DEFAULT_STATUS_DEFINITIONS.done,
-    DEFAULT_STATUS_DEFINITIONS.canceled
+    DEFAULT_STATUS_DEFINITIONS.done
   ],
   transitions: [
     { name: 'Approve Plan / Ready to Start', fromStatusKey: 'planning', toStatusKey: 'todo' },
@@ -90,10 +89,7 @@ export const DEFAULT_AGENTIC_WORKFLOW: Workflow = {
     { name: 'Reopen to Review', fromStatusKey: 'done', toStatusKey: 'in_review' },
     { name: 'Reopen to In Progress', fromStatusKey: 'done', toStatusKey: 'in_progress' },
     { name: 'Reopen to To Do', fromStatusKey: 'done', toStatusKey: 'todo' },
-    { name: 'Reopen to Planning', fromStatusKey: 'done', toStatusKey: 'planning' },
-    { name: 'Cancel', fromStatusKey: '*', toStatusKey: 'canceled' },
-    { name: 'Restore to Planning', fromStatusKey: 'canceled', toStatusKey: 'planning' },
-    { name: 'Restore to To Do', fromStatusKey: 'canceled', toStatusKey: 'todo' }
+    { name: 'Reopen to Planning', fromStatusKey: 'done', toStatusKey: 'planning' }
   ],
   taskTypes: DEFAULT_TASK_TYPES,
   defaultStatusKey: 'todo',

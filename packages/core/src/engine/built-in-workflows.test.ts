@@ -17,8 +17,7 @@ describe('DEFAULT_AGENTIC_WORKFLOW', () => {
       'todo',
       'in_progress',
       'in_review',
-      'done',
-      'canceled'
+      'done'
     ]);
     for (const [from, to] of [
       ['todo', 'planning'],
