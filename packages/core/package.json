@@ -32,10 +32,10 @@
     "test:firestore": "firebase emulators:exec --only firestore --project demo-critical-path --config ../../firebase.json 'vitest run src/store/firestore-emulator.test.ts'"
   },
   "devDependencies": {
-    "@google-cloud/firestore": "^9.3.1",
-    "@types/node": "^26.6.5",
+    "@google-cloud/firestore": "^9.4.0",
+    "@types/node": "^26.6.6",
     "typescript": "^5.7.0",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   },
   "engines": {
     "node": ">=24.0.0"
