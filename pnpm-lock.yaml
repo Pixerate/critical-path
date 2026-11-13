@@ -163,7 +163,7 @@ importers:
   packages/core:
     dependencies:
       zod:
-        specifier: ^3.25.76
+        specifier: ^3.25.76 || ^4.6.6
         version: 3.25.76
     devDependencies:
       '@google-cloud/firestore':

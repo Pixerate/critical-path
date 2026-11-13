@@ -29,18 +29,24 @@ export function parsePayload<S extends z.ZodTypeAny>(schema: S, data: unknown): 
   throw new ValidationError(`Invalid request body: ${summary}`, issues);
 }
 
-type Clearable<T extends z.ZodRawShape> = {
-  [K in keyof T]: z.ZodOptional<z.ZodEffects<z.ZodNullable<T[K]>, z.output<T[K]> | undefined>>;
+function clearableField<F extends z.ZodTypeAny>(field: F) {
+  return field
+    .nullable()
+    .transform((value: z.output<F> | null): z.output<F> | undefined => value ?? undefined)
+    .optional();
+}
+
+// Derived from `clearableField` so it holds for zod 3 (ZodEffects) and zod 4 (ZodPipe) alike.
+type Clearable<T extends Record<string, z.ZodTypeAny>> = {
+  [K in keyof T]: ReturnType<typeof clearableField<T[K]>>;
 };
 
 /**
  * Update payloads may send `null` for these fields to clear them (JSON has no `undefined`).
  * Parsing turns `null` into `undefined`, which the engine and every store treat as "remove this field".
  */
-function clearable<T extends z.ZodRawShape>(shape: T): Clearable<T> {
-  return Object.fromEntries(
-    Object.entries(shape).map(([key, field]) => [key, field.nullable().transform((value: unknown) => value ?? undefined).optional()])
-  ) as Clearable<T>;
+function clearable<T extends Record<string, z.ZodTypeAny>>(shape: T): Clearable<T> {
+  return Object.fromEntries(Object.entries(shape).map(([key, field]) => [key, clearableField(field)])) as Clearable<T>;
 }
 
 /** Objects reject unknown keys so typos and protected fields surface as 400s. */
@@ -104,8 +110,8 @@ export const TaskTypeDefinitionSchema = strictObject({
   workflowId: z.string().optional()
 });
 
-const customFields = z.record(z.unknown());
-const metadata = z.record(z.unknown());
+const customFields = z.record(z.string(), z.unknown());
+const metadata = z.record(z.string(), z.unknown());
 
 // --- Workflows ---
 
@@ -165,7 +171,7 @@ export const UpdateProjectSchema = strictObject({ name: projectName, key: projec
    * Not stored. When the update changes the project's statuses, maps each status tasks are in that
    * the project will no longer have to its replacement (see `engine.updateProject`).
    */
-  statusMapping: z.record(nonEmpty).optional()
+  statusMapping: z.record(z.string(), nonEmpty).optional()
 });
 
 // --- Tasks ---
