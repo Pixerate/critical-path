@@ -62,6 +62,13 @@ jobs:
       - name: Run test suite
         run: pnpm run test
 
+      # Consumers may run zod 4 (zod 3 has no fix for GHSA-mrhx-c7xc-m3w5): build and test core on it too.
+      - name: Build & test core against zod 4
+        run: |
+          pnpm --filter @critical-path/core add zod@4.6.6
+          pnpm --filter @critical-path/core run build
+          pnpm --filter @critical-path/core run test
+
   firestore-emulator:
     name: FirebaseStore conformance (Firestore emulator)
     runs-on: ubuntu-latest
