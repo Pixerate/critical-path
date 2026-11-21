@@ -166,6 +166,20 @@ const handle = registerWebMcpTools({
 handle.unregister();
 ```
 
+### Tool call telemetry
+
+`onToolExecuted` runs only when a tool succeeds. For telemetry, use `onToolCall`: it runs once for every call after it settles, with `toolName`, `input`, `status` (`'success' | 'error'`), `durationMs`, `projectId`, and `result` or `error`. Errors thrown by the callback are caught, so they never change the tool's result. `createWebMcpState` (Svelte) and `useWebMCP` (React) accept it too.
+
+```typescript
+registerWebMcpTools({
+  client,
+  projectId: 'proj-main',
+  onToolCall: ({ toolName, status, durationMs, error }) => {
+    console.log(`[WebMCP] ${toolName} ${status} in ${Math.round(durationMs)}ms`, error?.message ?? '');
+  }
+});
+```
+
 ---
 
 ## 🛠️ Supported Tools

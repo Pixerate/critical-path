@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { CriticalPathEngine, InMemoryStore } from '@critical-path/core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -390,6 +390,60 @@ describe('@critical-path/mcp', () => {
       expect(children.tasks.map((t: { title: string }) => t.title)).toEqual(['Child']);
       const topLevel = await list.execute({ projectId: project.id, parentId: 'none' }, engine);
       expect(topLevel.tasks.map((t: { title: string }) => t.title)).toEqual(['Parent']);
+    });
+
+    it('reports every settled tool call to onToolCall with status and duration', async () => {
+      const failure = new Error('Backend unavailable');
+      const mockClient: any = {
+        queryTasks: () => Promise.resolve({ items: [{ id: 't1', projectId: 'proj-1', title: 'One', status: 'todo' }] }),
+        getTask: () => Promise.reject(failure)
+      };
+      const events: any[] = [];
+      const executed: string[] = [];
+      const handle = registerWebMcpTools({
+        client: mockClient,
+        projectId: 'proj-1',
+        document: mockDoc,
+        window: mockWin,
+        onToolCall: (event) => events.push(event),
+        onToolExecuted: (name) => executed.push(name)
+      });
+
+      const listed = await mockDoc.modelContext.executeTool('list_tasks', {});
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ toolName: 'list_tasks', input: {}, status: 'success', projectId: 'proj-1', result: listed });
+      expect(events[0].error).toBeUndefined();
+      expect(events[0].durationMs).toBeGreaterThanOrEqual(0);
+
+      await expect(mockDoc.modelContext.executeTool('get_task', { id: 't1' })).rejects.toThrow(/Backend unavailable/);
+      expect(events).toHaveLength(2);
+      expect(events[1]).toMatchObject({ toolName: 'get_task', input: { id: 't1' }, status: 'error', projectId: 'proj-1' });
+      expect(events[1].error).toBeInstanceOf(Error);
+      expect(events[1].error.message).toMatch(/Backend unavailable/);
+      expect(events[1].result).toBeUndefined();
+      expect(typeof events[1].durationMs).toBe('number');
+
+      // onToolExecuted keeps its success-only contract.
+      expect(executed).toEqual(['list_tasks']);
+      handle.unregister();
+    });
+
+    it('never lets an onToolCall error change the tool result', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const mockClient: any = { queryTasks: () => Promise.resolve({ items: [] }) };
+      const handle = registerWebMcpTools({
+        client: mockClient,
+        document: mockDoc,
+        window: mockWin,
+        onToolCall: () => {
+          throw new Error('telemetry down');
+        }
+      });
+
+      await expect(mockDoc.modelContext.executeTool('list_tasks', { projectId: 'p' })).resolves.toBeDefined();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+      handle.unregister();
     });
 
     it('supports AbortSignal unregistration lifecycle', async () => {

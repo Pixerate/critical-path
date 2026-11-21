@@ -40,7 +40,29 @@ export interface RegisterWebMcpOptions {
   document?: any;
   navigator?: any;
   window?: any;
+  /** Called after a tool succeeds, with its result. Not called when a tool throws; use `onToolCall` for that. */
   onToolExecuted?: (toolName: string, input: any, result: any) => void;
+  /**
+   * Called once per tool call, after it settles, whether it succeeded or threw: tool name, input,
+   * outcome, duration and the ambient project. Use it for telemetry and audit logs. Errors thrown by
+   * this callback are caught and logged, so they never change the tool's result.
+   */
+  onToolCall?: (event: WebMcpToolCallEvent) => void;
+}
+
+/** One settled WebMCP tool call, passed to `onToolCall`. */
+export interface WebMcpToolCallEvent {
+  toolName: string;
+  input: any;
+  status: 'success' | 'error';
+  /** Wall-clock time from the start of the call until it settled, in milliseconds. */
+  durationMs: number;
+  /** The project the tools were registered for (`options.projectId`), if any. */
+  projectId?: string;
+  /** The tool's result; set only when `status` is `'success'`. */
+  result?: any;
+  /** The error the tool threw (with its recovery hint); set only when `status` is `'error'`. */
+  error?: Error;
 }
 
 export interface WebMcpRegistryHandle {
@@ -135,7 +157,16 @@ export function registerWebMcpTools(options: RegisterWebMcpOptions): WebMcpRegis
       annotations: { ...toolDef.annotations },
       execute: async (input: any) => {
         const ambientContext = options.projectId ? { projectId: options.projectId } : undefined;
-        const result = await runTool(toolDef, input, options.client, ambientContext);
+        const startedAt = now();
+        let result: any;
+        try {
+          result = await runTool(toolDef, input, options.client, ambientContext);
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err));
+          reportToolCall(options, { toolName: toolDef.name, input, status: 'error', durationMs: elapsed(startedAt), projectId: options.projectId, error });
+          throw error;
+        }
+        reportToolCall(options, { toolName: toolDef.name, input, status: 'success', durationMs: elapsed(startedAt), projectId: options.projectId, result });
         options.onToolExecuted?.(toolDef.name, input, result);
         return result;
       }
@@ -183,4 +214,21 @@ export function registerWebMcpTools(options: RegisterWebMcpOptions): WebMcpRegis
     getRegisteredTools: () => registeredTools,
     instructions
   };
+}
+
+function now(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+}
+
+function elapsed(startedAt: number): number {
+  return Math.max(0, now() - startedAt);
+}
+
+function reportToolCall(options: RegisterWebMcpOptions, event: WebMcpToolCallEvent): void {
+  if (!options.onToolCall) return;
+  try {
+    options.onToolCall(event);
+  } catch (err) {
+    console.warn(`[Critical Path WebMCP] onToolCall threw for "${event.toolName}":`, err);
+  }
 }
