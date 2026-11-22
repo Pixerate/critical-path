@@ -221,7 +221,8 @@ Other domain errors are exported for callers and route handlers to map: `Validat
 import { CriticalPathEngine, CREATIVE_DELIVERABLE_STATUSES } from '@critical-path/core';
 
 const engine = new CriticalPathEngine();
-// Creative statuses for this project's deliverables (the default set is planned / in_progress / in_review / delivered / canceled)
+// Creative statuses for this project's deliverables (the default set is planned / in_progress / in_review / delivered / canceled).
+// To use them for every project instead: new CriticalPathEngine({ defaultDeliverableStatuses: CREATIVE_DELIVERABLE_STATUSES })
 await engine.updateProject('proj_1', { deliverableStatusDefinitions: CREATIVE_DELIVERABLE_STATUSES });
 
 // 1. Create deliverable; domain-specific details go in customFields

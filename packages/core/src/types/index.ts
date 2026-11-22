@@ -680,6 +680,18 @@ export interface CriticalPathConfig {
   criticalPathDefaultEstimateHours?: number;
   /** Most tasks `calculatePortfolioCriticalPath` analyses in one call. Default 5000. */
   portfolioTaskLimit?: number;
+  /**
+   * Statuses every project accepts in addition to its own (`statusDefinitions` or workflow
+   * statuses), for states that sit outside any workflow, such as `draft`. Tasks may move into
+   * and out of a global status from any status, whatever the workflow's transitions say.
+   * A project status with the same key takes precedence.
+   */
+  globalStatuses?: StatusDefinition[];
+  /**
+   * Deliverable statuses for projects that do not set `deliverableStatusDefinitions`.
+   * Default `DEFAULT_DELIVERABLE_STATUSES`; pass `CREATIVE_DELIVERABLE_STATUSES` for creative production.
+   */
+  defaultDeliverableStatuses?: StatusDefinition[];
   initialData?: {
     projects?: Project[];
     tasks?: Task[];
