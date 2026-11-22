@@ -1,5 +1,11 @@
 # @critical-path/mcp
 
+## 0.27.0
+
+### Minor Changes
+
+- aa0c63e: Add `onToolCall` to `registerWebMcpTools`, `createWebMcpState` and `useWebMCP`. It runs once for every WebMCP tool call after it settles, whether it succeeded or threw, with `toolName`, `input`, `status`, `durationMs`, `projectId`, and `result` or `error`. Apps can now record tool-call telemetry without wrapping each tool's `execute`. `onToolExecuted` is unchanged and still runs on success only.
+
 ## 0.26.3
 
 ### Patch Changes
