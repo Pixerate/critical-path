@@ -139,9 +139,6 @@ import { calculateWorkloadDistribution } from '../domain/workload.js';
 import { getTaskEstimateHours, getSummaryTaskIds } from '../domain/effort.js';
 import { inferTaskProgress } from '../domain/metrics.js';
 
-/** The statuses a project's deliverables may have. */
-const deliverableStatusesOf = (project: Pick<Project, 'deliverableStatusDefinitions'> | null) =>
-  project?.deliverableStatusDefinitions?.length ? project.deliverableStatusDefinitions : DEFAULT_DELIVERABLE_STATUSES;
 
 /** What a time entry adds to its task's hour totals (`sign` -1 to take it off). */
 function hourDeltas(entry: Pick<TimeEntry, 'hours' | 'isBillable'>, sign = 1): TaskHourDeltas {
@@ -701,9 +698,32 @@ export class CriticalPathEngine {
     return workflows.find((w) => w.isDefault) ?? workflows[0];
   }
 
-  /** The statuses tasks in a project may have: its own definitions, else its workflow's. */
+  /**
+   * The statuses tasks in a project may have: its own definitions, else its workflow's, plus
+   * `config.globalStatuses` that the project does not define itself.
+   */
   private async statusDefinitionsFor(project: Pick<Project, 'statusDefinitions' | 'workflow' | 'workflowId' | 'tenantId'> | null): Promise<StatusDefinition[]> {
-    return project?.statusDefinitions?.length ? project.statusDefinitions : (await this.workflowFor(project)).statuses;
+    const own = project?.statusDefinitions?.length ? project.statusDefinitions : (await this.workflowFor(project)).statuses;
+    return this.withGlobalStatuses(own);
+  }
+
+  /** `statuses` plus the configured global statuses whose keys they do not already use. */
+  private withGlobalStatuses(statuses: StatusDefinition[]): StatusDefinition[] {
+    const globals = this.config.globalStatuses ?? [];
+    if (!globals.length) return statuses;
+    const keys = new Set(statuses.map((s) => s.key));
+    return [...statuses, ...globals.filter((g) => !keys.has(g.key))];
+  }
+
+  /** Whether `status` is a configured global status (one tasks may enter or leave from anywhere). */
+  private isGlobalStatus(status: string | undefined): boolean {
+    return Boolean(status && this.config.globalStatuses?.some((g) => g.key === status));
+  }
+
+  /** The statuses a project's deliverables may have. */
+  private deliverableStatusesOf(project: Pick<Project, 'deliverableStatusDefinitions'> | null): StatusDefinition[] {
+    if (project?.deliverableStatusDefinitions?.length) return project.deliverableStatusDefinitions;
+    return this.config.defaultDeliverableStatuses?.length ? this.config.defaultDeliverableStatuses : DEFAULT_DELIVERABLE_STATUSES;
   }
 
   /** Projects whose tasks follow `workflow`, explicitly or as their tenant's default. */
@@ -742,18 +762,36 @@ export class CriticalPathEngine {
     }
   }
 
+  /**
+   * Adds global statuses to the statuses a task may move to: every global status is reachable,
+   * and a task in a global status may return to any status of its project.
+   */
+  private async withGlobalTransitions(task: Task, workflow: Workflow | null, allowed: string[]): Promise<string[]> {
+    const globals = this.config.globalStatuses ?? [];
+    if (!globals.length) return allowed;
+    const keys = new Set(allowed);
+    if (this.isGlobalStatus(task.status)) {
+      const project = await this.store.getProject(task.projectId);
+      const own = project?.statusDefinitions?.length ? project.statusDefinitions : workflow?.statuses ?? [];
+      for (const s of own) keys.add(s.key);
+    }
+    for (const g of globals) keys.add(g.key);
+    keys.delete(task.status);
+    return [...keys];
+  }
+
   async getAllowedTaskTransitions(taskId: string): Promise<string[]> {
     const task = await this.getTask(taskId);
     if (!task) return [];
     const workflow = await this.resolveProjectWorkflow(task.projectId);
-    return getAllowedTransitions(workflow || undefined, task.status);
+    return this.withGlobalTransitions(task, workflow, getAllowedTransitions(workflow || undefined, task.status));
   }
 
   async getAllowedNextTaskTransitions(taskId: string): Promise<string[]> {
     const task = await this.getTask(taskId);
     if (!task) return [];
     const workflow = await this.resolveProjectWorkflow(task.projectId);
-    return getAllowedNextStatuses(workflow || undefined, task.status);
+    return this.withGlobalTransitions(task, workflow, getAllowedNextStatuses(workflow || undefined, task.status));
   }
 
   async getAllowedPreviousTaskTransitions(taskId: string): Promise<string[]> {
@@ -1112,7 +1150,11 @@ export class CriticalPathEngine {
       this.assertKnownStatus(processedUpdates.status, await this.statusDefinitionsFor(project));
     }
     if (processedUpdates.status && processedUpdates.status !== existing.status && !options?.ignoreTransitions) {
-      const isValid = validateTransition(workflow || undefined, existing.status, processedUpdates.status);
+      // Global statuses sit outside the workflow, so moves into or out of them are always allowed.
+      const isValid =
+        this.isGlobalStatus(existing.status) ||
+        this.isGlobalStatus(processedUpdates.status) ||
+        validateTransition(workflow || undefined, existing.status, processedUpdates.status);
       if (!isValid) {
         throw new WorkflowValidationError(existing.status, processedUpdates.status, workflow?.id);
       }
@@ -2430,7 +2472,7 @@ export class CriticalPathEngine {
       validateCustomFieldValues(project.customFieldDefinitions, input.customFields, this.plugins.getCustomFieldTypes());
     }
 
-    const statuses = deliverableStatusesOf(project);
+    const statuses = this.deliverableStatusesOf(project);
     const status = input.status || statuses.find((s) => s.category === 'not_started')?.key || statuses[0].key;
     const category = this.deliverableCategory(status, statuses);
     const created = await this.store.createDeliverable({
@@ -2472,7 +2514,7 @@ export class CriticalPathEngine {
     updates = rest;
     if (updates.status && updates.status !== existing.status) {
       const project = await this.store.getProject(existing.projectId);
-      updates.semanticStatus = this.deliverableCategory(updates.status, deliverableStatusesOf(project));
+      updates.semanticStatus = this.deliverableCategory(updates.status, this.deliverableStatusesOf(project));
       if (updates.semanticStatus === 'completed' && !existing.deliveredAt && !updates.deliveredAt) {
         updates.deliveredAt = new Date().toISOString();
       }

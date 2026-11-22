@@ -67,7 +67,15 @@ In many organizations, teams use custom statuses like `qa_in_review`, `waiting_o
 | `completed` | Successfully resolved; unblocks downstream tasks | `done`, `closed` |
 | `canceled` | Abandoned or discarded; bypasses blockers | `canceled` |
 
-A task's `status` must be one of its project's statuses (the project's `statusDefinitions`, else its workflow's); anything else is rejected. `semanticStatus` is always derived from the status's definition and cannot be set directly. Keys are never guessed from their spelling: data written around the engine with an unknown key counts as `not_started`.
+A task's `status` must be one of its project's statuses (the project's `statusDefinitions`, else its workflow's, plus any engine-wide `globalStatuses`); anything else is rejected. `semanticStatus` is always derived from the status's definition and cannot be set directly. Keys are never guessed from their spelling: data written around the engine with an unknown key counts as `not_started`.
+
+For a state that sits outside every workflow, such as `draft`, configure it once as a global status. Every project accepts it, and tasks can move into and out of it from any status (moves between the project's own statuses still follow the workflow's transitions). A project status with the same key takes precedence.
+
+```typescript
+const engine = new CriticalPathEngine({
+  globalStatuses: [{ key: 'draft', label: 'Draft', category: 'not_started' }]
+});
+```
 
 ### Derived fields
 
@@ -131,13 +139,15 @@ interface Project {
 
 A deliverable is an output the project produces (a document, a build, an asset), linked to the tasks that produce it (`task.deliverableId`). Like tasks, its `status` is a key from a status set with semantic categories:
 
-- `project.deliverableStatusDefinitions`, else `DEFAULT_DELIVERABLE_STATUSES`: `planned`, `in_progress`, `in_review` (in progress), `delivered` (completed), `canceled`.
+- `project.deliverableStatusDefinitions`, else the engine's `defaultDeliverableStatuses`, else `DEFAULT_DELIVERABLE_STATUSES`: `planned`, `in_progress`, `in_review` (in progress), `delivered` (completed), `canceled`.
 - `CREATIVE_DELIVERABLE_STATUSES` is a preset for production pipelines (`draft` … `client_review`, `revision_requested`, `approved`, `delivered`, `canceled`).
 
 Unknown statuses are rejected. `semanticStatus` is derived, and `deliveredAt` is set when the deliverable first reaches a completed status. Domain-specific details (a format, resolution, page count) go in `customFields`. For a dated checkpoint the schedule should enforce, use a milestone task with a `deadline` instead.
 
 ```typescript
 await engine.updateProject(projectId, { deliverableStatusDefinitions: CREATIVE_DELIVERABLE_STATUSES });
+// Or for every project that does not set its own:
+// new CriticalPathEngine({ defaultDeliverableStatuses: CREATIVE_DELIVERABLE_STATUSES });
 await engine.createDeliverable({ projectId, title: 'Hero video', customFields: { format: 'ProRes 422HQ' } });
 ```
 
