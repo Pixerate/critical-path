@@ -29,7 +29,9 @@ import type {
   WorkloadMetric
 } from '@critical-path/core';
 import { resolveStatusDefinition, isTempTaskId, applyUpdate } from '@critical-path/core';
-import { registerWebMcpTools, type ToolsetName } from '@critical-path/mcp/web';
+import { registerWebMcpTools, type ToolsetName, type WebMcpToolCallEvent } from '@critical-path/mcp/web';
+
+export type { WebMcpToolCallEvent };
 import { useCriticalPathClient } from './provider.js';
 
 export function useWorkflows() {
@@ -785,12 +787,15 @@ export interface UseWebMCPOptions {
   /** Expose only tools that change nothing. */
   readOnly?: boolean;
   enabled?: boolean;
+  /** Called after a tool succeeds, with its result. Not called when a tool throws; use `onToolCall` for that. */
   onToolExecuted?: (toolName: string, input: any, result: any) => void;
+  /** Called once per tool call after it settles (success or error), with its duration. Use it for telemetry. */
+  onToolCall?: (event: WebMcpToolCallEvent) => void;
 }
 
 export function useWebMCP(options: UseWebMCPOptions = {}) {
   const client = useCriticalPathClient();
-  const { projectId, tools, toolsets, readOnly, enabled = true, onToolExecuted } = options;
+  const { projectId, tools, toolsets, readOnly, enabled = true, onToolExecuted, onToolCall } = options;
   // Keyed by content so inline arrays do not re-register the tools on every render.
   const toolsKey = tools?.join(',');
   const toolsetsKey = toolsets?.join(',');
@@ -814,7 +819,8 @@ export function useWebMCP(options: UseWebMCPOptions = {}) {
         tools,
         toolsets,
         readOnly,
-        onToolExecuted
+        onToolExecuted,
+        onToolCall
       });
 
       setRegistered(true);
@@ -832,7 +838,7 @@ export function useWebMCP(options: UseWebMCPOptions = {}) {
       setRegistered(false);
     }
     // tools and toolsets are tracked by toolsKey / toolsetsKey
-  }, [client, projectId, enabled, toolsKey, toolsetsKey, readOnly, onToolExecuted]);
+  }, [client, projectId, enabled, toolsKey, toolsetsKey, readOnly, onToolExecuted, onToolCall]);
 
   return {
     registered,

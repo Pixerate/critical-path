@@ -829,6 +829,9 @@ export function ProjectView({ projectId }: { projectId: string }) {
 {/if}
 ```
 
+#### Tool call telemetry (`onToolCall`)
+`registerWebMcpTools`, `createWebMcpState` and `useWebMCP` accept `onToolCall(event)`. It runs once for every tool call after it settles, with `toolName`, `input`, `status` (`'success' | 'error'`), `durationMs`, `projectId`, and `result` or `error`. Errors thrown by the callback are caught and logged. `onToolExecuted` still runs on success only.
+
 ---
 
 ## 13. Ladder of Abstraction & Critical Path Method (CPM)

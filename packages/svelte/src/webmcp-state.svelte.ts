@@ -1,5 +1,7 @@
 import type { CriticalPathClient } from '@critical-path/client';
-import { registerWebMcpTools, type WebMcpRegistryHandle, type ToolsetName } from '@critical-path/mcp/web';
+import { registerWebMcpTools, type WebMcpRegistryHandle, type WebMcpToolCallEvent, type ToolsetName } from '@critical-path/mcp/web';
+
+export type { WebMcpToolCallEvent };
 
 export interface WebMcpStateOptions {
   projectId?: string;
@@ -13,7 +15,10 @@ export interface WebMcpStateOptions {
   document?: any;
   navigator?: any;
   window?: any;
+  /** Called after a tool succeeds, with its result. Not called when a tool throws; use `onToolCall` for that. */
   onToolExecuted?: (toolName: string, input: any, result: any) => void;
+  /** Called once per tool call after it settles (success or error), with its duration. Use it for telemetry. */
+  onToolCall?: (event: WebMcpToolCallEvent) => void;
 }
 
 export class WebMcpState {
@@ -52,6 +57,9 @@ export class WebMcpState {
         window: this.options.window,
         onToolExecuted: (name, input, result) => {
           this.options.onToolExecuted?.(name, input, result);
+        },
+        onToolCall: (event) => {
+          this.options.onToolCall?.(event);
         }
       });
       this.tools = this.handle.getRegisteredTools().map((t) => t.name);

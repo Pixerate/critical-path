@@ -135,3 +135,26 @@ const { getRegisteredTools, instructions, unregister } = registerWebMcpTools({
 // Teardown when done:
 // controller.abort(); OR unregister();
 ```
+
+## 📈 Tool Call Telemetry (`onToolCall`)
+
+`onToolCall` runs once for every tool call after it settles, whether it succeeded or threw. Use it for telemetry, audit logs or latency dashboards. `registerWebMcpTools`, `createWebMcpState` and `useWebMCP` all accept it.
+
+```typescript
+registerWebMcpTools({
+  client,
+  projectId: 'proj_123',
+  onToolCall: ({ toolName, status, durationMs, projectId, input, error }) => {
+    navigator.sendBeacon('/api/mcp/log', JSON.stringify({
+      toolName,
+      status, // 'success' | 'error'
+      durationMs,
+      projectId,
+      taskId: input?.taskId,
+      error: error?.message ?? null
+    }));
+  }
+});
+```
+
+The event carries `toolName`, `input`, `status`, `durationMs`, `projectId` (the registration's project), plus `result` on success or `error` on failure. An error thrown inside `onToolCall` is caught and logged, so it never changes what the agent receives. `onToolExecuted(name, input, result)` still runs on success only.

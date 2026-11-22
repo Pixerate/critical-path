@@ -548,6 +548,32 @@ describe('@critical-path/svelte Svelte 5 Runes Test Suite', () => {
       expect(mcpState.registered).toBe(false);
       expect(mcpState.tools).toEqual([]);
     });
+
+    it('forwards onToolCall events with status and duration', async () => {
+      const mockDoc: any = {};
+      const mockWin: any = {};
+      const mockClient = {
+        queryTasks: vi.fn().mockResolvedValue({ items: [] })
+      } as unknown as CriticalPathClient;
+      const onToolCall = vi.fn();
+
+      const mcpState = createWebMcpState(mockClient, {
+        projectId: 'proj_events',
+        document: mockDoc,
+        window: mockWin,
+        onToolCall
+      });
+
+      await mockDoc.modelContext.executeTool('list_tasks', {});
+      expect(onToolCall).toHaveBeenCalledTimes(1);
+      expect(onToolCall.mock.calls[0][0]).toMatchObject({
+        toolName: 'list_tasks',
+        status: 'success',
+        projectId: 'proj_events'
+      });
+      expect(onToolCall.mock.calls[0][0].durationMs).toBeGreaterThanOrEqual(0);
+      mcpState.unregister();
+    });
   });
 
   describe('KanbanState', () => {
