@@ -8,9 +8,9 @@ This document provides system prompts, architectural context, code generation gu
 
 When an AI agent maintains, extends, or consumes project management features using **Critical Path**, you MUST adhere to the following rules:
 
-1. **Framework Role**: Critical Path is a *headless* framework (similar to Strapi). Do not create monolithic, tied-together UI backends. Always separate the backend route handler (`@critical-path/server`) from the frontend UI components (`@critical-path/react` or `@critical-path/svelte`).
+1. **Framework Role**: Critical Path is a *headless* framework (similar to Strapi). Keep the backend route handler (`@critical-path/server`) separated from frontend UI components (`@critical-path/react`, `@critical-path/svelte`); `pnpm lint` (`eslint.config.mjs`) enforces these package boundaries.
 2. **Web Fetch API Standards**: The router in `@critical-path/server` accepts standard Web `Request` objects and returns `Response` objects.
-3. **Workspace Import Paths**: Always import from the canonical package scope:
+3. **Workspace Import Paths**: Import from the canonical package scope (enforced by `pnpm lint` via `eslint.config.mjs`):
    - `@critical-path/core`: Types, `CriticalPathEngine`, plugins, storage adapters (`InMemoryStore`, `SQLiteStore`, `FirebaseStore`).
    - `@critical-path/server`: Route handlers and framework adapters (`createNextHandler`, `createSvelteKitHandler`).
    - `@critical-path/client`: `CriticalPathClient` type-safe SDK.
@@ -33,7 +33,7 @@ Whenever an agent makes code changes or pushes to this repository, the agent MUS
 - Every new feature, storage adapter, route handler, or bug fix MUST include corresponding unit or integration test coverage.
 - Before committing, always execute:
   ```bash
-  pnpm run build && pnpm run test
+  pnpm lint && pnpm run build && pnpm run test
   ```
 
 ### 3. 📚 Update Documentation Alongside Code
@@ -60,7 +60,7 @@ Whenever an agent makes code changes or pushes to this repository, the agent MUS
   - Prefer extending an existing tool (a new argument) over adding a near-duplicate; a short tool list is easier to choose from than a complete one. Do not mirror engine methods one-to-one.
   - Give it a `toolset` (`core`, `collaboration`, `scheduling`, `analytics`, `guidance`) and annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`).
   - Write the description as: what question it answers, when to use it, `Returns { ... }`, and which sibling to use instead (in backticks) when the two could be confused. Describe every argument with `.describe()`.
-  - Give it an `outputZodSchema` (see `src/tools/outputs.ts`, always `passthrough()`), and return a JSON object, not an array or `null`.
+  - Give it an `outputZodSchema` (see `src/tools/outputs.ts`; `pnpm lint` enforces `passthrough()`), and return a JSON object, not an array or `null`.
   - Add a routing line for it in `src/tools/instructions.ts` and a case in `evals/tool-selection.cases.json`.
 - **Skills** (`packages/mcp/skills/<name>/SKILL.md`, Agent Skills format): when a tool, argument, result field or workflow changes, update every skill that mentions it. When a new feature enables a multi-step job agents will be asked to do (e.g. dependencies, time logging, sprints), add or extend a skill for it. Skills must only reference tools that exist; `pnpm build` regenerates `src/skills/catalog.generated.ts`.
 - **Verify:** `pnpm --filter @critical-path/mcp test` runs the description lint (length, `Returns`, described arguments, distinct descriptions, valid tool references in descriptions and skills) and checks every tool's output against its schema. With Anthropic credentials, also run `pnpm --filter @critical-path/mcp eval:tools` after renaming tools or rewriting descriptions, and report the score in the PR.

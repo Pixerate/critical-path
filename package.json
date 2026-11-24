@@ -9,7 +9,7 @@
   "scripts": {
     "build": "pnpm --recursive run build",
     "test": "pnpm --recursive run test",
-    "lint": "pnpm --recursive run lint",
+    "lint": "eslint packages",
     "dev": "pnpm --recursive --parallel run dev",
     "clean": "pnpm --recursive run clean",
     "docs:dev": "pnpm --filter @critical-path/docs dev",
@@ -21,7 +21,9 @@
   "devDependencies": {
     "@changesets/cli": "^3.0.3",
     "@types/node": "^26.6.6",
+    "eslint": "^9.39.5",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.74.0",
     "vitest": "^5.1.0"
   },
   "engines": {
